@@ -2,6 +2,8 @@
 
 Um besouro rola-bosta de massinha num jardim em miniatura. Sem história, sem objetivo imposto: é só você, o besouro bonitão e uma bola de bosta que cresce enquanto você rola ela por aí. 💩➡️🟤
 
+### ▶️ Jogar agora: **[rola-bosta.vercel.app](https://rola-bosta.vercel.app)** (PC ou celular)
+
 > Visual inspirado em **Human Fall Flat**: tudo com cara de massinha (fosco, aveludado, com marquinha de dedo), luz suave e oclusão ambiente forte.
 
 ---
@@ -15,7 +17,7 @@ Um besouro rola-bosta de massinha num jardim em miniatura. Sem história, sem ob
 | **Agarrar / empurrar a bola** | **Segurar `E`** ou o botão esquerdo | Botão da mão (liga/desliga) |
 | Pular | `Espaço` | Botão de seta |
 | Correr | `Shift` | Botão de correr |
-| Trazer a bola de volta | `R` | — |
+| Trazer a bola de volta | `R` | Botão circular no topo |
 | Zoom | Roda do mouse | — |
 | Pausar | `Esc` | — |
 
@@ -43,6 +45,26 @@ Outros comandos:
 | `npm run build` | Checa os tipos e gera a versão final em `dist/` |
 | `npm run preview` | Serve a pasta `dist/` pra testar a versão final |
 | `npm run typecheck` | Só checa os tipos do TypeScript |
+
+---
+
+## ☁️ Deploy
+
+| Onde | Link |
+|---|---|
+| 🐙 Código | [github.com/Nickdevcode/rola-bosta](https://github.com/Nickdevcode/rola-bosta) |
+| ▲ Produção | [rola-bosta.vercel.app](https://rola-bosta.vercel.app) |
+
+A Vercel tá ligada ao repo: **todo `git push` na `main` publica sozinho** em produção. Pull requests e outras branches ganham um link de preview próprio.
+
+---
+
+## 📱 Celular
+
+- Aparece um analógico (andar), uma área de arrastar pra olhar e botões de correr, agarrar e pular.
+- A câmera volta sozinha pra trás do besouro quando você para de mexer nela.
+- Perfil gráfico mais leve: sem oclusão ambiente, menos pixels, sombra menor e menos grama. Se ainda assim ficar abaixo de ~40 fps, o jogo reduz mais.
+- Pausa sozinho se você sair do app ou trocar de aba.
 
 ---
 

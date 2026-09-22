@@ -136,7 +136,7 @@ export class Hud {
       }
     }
     if (dungCount !== this.lastCount) {
-      this.ballMeta.textContent = dungCount === 1 ? '1 montinho coletado' : `${dungCount} montinhos coletados`;
+      this.ballMeta.textContent = dungCount === 1 ? '1 montinho' : `${dungCount} montinhos`;
       this.lastCount = dungCount;
     }
   }
@@ -297,7 +297,7 @@ export class Hud {
             <div style="flex:1">
               <div class="ball-card__label">Sua bola</div>
               <div class="ball-card__value" data-ball-value>1,3 cm</div>
-              <div class="ball-card__meta" data-ball-meta>0 montinhos coletados</div>
+              <div class="ball-card__meta" data-ball-meta>0 montinhos</div>
               <div class="progress" aria-hidden="true"><div class="progress__fill" data-progress></div></div>
             </div>
           </div>
