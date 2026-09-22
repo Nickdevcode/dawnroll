@@ -59,6 +59,8 @@ export class Beetle {
   private jumpBuffer = 0;
 
   pushing = false;
+  /** Velocidade de queda no último pouso (força da poeira/tremida). */
+  landingSpeed = 0;
   private pushBlend = 0;
   private readonly pushDir = new THREE.Vector3(0, 0, 1);
   private pushStrain = 0;
@@ -106,6 +108,11 @@ export class Beetle {
 
   get pushStrength(): number {
     return this.pushStrain;
+  }
+
+  /** Velocidade atual (para poeira dos passos). */
+  get currentVelocity(): THREE.Vector3 {
+    return this.velocity;
   }
 
   /** Posição do centro do colisor no passo atual (sem interpolação). */
@@ -211,7 +218,10 @@ export class Beetle {
     this.body.setNextKinematicTranslation(this.position);
     this.grounded = this.controller.computedGrounded();
     if (this.grounded && this.velocity.y < 0) {
-      if (!wasGrounded && this.velocity.y < -6) this.onEvent?.('land');
+      if (!wasGrounded && this.velocity.y < -6) {
+        this.landingSpeed = -this.velocity.y;
+        this.onEvent?.('land');
+      }
       this.velocity.y = 0;
     }
     // Bateu a cabeça em algo: zera a subida.

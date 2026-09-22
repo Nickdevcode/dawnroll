@@ -57,6 +57,8 @@ export class Hud {
 
   onStart: (() => void) | null = null;
   onToggleSound: (() => boolean) | null = null;
+  /** Passou de um marco de tamanho (índice do marco). */
+  onMilestone: ((index: number) => void) | null = null;
 
   constructor(container: HTMLElement, private readonly input: Input) {
     this.root = container;
@@ -132,6 +134,7 @@ export class Hud {
 
       while (this.milestoneIndex < MILESTONES.length && cm >= MILESTONES[this.milestoneIndex][0]) {
         this.showToast(`${MILESTONES[this.milestoneIndex][1]} · ${formatCm(MILESTONES[this.milestoneIndex][0])}`);
+        this.onMilestone?.(this.milestoneIndex);
         this.milestoneIndex++;
       }
     }

@@ -1,22 +1,25 @@
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { clay } from '../render/clayMaterial';
-import { claySphere, clayCapsule } from '../render/geometry';
-import { clamp, damp, lerp } from '../utils/math';
+import { claySphere, clayCapsule, displace, paintVertices, taperedTube } from '../render/geometry';
+import { mergeStaticTree } from '../render/mergeStatic';
+import { noise3 } from '../utils/noise';
+import { clamp, damp, lerp, smoothstep } from '../utils/math';
 
 /**
  * Modelo procedural do besouro rola-bosta.
  *
  * Convenção local: +Z = frente (cabeça), +Y = cima, origem no chão sob o corpo.
  * Não há esqueleto nem arquivo externo: as patas são cadeias de grupos
- * (quadril → fêmur → joelho → tíbia) animadas por fase, e a pose de
+ * (quadril → fêmur → joelho → tíbia → tarso) animadas por fase, e a pose de
  * "empurrar a bola" é uma segunda pose misturada por `pushBlend`.
  */
 
 const Colors = {
-  shell: '#2f2c63',
-  shellDeep: '#211d45',
-  leg: '#34294a',
+  shellTop: '#3d3689',
+  shellEdge: '#1c1842',
+  belly: '#211d45',
+  leg: '#352a4d',
+  legTip: '#1f1830',
   eyeWhite: '#fbf6ee',
   pupil: '#151019',
   cheek: '#ff9aa8',
@@ -31,6 +34,7 @@ interface Leg {
   hip: THREE.Group;
   femur: THREE.Group;
   knee: THREE.Group;
+  tarsus: THREE.Group;
   /** Fase da passada (tripé: pares alternados em PI). */
   phase: number;
   restYaw: number;
@@ -48,6 +52,34 @@ export interface BeetlePose {
   verticalSpeed: number;
   /** Quanto o besouro "fez força" (0..1) — treme de leve quando a bola pesa. */
   strain: number;
+}
+
+/** Material do casco: furta-cor + verniz, com o degradê vindo dos vértices. */
+const shellMaterial = () =>
+  clay(0xffffff, { vertexColors: true, roughness: 0.4, sheen: 0.55, iridescence: 0.85, clearcoat: 0.55, bump: 0.2, mottle: 0.05, mottleScale: 7 });
+
+/**
+ * Esfera com os polos no eixo Z (o comprimento do besouro): os anéis da malha
+ * correm ao longo do corpo, então as estrias do élitro saem retinhas.
+ */
+function zSphere(widthSegments: number, heightSegments: number): THREE.BufferGeometry {
+  const g = new THREE.SphereGeometry(1, widthSegments, heightSegments);
+  g.rotateX(Math.PI / 2);
+  return g;
+}
+
+/** Degradê do casco: claro em cima, quase preto na borda de baixo, sulcos mais escuros. */
+function paintShell(geometry: THREE.BufferGeometry, grooveAt?: (p: THREE.Vector3) => number): void {
+  const top = new THREE.Color(Colors.shellTop);
+  const edge = new THREE.Color(Colors.shellEdge);
+  geometry.computeBoundingBox();
+  const box = geometry.boundingBox!;
+  paintVertices(geometry, (p, n, c) => {
+    const h = (p.y - box.min.y) / Math.max(box.max.y - box.min.y, 1e-4);
+    c.copy(edge).lerp(top, smoothstep(0.1, 0.85, h) * 0.8 + smoothstep(0.2, 1, n.y) * 0.2);
+    if (grooveAt) c.multiplyScalar(1 - grooveAt(p) * 0.3);
+    return c;
+  });
 }
 
 export class BeetleModel {
@@ -81,30 +113,70 @@ export class BeetleModel {
         o.receiveShadow = true;
       }
     });
+    // ~150 peças viram ~45 draw calls: enfeites presos na mesma junta são fundidos.
+    mergeStaticTree(this.root);
+  }
+
+  /** Posição de mundo da testa (de onde pinga o suor quando faz força). */
+  getHeadPosition(target: THREE.Vector3): THREE.Vector3 {
+    return this.head.getWorldPosition(target);
   }
 
   private buildShell(): void {
-    const shell = clay(Colors.shell, { roughness: 0.42, sheen: 0.6, iridescence: 0.85, clearcoat: 0.5, bump: 0.25 });
-    const deep = clay(Colors.shellDeep, { roughness: 0.5, sheen: 0.5, iridescence: 0.6, bump: 0.25 });
+    const shell = shellMaterial();
+    const belly = clay(Colors.belly, { roughness: 0.5, sheen: 0.5, iridescence: 0.5, bump: 0.25, mottleScale: 8 });
 
-    // Élitros: duas metades que se encostam no meio formando o vinco característico.
-    const elytraGeo = claySphere(1, 3, 0.03, 2, 4);
+    // Élitros: duas metades com estrias longitudinais que se encostam no meio (sutura).
+    const STRIAE = 26;
+    const grooveAt = (p: THREE.Vector3) => {
+      const theta = Math.atan2(p.y, p.x);
+      const s = Math.abs(Math.sin(theta * STRIAE * 0.5));
+      return (1 - smoothstep(0, 0.3, s)) * smoothstep(0.97, 0.72, Math.abs(p.z));
+    };
+    const elytraGeo = displace(zSphere(104, 48), (x, y, z) => {
+      const p = new THREE.Vector3(x, y, z);
+      return -grooveAt(p) * 0.028 + noise3(x * 3, y * 3, z * 3) * 0.012;
+    });
+    paintShell(elytraGeo, grooveAt);
     for (const side of [1, -1]) {
       const half = new THREE.Mesh(elytraGeo, shell);
       half.scale.set(0.205, 0.25, 0.43);
-      half.position.set(side * 0.175, 0.36, -0.13);
+      half.position.set(side * 0.172, 0.36, -0.13);
       half.rotation.set(0.12, side * 0.05, side * -0.08);
       this.body.add(half);
     }
+    // Escutelo: o triangulinho entre os élitros, logo atrás do pronoto.
+    const scutellumGeo = claySphere(1, 4, 0.03);
+    paintShell(scutellumGeo);
+    const scutellum = new THREE.Mesh(scutellumGeo, shell);
+    scutellum.scale.set(0.05, 0.03, 0.08);
+    scutellum.position.set(0, 0.6, 0.12);
+    scutellum.rotation.x = 0.35;
+    this.body.add(scutellum);
 
     // Barriga escura por baixo: dá volume e esconde a junção das patas.
-    const belly = new THREE.Mesh(claySphere(1, 2, 0.04, 2, 8), deep);
-    belly.scale.set(0.3, 0.13, 0.46);
-    belly.position.set(0, 0.24, -0.05);
-    this.body.add(belly);
+    const bellyMesh = new THREE.Mesh(claySphere(1, 6, 0.04, 2, 8), belly);
+    bellyMesh.scale.set(0.3, 0.13, 0.46);
+    bellyMesh.position.set(0, 0.24, -0.05);
+    this.body.add(bellyMesh);
+    // Segmentos do abdômen: placas sobrepostas por baixo, aparecendo só na traseira.
+    const plateGeo = claySphere(1, 5, 0.03, 2, 21);
+    for (let i = 0; i < 4; i++) {
+      const plate = new THREE.Mesh(plateGeo, belly);
+      plate.scale.set(0.27 - i * 0.035, 0.07, 0.12);
+      plate.position.set(0, 0.2 + i * 0.018, -0.18 - i * 0.075);
+      plate.rotation.x = -0.25 - i * 0.12;
+      this.body.add(plate);
+    }
 
-    // Pronoto (o "escudo" do tórax), largo e arredondado.
-    const pronotum = new THREE.Mesh(claySphere(1, 3, 0.03, 2, 12), shell);
+    // Pronoto (o "escudo" do tórax): largo, com a borda levantada e pontinhos.
+    const pronotumGeo = displace(zSphere(72, 36), (x, y, z) => {
+      const rim = Math.exp(-(((y + 0.05) / 0.16) ** 2)) * 0.05;
+      const pits = -Math.max(0, noise3(x * 16, y * 16, z * 16) - 0.35) * 0.06;
+      return rim + pits;
+    });
+    paintShell(pronotumGeo);
+    const pronotum = new THREE.Mesh(pronotumGeo, shell);
     pronotum.scale.set(0.33, 0.2, 0.22);
     pronotum.position.set(0, 0.37, 0.28);
     pronotum.rotation.x = -0.15;
@@ -112,55 +184,52 @@ export class BeetleModel {
   }
 
   private buildHead(): void {
-    const shell = clay(Colors.shell, { roughness: 0.42, sheen: 0.6, iridescence: 0.85, clearcoat: 0.5, bump: 0.25 });
+    const shell = shellMaterial();
     this.head.position.set(0, 0.3, 0.46);
     this.body.add(this.head);
 
     // Cabeça em forma de pá (clípeo) — é com ela que o rola-bosta molda a bola.
-    const shovel = new THREE.Mesh(claySphere(1, 3, 0.04, 2, 17), shell);
+    const shovelGeo = claySphere(1, 8, 0.03, 2, 17);
+    paintShell(shovelGeo);
+    const shovel = new THREE.Mesh(shovelGeo, shell);
     shovel.scale.set(0.25, 0.1, 0.19);
     shovel.position.set(0, 0, 0.1);
     this.head.add(shovel);
     // Serrilhado da borda da pá.
-    const toothGeo = claySphere(0.035, 1, 0.1, 3, 2);
-    for (let i = -2; i <= 2; i++) {
+    const toothGeo = claySphere(0.035, 3, 0.1, 3, 2);
+    paintShell(toothGeo);
+    for (let i = -3; i <= 3; i++) {
       const tooth = new THREE.Mesh(toothGeo, shell);
-      const a = i * 0.32;
-      tooth.position.set(Math.sin(a) * 0.23, -0.02, 0.1 + Math.cos(a) * 0.17);
-      tooth.scale.set(1, 0.6, 1);
+      const a = i * 0.26;
+      tooth.position.set(Math.sin(a) * 0.235, -0.02, 0.1 + Math.cos(a) * 0.175);
+      tooth.scale.set(i === 0 ? 1.2 : 0.9, 0.55, 1.1);
       this.head.add(tooth);
     }
 
-    // Chifre em "topete": o charme do bonitão.
+    // Chifre em "topete": o charme do bonitão. Tubo afinando + pontinha arredondada.
     const hornCurve = new THREE.CatmullRomCurve3([
-      new THREE.Vector3(0, 0.06, 0.08),
-      new THREE.Vector3(0, 0.18, 0.12),
-      new THREE.Vector3(0, 0.29, 0.06),
-      new THREE.Vector3(0, 0.33, -0.06),
+      new THREE.Vector3(0, 0.04, 0.08),
+      new THREE.Vector3(0, 0.18, 0.13),
+      new THREE.Vector3(0, 0.3, 0.06),
+      new THREE.Vector3(0, 0.34, -0.07),
     ]);
-    const hornParts: THREE.BufferGeometry[] = [];
-    const steps = 12;
-    for (let i = 0; i <= steps; i++) {
-      const t = i / steps;
-      const p = hornCurve.getPoint(t);
-      const r = lerp(0.07, 0.025, t);
-      const g = new THREE.IcosahedronGeometry(r, 2);
-      g.translate(p.x, p.y, p.z);
-      hornParts.push(g);
-    }
-    const horn = new THREE.Mesh(mergeGeometries(hornParts), shell);
-    this.head.add(horn);
-    hornParts.forEach((g) => g.dispose());
+    const hornGeo = taperedTube(hornCurve, 24, (t) => lerp(0.068, 0.022, Math.pow(t, 0.8)), 14);
+    paintShell(hornGeo);
+    this.head.add(new THREE.Mesh(hornGeo, shell));
+    const hornTipGeo = claySphere(0.023, 3, 0.02);
+    paintShell(hornTipGeo);
+    const hornTip = new THREE.Mesh(hornTipGeo, shell);
+    hornTip.position.copy(hornCurve.getPoint(1));
+    this.head.add(hornTip);
 
     // Olhos grandes com pálpebra meio baixa = olhar confiante.
-    const white = clay(Colors.eyeWhite, { roughness: 0.35, sheen: 0.2, bump: 0.08 });
-    const pupilMat = clay(Colors.pupil, { roughness: 0.25, sheen: 0, bump: 0 });
+    const white = clay(Colors.eyeWhite, { roughness: 0.3, sheen: 0.2, bump: 0.05, clearcoat: 0.6, mottle: 0.02 });
+    const pupilMat = clay(Colors.pupil, { roughness: 0.2, sheen: 0, bump: 0, clearcoat: 1, mottle: 0 });
     const highlight = new THREE.MeshBasicMaterial({ color: 0xffffff });
-    const lidMat = shell;
-    const eyeGeo = claySphere(0.085, 3, 0.02, 2, 1);
-    const pupilGeo = new THREE.SphereGeometry(0.046, 20, 14);
+    const eyeGeo = claySphere(0.085, 6, 0.015, 2, 1);
+    const pupilGeo = new THREE.SphereGeometry(0.046, 24, 16);
     const glintGeo = new THREE.SphereGeometry(0.013, 10, 8);
-    const lidGeo = new THREE.SphereGeometry(0.093, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2);
+    const lidGeo = new THREE.SphereGeometry(0.094, 28, 14, 0, Math.PI * 2, 0, Math.PI / 2);
 
     for (const side of [1, -1] as const) {
       const eye = new THREE.Group();
@@ -176,34 +245,40 @@ export class BeetleModel {
       pupil.scale.set(1, 1.1, 0.55);
       const glint = new THREE.Mesh(glintGeo, highlight);
       glint.position.set(0.018, 0.022, 0.082);
-      pupilPivot.add(pupil, glint);
+      const glintSmall = new THREE.Mesh(glintGeo, highlight);
+      glintSmall.scale.setScalar(0.5);
+      glintSmall.position.set(-0.014, -0.016, 0.083);
+      pupilPivot.add(pupil, glint, glintSmall);
       eye.add(pupilPivot);
       this.pupils.push(pupilPivot);
 
       // Pálpebra: meia-esfera que desce (piscar) e fica meio fechada no repouso.
-      const lid = new THREE.Mesh(lidGeo, lidMat);
+      const lid = new THREE.Mesh(lidGeo, clay(Colors.shellTop, { roughness: 0.4, sheen: 0.55, iridescence: 0.85, clearcoat: 0.55, bump: 0.2, mottleScale: 7 }));
       lid.rotation.x = -0.35;
+      lid.userData.keep = true; // animada (piscar): não pode ser fundida
       eye.add(lid);
       this.eyelids.push(lid);
 
       // Bochecha rosada.
-      const cheek = new THREE.Mesh(claySphere(0.045, 2, 0.05, 2, side), clay(Colors.cheek, { roughness: 0.8, sheen: 0.6, bump: 0.1 }));
+      const cheek = new THREE.Mesh(claySphere(0.045, 4, 0.05, 2, side), clay(Colors.cheek, { roughness: 0.8, sheen: 0.6, bump: 0.1, mottleScale: 20 }));
       cheek.scale.set(1, 0.55, 0.6);
       cheek.position.set(side * 0.17, 0.02, 0.2);
       this.head.add(cheek);
 
-      // Antena: haste fina + clava lamelada (as "folhinhas" típicas dos escarabeídeos).
+      // Antena: haste fina curvada + clava lamelada em leque (as "folhinhas" dos escarabeídeos).
       const antenna = new THREE.Group();
       antenna.position.set(side * 0.1, 0.03, 0.24);
       antenna.rotation.set(-0.5, side * 0.7, 0);
-      const stalk = new THREE.Mesh(clayCapsule(0.012, 0.14, 0.05, 3), clay(Colors.leg, { bump: 0.1 }));
-      stalk.position.y = 0.08;
+      const stalkCurve = new THREE.QuadraticBezierCurve3(new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0.09, -0.02), new THREE.Vector3(0, 0.155, 0.015));
+      const stalk = new THREE.Mesh(taperedTube(stalkCurve, 10, (t) => lerp(0.014, 0.009, t), 6), clay(Colors.leg, { bump: 0.1, mottleScale: 20 }));
       antenna.add(stalk);
-      const clubMat = clay(Colors.antennaClub, { roughness: 0.6, sheen: 0.7, bump: 0.15 });
+      const clubMat = clay(Colors.antennaClub, { roughness: 0.5, sheen: 0.7, bump: 0.12, clearcoat: 0.3, mottleScale: 20 });
+      const lamellaGeo = claySphere(0.04, 4, 0.05, 2, side);
       for (let i = 0; i < 3; i++) {
-        const lamella = new THREE.Mesh(claySphere(0.038, 2, 0.05, 2, i + side), clubMat);
-        lamella.scale.set(1, 0.35, 0.8);
-        lamella.position.set(0, 0.17 + i * 0.022, 0.01);
+        const lamella = new THREE.Mesh(lamellaGeo, clubMat);
+        lamella.scale.set(1, 0.3, 0.85);
+        lamella.position.set(0, 0.165 + i * 0.02, 0.018);
+        lamella.rotation.set((i - 1) * 0.25, 0, (i - 1) * 0.12);
         antenna.add(lamella);
       }
       this.head.add(antenna);
@@ -211,19 +286,30 @@ export class BeetleModel {
     }
 
     // Sorrisinho de canto (as mandíbulas, na real).
-    const smile = new THREE.Mesh(
-      new THREE.TorusGeometry(0.05, 0.011, 8, 20, Math.PI * 0.7),
-      clay(Colors.mouth, { bump: 0 }),
-    );
+    const smile = new THREE.Mesh(new THREE.TorusGeometry(0.05, 0.011, 10, 24, Math.PI * 0.7), clay(Colors.mouth, { bump: 0, mottle: 0 }));
     smile.position.set(0.015, -0.035, 0.28);
     smile.rotation.set(0.35, 0, Math.PI + 0.55);
     this.head.add(smile);
   }
 
   private buildLegs(): void {
-    const legMat = clay(Colors.leg, { roughness: 0.55, sheen: 0.5, bump: 0.15 });
-    const spikeGeo = new THREE.ConeGeometry(0.018, 0.06, 6);
-    const footGeo = claySphere(0.03, 1, 0.05, 2, 5);
+    const legMat = clay(0xffffff, { vertexColors: true, roughness: 0.5, sheen: 0.5, bump: 0.15, clearcoat: 0.2, mottleScale: 12 });
+    const legColor = new THREE.Color(Colors.leg);
+    const tipColor = new THREE.Color(Colors.legTip);
+    /** Pinta ao longo do eixo X local: base na cor da pata, ponta mais escura. */
+    const paintAlong = (geometry: THREE.BufferGeometry, from: number, to: number) =>
+      paintVertices(geometry, (p, n, c) => c.copy(legColor).lerp(tipColor, clamp((p.x - from) / (to - from), 0, 1) * 0.7).multiplyScalar(0.92 + n.y * 0.12));
+
+    const spikeGeo = paintAlong(new THREE.ConeGeometry(0.016, 0.07, 6).rotateZ(-Math.PI / 2).translate(0.035, 0, 0), 0, 0.07);
+    const toothGeo = paintAlong(new THREE.ConeGeometry(0.024, 0.075, 6).rotateZ(-Math.PI / 2).translate(0.037, 0, 0), 0, 0.075);
+    const hairGeo = paintAlong(new THREE.ConeGeometry(0.005, 0.05, 3).rotateZ(-Math.PI / 2).translate(0.025, 0, 0), 0, 0.05);
+    const jointGeo = paintAlong(claySphere(0.038, 4, 0.05, 2, 5), -0.04, 0.04);
+    const tarsusGeo = paintAlong(clayCapsule(0.016, 0.03, 0.05, 2, 8).rotateZ(-Math.PI / 2).translate(0.03, 0, 0), 0, 0.06);
+    const clawGeo = paintAlong(
+      taperedTube(new THREE.QuadraticBezierCurve3(new THREE.Vector3(0, 0, 0), new THREE.Vector3(0.03, 0, 0), new THREE.Vector3(0.045, -0.025, 0)), 6, (t) => lerp(0.008, 0.002, t), 5),
+      0,
+      0.05,
+    );
 
     // [z do quadril, comprimento fêmur, comprimento tíbia, yaw de repouso]
     const layout: Array<[number, number, number, number]> = [
@@ -241,32 +327,78 @@ export class BeetleModel {
         mount.add(hip);
         hip.position.set(0.16, 0.25, side === 1 ? hipZ : -hipZ);
 
+        // Coxa: "bolinha" de encaixe no corpo.
+        const coxa = new THREE.Mesh(jointGeo, legMat);
+        coxa.scale.setScalar(1.3);
+        hip.add(coxa);
+
         const femur = new THREE.Group();
         hip.add(femur);
-        const femurMesh = new THREE.Mesh(clayCapsule(0.035, femurLen, 0.08, pair + side), legMat);
-        femurMesh.rotation.z = -Math.PI / 2;
+        // Fêmur mais grosso no meio (músculo), afinando nas pontas.
+        const femurGeo = paintAlong(
+          displace(new THREE.CapsuleGeometry(0.036, femurLen, 6, 12, 6).rotateZ(-Math.PI / 2), (x) => Math.sin(clamp(x / femurLen + 0.5, 0, 1) * Math.PI) * 0.01),
+          -femurLen / 2,
+          femurLen / 2,
+        );
+        const femurMesh = new THREE.Mesh(femurGeo, legMat);
         femurMesh.position.x = femurLen / 2;
         femur.add(femurMesh);
 
         const knee = new THREE.Group();
         knee.position.x = femurLen;
         femur.add(knee);
-        const tibiaMesh = new THREE.Mesh(clayCapsule(pair === 0 ? 0.034 : 0.026, tibiaLen, 0.08, pair * 3 + side), legMat);
-        tibiaMesh.rotation.z = -Math.PI / 2;
+        knee.add(new THREE.Mesh(jointGeo, legMat));
+        const tibiaRadius = pair === 0 ? 0.034 : 0.026;
+        const tibiaGeo = paintAlong(
+          displace(new THREE.CapsuleGeometry(tibiaRadius, tibiaLen, 6, 12, 6).rotateZ(-Math.PI / 2), (x) => (x / tibiaLen) * 0.008),
+          -tibiaLen / 2,
+          tibiaLen / 2,
+        );
+        const tibiaMesh = new THREE.Mesh(tibiaGeo, legMat);
         tibiaMesh.position.x = tibiaLen / 2;
         knee.add(tibiaMesh);
 
-        // Espinhos na tíbia (bem marcados nas dianteiras).
-        const spikes = pair === 0 ? 3 : 2;
-        for (let i = 0; i < spikes; i++) {
-          const spike = new THREE.Mesh(spikeGeo, legMat);
-          spike.position.set(tibiaLen * (0.35 + i * 0.25), 0.02, 0);
-          spike.rotation.z = -0.6;
+        // Dianteiras: dentes grandes na borda de fora (pá de cavar). Outras: espinhos.
+        const teeth = pair === 0 ? 4 : 3;
+        for (let i = 0; i < teeth; i++) {
+          const spike = new THREE.Mesh(pair === 0 ? toothGeo : spikeGeo, legMat);
+          spike.position.set(tibiaLen * (0.3 + i * (0.6 / teeth)), 0.015, pair === 0 ? 0.012 : 0);
+          spike.rotation.set(0, pair === 0 ? -0.5 : 0, 0.9 + i * 0.1);
           knee.add(spike);
         }
-        const foot = new THREE.Mesh(footGeo, legMat);
-        foot.position.x = tibiaLen + 0.01;
-        knee.add(foot);
+        // Pelinhos (cerdas) na parte de baixo da tíbia.
+        for (let i = 0; i < 4; i++) {
+          const hair = new THREE.Mesh(hairGeo, legMat);
+          hair.position.set(tibiaLen * (0.2 + i * 0.18), -tibiaRadius * 0.7, (i % 2 ? 1 : -1) * tibiaRadius * 0.5);
+          hair.rotation.set((i % 2 ? 1 : -1) * 0.5, 0, -1.1);
+          knee.add(hair);
+        }
+        // Esporão na ponta da tíbia.
+        const spur = new THREE.Mesh(spikeGeo, legMat);
+        spur.position.set(tibiaLen, -0.01, 0);
+        spur.rotation.z = -0.9;
+        knee.add(spur);
+
+        // Tarso: três segmentinhos dobrando para o chão + duas garras.
+        const tarsus = new THREE.Group();
+        tarsus.position.x = tibiaLen + 0.015;
+        tarsus.rotation.z = -0.55;
+        knee.add(tarsus);
+        let parent: THREE.Object3D = tarsus;
+        for (let i = 0; i < 3; i++) {
+          const seg = new THREE.Group();
+          seg.position.x = i === 0 ? 0 : 0.055;
+          seg.rotation.z = i === 0 ? 0 : -0.18;
+          seg.add(new THREE.Mesh(tarsusGeo, legMat));
+          parent.add(seg);
+          parent = seg;
+        }
+        for (const claw of [1, -1]) {
+          const c = new THREE.Mesh(clawGeo, legMat);
+          c.position.x = 0.055;
+          c.rotation.y = claw * 0.35;
+          parent.add(c);
+        }
 
         this.body.add(mount);
         this.legs.push({
@@ -275,6 +407,7 @@ export class BeetleModel {
           hip,
           femur,
           knee,
+          tarsus,
           // Tripé: dianteira e traseira de um lado andam junto com a do meio do outro.
           phase: ((pair % 2 === 0) === (side === 1) ? 0 : Math.PI),
           restYaw,
@@ -361,6 +494,8 @@ export class BeetleModel {
       leg.hip.rotation.y = -leg.side * yaw;
       leg.femur.rotation.z = raise;
       leg.knee.rotation.z = bend;
+      // O tarso "procura" o chão: dobra mais quando a pata desce, estica no ar.
+      leg.tarsus.rotation.z = -0.55 + lift * 0.5 - airborne * 0.2;
     }
   }
 }

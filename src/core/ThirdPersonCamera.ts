@@ -21,8 +21,23 @@ export class ThirdPersonCamera {
   private readonly focus = new THREE.Vector3();
   private initialized = false;
   private pushLift = 0;
+  private shakeAmount = 0;
+  private shakeTime = 0;
+  /** Distância livre até o primeiro obstáculo atrás do foco (suavizada). */
+  private clearance = 100;
+
+  /**
+   * Consulta de obstáculo (pedra, cogumelo, tronco): distância do `origin` até o
+   * primeiro sólido na direção `dir`, ou null se o caminho estiver livre.
+   */
+  obstruction: ((origin: THREE.Vector3, dir: THREE.Vector3, maxDistance: number) => number | null) | null = null;
 
   constructor(private readonly camera: THREE.PerspectiveCamera) {}
+
+  /** Tremidinha de impacto (soma com a que já estiver rolando, com teto). */
+  shake(amount: number): void {
+    this.shakeAmount = Math.min(this.shakeAmount + amount, 0.35);
+  }
 
   applyLook(dx: number, dy: number, zoomSteps: number): void {
     this.yaw -= dx * MOUSE_SENSITIVITY;
@@ -75,7 +90,13 @@ export class ThirdPersonCamera {
     const pitch = Math.max(this.pitch, 0.55 * this.pushLift + this.pitch * (1 - this.pushLift));
     const cosPitch = Math.cos(pitch);
     const offset = new THREE.Vector3(Math.sin(this.yaw) * cosPitch, Math.sin(pitch), Math.cos(this.yaw) * cosPitch);
-    const position = new THREE.Vector3().copy(this.focus).addScaledVector(offset, this.distance);
+
+    // Sólido entre o foco e a câmera: encurta a distância (entra rápido, sai devagar)
+    // para a lente nunca parar dentro de uma pedra.
+    const hit = this.obstruction?.(this.focus, offset, this.distance + 0.5) ?? null;
+    const free = hit === null ? this.distance + 2 : Math.max(hit - 0.45, 1.6);
+    this.clearance = free < this.clearance ? free : damp(Math.min(this.clearance, this.distance + 2), free, 2.5, dt);
+    const position = new THREE.Vector3().copy(this.focus).addScaledVector(offset, Math.min(this.distance, this.clearance));
 
     // Não deixa a câmera entrar no chão.
     const ground = terrainHeight(position.x, position.z) + 0.45;
@@ -83,5 +104,15 @@ export class ThirdPersonCamera {
 
     this.camera.position.copy(position);
     this.camera.lookAt(this.focus);
+
+    // Tremida amortecida: rápida no começo, some em ~0,4 s.
+    if (this.shakeAmount > 1e-3) {
+      this.shakeTime += dt;
+      const s = this.shakeAmount;
+      this.camera.position.x += Math.sin(this.shakeTime * 61) * s * 0.35;
+      this.camera.position.y += Math.sin(this.shakeTime * 47 + 1.3) * s * 0.5;
+      this.camera.rotation.z += Math.sin(this.shakeTime * 53 + 2.1) * s * 0.06;
+      this.shakeAmount = damp(this.shakeAmount, 0, 9, dt);
+    }
   }
 }
