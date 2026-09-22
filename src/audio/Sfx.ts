@@ -9,6 +9,11 @@ export class Sfx {
   private master: GainNode | null = null;
   private noiseBuffer: AudioBuffer | null = null;
   private muted = false;
+  /** Camadas da chuva (chiado agudo + ronco grave), com volume seguindo a intensidade. */
+  private rainHiss: GainNode | null = null;
+  private rainRumble: GainNode | null = null;
+  private rainLevel = 0;
+  private dropTimer = 0;
 
   /** Chamar dentro de um handler de clique/tecla. */
   unlock(): void {
@@ -28,6 +33,7 @@ export class Sfx {
     for (let i = 0; i < length; i++) data[i] = Math.random() * 2 - 1;
 
     this.startAmbience();
+    this.startRain();
   }
 
   toggleMute(): boolean {
@@ -85,10 +91,99 @@ export class Sfx {
     this.tone(110, 50, 0.18, 0.2 + strength * 0.5, 'sine');
   }
 
-  private tone(from: number, to: number, duration: number, volume: number, type: OscillatorType): void {
+  /** Arrancou algo do chão: estalo de raiz soltando + "tum" grave proporcional ao tamanho. */
+  pluck(size: number): void {
+    const s = Math.min(size / 3, 1);
+    this.noiseBurst(2600 - s * 1400, 0.09, 0.35, 6);
+    this.tone(520 - s * 260, 180 - s * 80, 0.14, 0.3, 'triangle');
+    this.tone(150 - s * 70, 50, 0.22 + s * 0.1, 0.25 + s * 0.3, 'sine');
+  }
+
+  /** Terra sendo cavada (enterro): chiado curto e abafado. */
+  dig(strength: number): void {
+    this.noiseBurst(500 + Math.random() * 400, 0.12, 0.18 + strength * 0.2, 1.4);
+  }
+
+  /** Bola enterrada: arpejo alegre (com uma nota a mais quando é recorde). */
+  fanfare(record: boolean): void {
     const ctx = this.ctx;
     if (!ctx || !this.master) return;
-    const t = ctx.currentTime;
+    const notes = record ? [523.25, 659.25, 783.99, 1046.5, 1318.5] : [523.25, 659.25, 783.99, 1046.5];
+    notes.forEach((f, i) => this.tone(f, f * 1.005, 0.32, 0.22, 'triangle', i * 0.09));
+    this.tone(130.8, 98, 0.5, 0.35, 'sine');
+  }
+
+  /** "Tchibum" na água: ruído com varredura + bolhinha. `size` 0..1. */
+  splash(size = 0.5): void {
+    const s = Math.min(Math.max(size, 0), 1);
+    this.noiseBurst(1800 - s * 900, 0.25 + s * 0.15, 0.3 + s * 0.35, 2.2, 0.35);
+    this.tone(900 - s * 300, 1500, 0.07, 0.12, 'sine', 0.05);
+  }
+
+  /** Volume da chuva (0..1), chamado todo frame; também pinga gotinhas perto. */
+  setRain(level: number, dt: number): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.rainHiss || !this.rainRumble) return;
+    if (Math.abs(level - this.rainLevel) > 0.01) {
+      this.rainLevel = level;
+      this.rainHiss.gain.setTargetAtTime(level * 0.2, ctx.currentTime, 0.3);
+      this.rainRumble.gain.setTargetAtTime(level * 0.12, ctx.currentTime, 0.3);
+    }
+    if (level < 0.05) return;
+    this.dropTimer -= dt;
+    if (this.dropTimer <= 0) {
+      this.dropTimer = 0.05 + Math.random() * (0.5 - level * 0.4);
+      const f = 1400 + Math.random() * 2200;
+      this.tone(f, f * 0.7, 0.04, 0.03 + Math.random() * 0.04 * level, 'sine');
+    }
+  }
+
+  /** Trovão: estalo (perto) e um ronco longo e grave que rola e some. */
+  thunder(distance: number): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.master || !this.noiseBuffer) return;
+    const t = ctx.currentTime + 0.3 + distance * 1.4;
+    const src = ctx.createBufferSource();
+    src.buffer = this.noiseBuffer;
+    src.loop = true;
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(900 - distance * 500, t);
+    filter.frequency.exponentialRampToValueAtTime(90, t + 2.8);
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.exponentialRampToValueAtTime(0.9 - distance * 0.4, t + 0.06);
+    gain.gain.exponentialRampToValueAtTime(0.35, t + 0.7);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + 3.2);
+    src.connect(filter).connect(gain).connect(this.master);
+    src.start(t, Math.random() * 0.5);
+    src.stop(t + 3.3);
+  }
+
+  /** Ruído filtrado curto (base de estalos, terra e água). */
+  private noiseBurst(frequency: number, duration: number, volume: number, q: number, delay = 0): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.master || !this.noiseBuffer) return;
+    const t = ctx.currentTime + delay;
+    const src = ctx.createBufferSource();
+    src.buffer = this.noiseBuffer;
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.Q.value = q;
+    filter.frequency.setValueAtTime(frequency, t);
+    filter.frequency.exponentialRampToValueAtTime(Math.max(60, frequency * 0.35), t + duration);
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.exponentialRampToValueAtTime(volume, t + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + duration);
+    src.connect(filter).connect(gain).connect(this.master);
+    src.start(t, Math.random() * 0.5, duration + 0.05);
+  }
+
+  private tone(from: number, to: number, duration: number, volume: number, type: OscillatorType, delay = 0): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.master) return;
+    const t = ctx.currentTime + delay;
     const osc = ctx.createOscillator();
     osc.type = type;
     osc.frequency.setValueAtTime(from, t);
@@ -121,5 +216,27 @@ export class Sfx {
     src.connect(filter).connect(gain).connect(this.master!);
     src.start();
     lfo.start();
+  }
+
+  /** Chuva em loop, começando muda: chiado (gotas no capim) + ronco (chuva longe). */
+  private startRain(): void {
+    const ctx = this.ctx!;
+    const make = (type: BiquadFilterType, frequency: number, q: number): GainNode => {
+      const src = ctx.createBufferSource();
+      src.buffer = this.noiseBuffer;
+      src.loop = true;
+      const filter = ctx.createBiquadFilter();
+      filter.type = type;
+      filter.frequency.value = frequency;
+      filter.Q.value = q;
+      const gain = ctx.createGain();
+      gain.gain.value = 0;
+      src.connect(filter).connect(gain).connect(this.master!);
+      // Começa em pontos diferentes do mesmo ruído: as duas camadas não "batem".
+      src.start(0, Math.random() * 0.9);
+      return gain;
+    };
+    this.rainHiss = make('bandpass', 3200, 0.5);
+    this.rainRumble = make('lowpass', 380, 0.7);
   }
 }

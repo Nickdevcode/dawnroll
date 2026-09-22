@@ -6,7 +6,7 @@ import { noise3 } from '../../utils/noise';
 import type { Rng } from '../../utils/math';
 import { terrainHeight } from '../Terrain';
 import { latheGeometry, leafGeometry, smoothProfile } from './shapes';
-import type { SceneryContext } from './context';
+import { sphereVolume, type SceneryContext } from './context';
 
 export type FlowerKind = 'daisy' | 'tulip' | 'bell' | 'dandelion' | 'clover';
 
@@ -62,36 +62,51 @@ export function buildFlower(ctx: SceneryContext, x: number, z: number, height: n
   head.position.copy(top);
   root.add(head);
 
+  let tint: THREE.Color;
   switch (kind) {
     case 'daisy':
-      buildDaisy(rng, head, height, lean);
+      tint = buildDaisy(rng, head, height, lean);
       break;
     case 'tulip':
-      buildTulip(rng, head, height);
+      tint = buildTulip(rng, head, height);
       break;
     case 'bell':
-      buildBells(rng, head, height, curve);
+      tint = buildBells(rng, head, height, curve);
       break;
     case 'dandelion':
-      buildDandelion(rng, head, height);
+      tint = buildDandelion(rng, head, height);
       break;
     case 'clover':
-      buildCloverBlossom(rng, head, height);
+      tint = buildCloverBlossom(rng, head, height);
       break;
   }
 
-  ctx.batch.addObject(root, { sway: 0.1 + height * 0.035 });
-
-  const headWorld = new THREE.Vector3();
-  head.getWorldPosition(headWorld);
-  ctx.addLandingSpot(headWorld);
+  root.updateMatrixWorld(true);
+  const headWorld = head.getWorldPosition(new THREE.Vector3());
+  const spot = ctx.addLandingSpot(headWorld);
   ctx.addSolid(x, z, 0.25);
   ctx.addShade(x, z, 0.9 + height * 0.08, 0.3);
   const stemCenter = new THREE.Vector3(x + top.x * 0.3, baseY + height * 0.3, z + top.z * 0.3);
-  ctx.addCollider(RAPIER.ColliderDesc.cylinder(height * 0.3, stemRadius * 1.4), stemCenter);
+  const collider = ctx.addCollider(RAPIER.ColliderDesc.cylinder(height * 0.3, stemRadius * 1.4), stemCenter);
+
+  const size = height * 0.36;
+  ctx.addPickable({
+    kind: 'flower',
+    root,
+    batch: { sway: 0.1 + height * 0.035 },
+    size,
+    probeA: new THREE.Vector3(x, baseY, z),
+    probeB: headWorld,
+    probeRadius: Math.max(stemRadius * 1.6, height * 0.06),
+    colliders: [collider],
+    landingSpots: [spot],
+    tint,
+    volume: sphereVolume(size * 0.42),
+    extent: height,
+  });
 }
 
-function buildDaisy(rng: Rng, head: THREE.Group, height: number, lean: THREE.Vector3): void {
+function buildDaisy(rng: Rng, head: THREE.Group, height: number, lean: THREE.Vector3): THREE.Color {
   // Cabeça virada levemente para o lado (flor olhando o sol).
   const facing = lean.clone().add(new THREE.Vector3(rng.range(-0.6, 0.6), 0.9, rng.range(-0.6, 0.6))).normalize();
   head.quaternion.setFromUnitVectors(UP, facing);
@@ -119,9 +134,10 @@ function buildDaisy(rng: Rng, head: THREE.Group, height: number, lean: THREE.Vec
   const center = part(disc, 0xffffff, 'petal');
   center.position.y = petalLength * 0.06;
   head.add(center);
+  return petalColor;
 }
 
-function buildTulip(rng: Rng, head: THREE.Group, height: number): void {
+function buildTulip(rng: Rng, head: THREE.Group, height: number): THREE.Color {
   const color = new THREE.Color(rng.pick(TulipColors));
   const petalLength = height * 0.2;
   const petalGeo = leafGeometry(petalLength, petalLength * 0.75, { fold: 0.75, curl: -0.35, widest: 0.55, roundTip: 1, segmentsL: 8, segmentsW: 3, vein: false });
@@ -138,9 +154,10 @@ function buildTulip(rng: Rng, head: THREE.Group, height: number): void {
   }
   const base = part(claySphere(petalLength * 0.22, 3, 0.05), '#4f9a3c', 'plant');
   head.add(base);
+  return color;
 }
 
-function buildBells(rng: Rng, head: THREE.Group, height: number, curve: THREE.QuadraticBezierCurve3): void {
+function buildBells(rng: Rng, head: THREE.Group, height: number, curve: THREE.QuadraticBezierCurve3): THREE.Color {
   const color = new THREE.Color(rng.pick(BellColors));
   const bellLength = height * 0.13;
   // Sino: perfil de torno com a boca abrindo em saia e as pontinhas viradas.
@@ -177,9 +194,10 @@ function buildBells(rng: Rng, head: THREE.Group, height: number, curve: THREE.Qu
     hang.add(stalk);
     head.add(hang);
   }
+  return color;
 }
 
-function buildDandelion(rng: Rng, head: THREE.Group, height: number): void {
+function buildDandelion(rng: Rng, head: THREE.Group, height: number): THREE.Color {
   // Bola de sementes: hastes finas com um pompom branco na ponta (brilha no contraluz).
   const radius = height * 0.1;
   head.add(part(claySphere(radius * 0.25, 2, 0.05), '#c9b98a', 'plant'));
@@ -203,9 +221,10 @@ function buildDandelion(rng: Rng, head: THREE.Group, height: number): void {
     puff.quaternion.setFromUnitVectors(UP, dir);
     head.add(puff);
   }
+  return new THREE.Color('#f3efe4');
 }
 
-function buildCloverBlossom(rng: Rng, head: THREE.Group, height: number): void {
+function buildCloverBlossom(rng: Rng, head: THREE.Group, height: number): THREE.Color {
   // Flor de trevo: globo de pétalas tubulares rosadas, mais claras na ponta.
   const radius = height * 0.07;
   const color = new THREE.Color(rng.next() < 0.5 ? '#f29ac0' : '#f4f0f6');
@@ -231,4 +250,5 @@ function buildCloverBlossom(rng: Rng, head: THREE.Group, height: number): void {
     leaf.rotation.set(-0.3, (i / 3) * Math.PI * 2, 0, 'YXZ');
     head.add(leaf);
   }
+  return color;
 }

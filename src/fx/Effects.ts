@@ -9,7 +9,8 @@ import { SoftParticles } from './SoftParticles';
 import { ChunkParticles } from './ChunkParticles';
 import { BallTrail } from './BallTrail';
 import { AmbientMotes } from './AmbientMotes';
-import { Critters, type GroundFilter } from './critters/Critters';
+import { Rain, type SurfaceProbe } from './Rain';
+import { Critters, type CollectedCritter, type CritterPuddle, type GroundFilter } from './critters/Critters';
 
 /** O que os efeitos precisam saber do jogo a cada frame (tudo já interpolado). */
 export interface EffectsFrame {
@@ -27,13 +28,25 @@ export interface EffectsFrame {
   ballVelocity: THREE.Vector3;
   ballRadius: number;
   stink: StinkSource[];
+  /** 0..1: chuva agora. */
+  rain: number;
+  /** 0..1: chão molhado. */
+  wetness: number;
+  puddles: readonly CritterPuddle[];
+  /** Profundidade da água nos pés do besouro / embaixo da bola (0 = seco). */
+  playerWater: number;
+  ballWater: number;
 }
 
 export interface EffectsOptions {
   critters: number;
   motes: number;
+  rainDrops: number;
+  rainSplashes: number;
   landingSpots: THREE.Vector3[];
   isGroundFree: GroundFilter;
+  /** Onde uma gota bate (chão ou superfície da poça). */
+  surface: SurfaceProbe;
 }
 
 const Dust = {
@@ -46,6 +59,9 @@ const Dust = {
 };
 const DungChunks = ['#5b3820', '#6e4426', '#83542f', '#9a6a3c'].map((c) => new THREE.Color(c));
 const DirtChunks = ['#b9844f', '#9f7045', '#c99a64'].map((c) => new THREE.Color(c));
+const SoilChunks = ['#8f623e', '#a8764c', '#6f4b2f', '#b98552'].map((c) => new THREE.Color(c));
+const WATER = new THREE.Color('#cfe3ea');
+const MUDDY_WATER = new THREE.Color('#9c8a68');
 const GrassChunks = ['#7cbf5b', '#9fd06b', '#5f9f48'].map((c) => new THREE.Color(c));
 const ConfettiColors = ['#f4a73b', '#ff7aa2', '#7cc6ff', '#9be27a', '#ffe066', '#c59bff', '#ffffff'].map((c) => new THREE.Color(c));
 const FallingLeafColors = ['#e9a23b', '#d9683f', '#c9a24f', '#9fbf5a', '#e8c35a'].map((c) => new THREE.Color(c));
@@ -70,7 +86,11 @@ export class Effects {
   private readonly trail = new BallTrail();
   private readonly motes: AmbientMotes;
   private readonly critters: Critters;
+  private readonly rain: Rain;
+  private readonly surface: SurfaceProbe;
   private readonly rng = createRng(909);
+  private time = 0;
+  private splashAcc = 0;
 
   // Acumuladores de emissão contínua (partículas "devidas" desde o último frame).
   private footAcc = 0;
@@ -96,6 +116,8 @@ export class Effects {
     this.leaves = new ChunkParticles(leafGeo, clay(0xffffff, { vertexColors: true, roughness: 0.7, sheen: 0.55, bump: 0.2, side: THREE.DoubleSide }), 48);
     this.motes = new AmbientMotes(options.motes);
     this.critters = new Critters(options.critters, options.landingSpots, options.isGroundFree);
+    this.rain = new Rain(options.rainDrops, options.rainSplashes);
+    this.surface = options.surface;
 
     this.group.add(
       this.trail.mesh,
@@ -107,7 +129,127 @@ export class Effects {
       this.glow.points,
       this.motes.points,
       this.critters.group,
+      this.rain.group,
     );
+  }
+
+  /** Algo aconteceu aqui (flor arrancada, bola caiu): bichos em volta se assustam. */
+  startle(position: THREE.Vector3, radius: number): void {
+    this.critters.startle(position, radius);
+  }
+
+  /** Katamari de bicho: tatuzinho enrolado encostando na bola vira item grudável. */
+  collectCritter(ballCenter: THREE.Vector3, ballRadius: number): CollectedCritter | null {
+    return this.critters.collect(ballCenter, ballRadius);
+  }
+
+  /**
+   * A bola arrancou algo do chão: torrões e capim saindo do pé, brilho onde grudou
+   * e (flor) pétalas voando na cor dela.
+   */
+  pluck(ground: THREE.Vector3, contact: THREE.Vector3, tint: THREE.Color, size: number, petals: boolean): void {
+    const k = Math.min(1, 0.35 + size * 0.25);
+    this.clods(ground, Math.round(8 + size * 8), 2.2 + size);
+    this.puffRing(ground, Math.round(8 + size * 5), 0.4 + size * 0.25, 1.6 + size, this.groundDust(ground), 0.45, 0.3 + size * 0.2);
+    this.sparkle(contact, tint);
+    if (!petals) return;
+    for (let i = 0; i < Math.round(6 + size * 6); i++) {
+      this.leaves.spawn({
+        x: contact.x + this.rng.range(-0.3, 0.3),
+        y: contact.y + this.rng.range(0, 0.5),
+        z: contact.z + this.rng.range(-0.3, 0.3),
+        vx: this.rng.range(-2, 2) * k,
+        vy: this.rng.range(2, 4.5),
+        vz: this.rng.range(-2, 2) * k,
+        color: tmpColor.copy(tint).multiplyScalar(this.rng.range(0.85, 1.1)),
+        size: this.rng.range(0.18, 0.32) * (0.8 + k),
+        life: this.rng.range(3, 5),
+        flutter: true,
+        spin: this.rng.range(3, 7),
+      });
+    }
+  }
+
+  /** Terra espirrando da toca enquanto a bola afunda. */
+  dig(at: THREE.Vector3, strength: number): void {
+    for (let i = 0; i < 3; i++) {
+      const a = this.rng.next() * Math.PI * 2;
+      const s = this.rng.range(1.2, 3) * (0.7 + strength);
+      this.chunks.spawn({
+        x: at.x,
+        y: at.y,
+        z: at.z,
+        vx: Math.cos(a) * s,
+        vy: this.rng.range(3.5, 6.5) * (0.7 + strength * 0.5),
+        vz: Math.sin(a) * s,
+        color: this.rng.pick(SoilChunks),
+        size: this.rng.range(0.06, 0.14) * (0.8 + strength),
+        life: this.rng.range(1.2, 2.2),
+        bounce: 0.2,
+        spin: this.rng.range(4, 10),
+      });
+    }
+    this.dust.spawn({
+      x: at.x,
+      y: at.y + 0.1,
+      z: at.z,
+      vx: this.rng.range(-0.5, 0.5),
+      vy: this.rng.range(0.6, 1.4),
+      vz: this.rng.range(-0.5, 0.5),
+      color: Dust.dirt,
+      size: this.rng.range(0.5, 0.9) * (0.7 + strength),
+      life: this.rng.range(0.9, 1.5),
+      grow: 2.4,
+      drag: 2.5,
+      alpha: 0.5,
+    });
+  }
+
+  /** Bola enterrada: nuvem de terra + confete em cima da toca. */
+  buried(at: THREE.Vector3, radius: number): void {
+    this.puffRing(at, 22, 0.8 + radius * 0.2, 3 + radius * 0.6, Dust.dirt, 0.55, radius * 0.5 + 0.5);
+    this.clods(at, 16, 3.5);
+    this.celebrate(at, 1.2);
+  }
+
+  /** Algo entrou na água: gotas saltando (barrentas, se a poça é rasa). */
+  waterSplash(at: THREE.Vector3, size: number, muddy = false): void {
+    const count = Math.round(6 + size * 12);
+    for (let i = 0; i < count; i++) {
+      const a = this.rng.next() * Math.PI * 2;
+      const s = this.rng.range(0.8, 2.4) * (0.6 + size);
+      this.drops.spawn({
+        x: at.x + Math.cos(a) * size * 0.3,
+        y: at.y + 0.05,
+        z: at.z + Math.sin(a) * size * 0.3,
+        vx: Math.cos(a) * s,
+        vy: this.rng.range(2.2, 4.5) * (0.7 + size * 0.4),
+        vz: Math.sin(a) * s,
+        color: muddy ? MUDDY_WATER : WATER,
+        size: this.rng.range(0.035, 0.07) * (0.8 + size * 0.5),
+        life: this.rng.range(0.6, 1.1),
+        bounce: 0,
+      });
+    }
+    this.rain.ripple(this.time, at.x, at.y, at.z, 0.4 + size * 0.6);
+  }
+
+  /** Item que se soltou da bola (encolheu na água): torrãozinho de bosta caindo. */
+  shed(at: THREE.Vector3): void {
+    for (let i = 0; i < 5; i++) {
+      this.chunks.spawn({
+        x: at.x,
+        y: at.y,
+        z: at.z,
+        vx: this.rng.range(-1.5, 1.5),
+        vy: this.rng.range(1, 2.5),
+        vz: this.rng.range(-1.5, 1.5),
+        color: this.rng.pick(DungChunks),
+        size: this.rng.range(0.05, 0.1),
+        life: this.rng.range(1, 1.8),
+        bounce: 0.1,
+      });
+    }
   }
 
   // --- eventos pontuais -------------------------------------------------------
@@ -230,8 +372,10 @@ export class Effects {
   // --- contínuo -----------------------------------------------------------------
 
   update(dt: number, f: EffectsFrame): void {
+    this.time = f.time;
     this.emitFootsteps(dt, f);
     this.emitBallRolling(dt, f);
+    this.emitWading(dt, f);
     this.emitStink(dt, f);
     this.emitSweat(dt, f);
     this.emitFallingLeaves(dt, f);
@@ -243,14 +387,44 @@ export class Effects {
     this.confetti.update(dt);
     this.leaves.update(dt);
     this.trail.update(dt);
-    this.motes.update(f.time, f.camera.position, f.pixelScale);
-    this.critters.update(dt, f.player, f.camera.position);
+    // Na chuva o pólen some (gruda molhado nas folhas).
+    this.motes.update(f.time, f.camera.position, f.pixelScale, 1 - Math.min(1, f.rain * 1.6));
+    this.rain.update(dt, f.time, f.camera, f.player, f.rain, this.surface);
+    this.critters.update(dt, {
+      player: f.player,
+      camera: f.camera.position,
+      ballPosition: f.ballPosition,
+      ballRadius: f.ballRadius,
+      rain: f.rain,
+      wetness: f.wetness,
+      puddles: f.puddles,
+    });
+  }
+
+  /** Besouro ou bola andando na água: gotas e anéis em volta. */
+  private emitWading(dt: number, f: EffectsFrame): void {
+    const playerSpeed = Math.hypot(f.playerVelocity.x, f.playerVelocity.z);
+    const ballSpeed = Math.hypot(f.ballVelocity.x, f.ballVelocity.z);
+    const rate = (f.playerWater > 0.02 && playerSpeed > 0.5 ? playerSpeed * 2.5 : 0) + (f.ballWater > 0.02 && ballSpeed > 0.4 ? ballSpeed * (2 + f.ballRadius) : 0);
+    this.splashAcc += rate * dt;
+    while (this.splashAcc >= 1) {
+      this.splashAcc -= 1;
+      const fromBall = f.ballWater > 0.02 && (f.playerWater <= 0.02 || this.rng.next() < 0.6);
+      const p = fromBall ? f.ballPosition : f.player;
+      const r = fromBall ? f.ballRadius * 0.7 : 0.25;
+      const a = this.rng.next() * Math.PI * 2;
+      const water = this.surface(p.x + Math.cos(a) * r, p.z + Math.sin(a) * r);
+      tmp.set(p.x + Math.cos(a) * r, water.y, p.z + Math.sin(a) * r);
+      this.waterSplash(tmp, fromBall ? 0.25 + Math.min(f.ballRadius * 0.1, 0.5) : 0.15, true);
+    }
   }
 
   private emitFootsteps(dt: number, f: EffectsFrame): void {
     const speed = Math.hypot(f.playerVelocity.x, f.playerVelocity.z);
     // Empurrando, as patas da frente cavam o chão; andando, levanta pó a cada passo.
-    const rate = !f.playerGrounded ? 0 : f.pushing ? 5 + f.strain * 8 : speed > 1.6 ? speed * 2.2 : 0;
+    // Na água ou no chão encharcado não sobe poeira.
+    const dusty = f.playerWater < 0.02 && f.wetness < 0.55;
+    const rate = !f.playerGrounded || !dusty ? 0 : f.pushing ? 5 + f.strain * 8 : speed > 1.6 ? speed * 2.2 : 0;
     this.footAcc += rate * dt;
     if (f.pushing && !this.wasPushing) this.puffRing(f.player, 5, 0.3, 1.2, this.groundDust(f.player), 0.35);
     this.wasPushing = f.pushing;
@@ -282,14 +456,14 @@ export class Effects {
     const onGround = p.y - r - ground < 0.25;
     this.trail.track(p.x, p.z, r, onGround);
     const speed = Math.hypot(f.ballVelocity.x, f.ballVelocity.z);
-    if (!onGround || speed < 0.6) return;
+    if (!onGround || speed < 0.6 || f.ballWater > 0.02) return;
 
     const dirt = dirtAmount(p.x, p.z) > 0.4;
     const inv = 1 / speed;
     const bx = -f.ballVelocity.x * inv;
     const bz = -f.ballVelocity.z * inv;
-    // Poeira sai de trás do ponto de contato, abrindo para os lados.
-    this.rollAcc += speed * (dirt ? 3.2 : 1.4) * (0.7 + r * 0.5) * dt;
+    // Poeira sai de trás do ponto de contato, abrindo para os lados (chão molhado quase não levanta).
+    this.rollAcc += speed * (dirt ? 3.2 : 1.4) * (0.7 + r * 0.5) * (1 - f.wetness * 0.8) * dt;
     while (this.rollAcc >= 1) {
       this.rollAcc -= 1;
       const side = this.rng.range(-1, 1) * r * 0.5;

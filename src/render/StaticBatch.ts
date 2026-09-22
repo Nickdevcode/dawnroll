@@ -46,22 +46,81 @@ export interface AddObjectOptions {
    */
   sway?: number;
   castShadow?: boolean;
+  /**
+   * Objeto que pode sumir depois (a bola arranca do chão): o lote guarda onde
+   * as peças dele foram parar para `RemovableParts.hide(id)` apagá-las.
+   */
+  removableId?: number;
 }
 
 /** Tamanho da célula espacial: o lote é fatiado nela para o frustum culling ainda funcionar. */
 const CELL_SIZE = 44;
+
+interface Bucket {
+  profile: SurfaceProfile;
+  castShadow: boolean;
+  parts: THREE.BufferGeometry[];
+  /** Dono de cada peça (id removível) ou -1. Paralelo a `parts`. */
+  owners: number[];
+}
+
+interface IndexRange {
+  index: THREE.BufferAttribute;
+  start: number;
+  /** Cópia dos índices originais (para devolver a peça). */
+  original: Uint32Array;
+}
+
+/**
+ * Peças "apagáveis" dentro das malhas fundidas. Sumir = trocar os triângulos
+ * da peça por triângulos degenerados (todos no mesmo vértice) direto no índice:
+ * vale para TODO passe (cor, sombra, AO, profundidade) sem shader especial, e o
+ * lote continua sendo um draw call só. Voltar = copiar os índices de volta.
+ */
+export class RemovableParts {
+  private readonly ranges = new Map<number, IndexRange[]>();
+
+  /** @internal usado pelo `StaticBatch.build`. */
+  register(id: number, range: IndexRange): void {
+    let list = this.ranges.get(id);
+    if (!list) this.ranges.set(id, (list = []));
+    list.push(range);
+  }
+
+  hide(id: number): void {
+    for (const r of this.ranges.get(id) ?? []) {
+      const array = r.index.array as Uint16Array | Uint32Array;
+      array.fill(array[r.start], r.start, r.start + r.original.length);
+      this.flush(r);
+    }
+  }
+
+  show(id: number): void {
+    for (const r of this.ranges.get(id) ?? []) {
+      (r.index.array as Uint16Array | Uint32Array).set(r.original, r.start);
+      this.flush(r);
+    }
+  }
+
+  private flush(r: IndexRange): void {
+    r.index.addUpdateRange(r.start, r.original.length);
+    r.index.needsUpdate = true;
+  }
+}
 
 /**
  * Junta milhares de peças estáticas em poucos draw calls: uma malha por
  * (perfil de superfície × célula do mapa × sombra). Cor por peça vira vertex color.
  */
 export class StaticBatch {
-  private readonly buckets = new Map<string, { profile: SurfaceProfile; castShadow: boolean; parts: THREE.BufferGeometry[] }>();
+  private readonly buckets = new Map<string, Bucket>();
   private vertexCount = 0;
+  /** Onde cada objeto removível foi parar (preenchido no `build`). */
+  readonly removables = new RemovableParts();
 
   /** Assa todas as peças (`part`) dentro de `root` com suas transformações de mundo. */
   addObject(root: THREE.Object3D, options: AddObjectOptions = {}): void {
-    const { sway = 0, castShadow = true } = options;
+    const { sway = 0, castShadow = true, removableId = -1 } = options;
     root.updateMatrixWorld(true);
 
     // Base e altura do objeto (em mundo) para o peso do vento.
@@ -85,22 +144,35 @@ export class StaticBatch {
       const key = `${profile}|${cell}|${castShadow}`;
       let bucket = this.buckets.get(key);
       if (!bucket) {
-        bucket = { profile, castShadow, parts: [] };
+        bucket = { profile, castShadow, parts: [], owners: [] };
         this.buckets.set(key, bucket);
       }
       bucket.parts.push(geometry);
+      bucket.owners.push(removableId);
       this.vertexCount += geometry.getAttribute('position').count;
     });
   }
 
-  /** Funde tudo. Depois disso o lote está vazio e pode ser descartado. */
+  /** Funde tudo. Depois disso o lote está vazio (os removíveis continuam em `removables`). */
   build(): THREE.Group {
     const group = new THREE.Group();
     group.name = 'static-batch';
     for (const bucket of this.buckets.values()) {
+      // mergeGeometries concatena os índices na ordem das peças: dá para saber onde cada uma caiu.
+      const counts = bucket.parts.map((g) => g.getIndex()!.count);
       const merged = mergeGeometries(bucket.parts, false);
       bucket.parts.forEach((g) => g.dispose());
       if (!merged) continue;
+      const index = merged.getIndex()!;
+      let start = 0;
+      bucket.owners.forEach((owner, i) => {
+        if (owner >= 0) {
+          const original = new Uint32Array(counts[i]);
+          for (let k = 0; k < counts[i]; k++) original[k] = index.getX(start + k);
+          this.removables.register(owner, { index, start, original });
+        }
+        start += counts[i];
+      });
       merged.computeBoundingSphere();
       const mesh = new THREE.Mesh(merged, clay(0xffffff, { ...PROFILES[bucket.profile], vertexColors: true }));
       mesh.castShadow = bucket.castShadow;
@@ -118,9 +190,29 @@ export class StaticBatch {
 }
 
 /**
- * Normaliza a geometria para poder ser fundida com qualquer outra do lote:
- * indexada, só com position/normal/uv/color/sway, já em espaço de mundo.
+ * Funde todas as peças (`part`) de `root` numa geometria só, no espaço LOCAL de
+ * `root` e com as cores já assadas nos vértices. É o mesmo objeto que foi para o
+ * lote, agora solto (ex.: a flor que a bola arrancou e que vai grudar nela).
  */
+export function bakeObject(root: THREE.Object3D): THREE.BufferGeometry {
+  root.updateMatrixWorld(true);
+  const toLocal = root.matrixWorld.clone().invert();
+  const matrix = new THREE.Matrix4();
+  const parts: THREE.BufferGeometry[] = [];
+  root.traverse((object) => {
+    const mesh = object as THREE.Mesh;
+    const data = mesh.userData?.part as PartData | undefined;
+    if (!mesh.isMesh || !data) return;
+    parts.push(normalizePart(mesh.geometry, matrix.multiplyMatrices(toLocal, mesh.matrixWorld), data));
+  });
+  const merged = mergeGeometries(parts, false)!;
+  parts.forEach((g) => g.dispose());
+  merged.computeBoundingSphere();
+  merged.computeBoundingBox();
+  return merged;
+}
+
+/** Normaliza para o lote e acrescenta o peso do vento por vértice (`sway`). */
 function prepareGeometry(
   source: THREE.BufferGeometry,
   matrix: THREE.Matrix4,
@@ -129,6 +221,26 @@ function prepareGeometry(
   baseY: number,
   height: number,
 ): THREE.BufferGeometry {
+  const geometry = normalizePart(source, matrix, data);
+  const count = geometry.getAttribute('position').count;
+  const swayWeights = new Float32Array(count);
+  if (sway > 0) {
+    const pos = geometry.getAttribute('position') as THREE.BufferAttribute;
+    for (let i = 0; i < count; i++) {
+      const h = THREE.MathUtils.clamp((pos.getY(i) - baseY) / height, 0, 1);
+      swayWeights[i] = h * h * sway;
+    }
+  }
+  geometry.setAttribute('sway', new THREE.BufferAttribute(swayWeights, 1));
+  return geometry;
+}
+
+/**
+ * Normaliza a geometria para poder ser fundida com qualquer outra:
+ * indexada, só com position/normal/uv/color, transformada por `matrix`
+ * e com a cor da peça assada nos vértices.
+ */
+function normalizePart(source: THREE.BufferGeometry, matrix: THREE.Matrix4, data: PartData): THREE.BufferGeometry {
   const geometry = source.clone();
   for (const name of Object.keys(geometry.attributes)) {
     if (name !== 'position' && name !== 'normal' && name !== 'uv' && name !== 'color') geometry.deleteAttribute(name);
@@ -176,16 +288,5 @@ function prepareGeometry(
     colors[i * 3 + 2] = b * eb;
   }
   geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-
-  // Peso do vento por vértice.
-  const swayWeights = new Float32Array(count);
-  if (sway > 0) {
-    const pos = geometry.getAttribute('position') as THREE.BufferAttribute;
-    for (let i = 0; i < count; i++) {
-      const h = THREE.MathUtils.clamp((pos.getY(i) - baseY) / height, 0, 1);
-      swayWeights[i] = h * h * sway;
-    }
-  }
-  geometry.setAttribute('sway', new THREE.BufferAttribute(swayWeights, 1));
   return geometry;
 }

@@ -21,10 +21,16 @@ export interface QualityProfile {
   decorDensity: number;
   /** Resolução da malha visual do terreno (segmentos por lado). */
   terrainSegments: number;
-  /** Bichinhos de ambiente (borboletas, abelhas, joaninhas...). */
+  /** Orçamento de bichinhos de ambiente (borboletas, abelhas, formigas...): cada espécie escala a partir dele. */
   critters: number;
   /** Partículas de pólen flutuando em volta da câmera. */
   motes: number;
+  /** Riscos de chuva em volta da câmera (no pico da tempestade). */
+  rainDrops: number;
+  /** Respingos (anéis) que a chuva abre no chão e nas poças, por segundo, no pico. */
+  rainSplashes: number;
+  /** Teto de coisas grudadas visíveis na bola (cada uma é um draw call). */
+  stuckItems: number;
 }
 
 export const quality: QualityProfile = isTouchDevice
@@ -38,8 +44,11 @@ export const quality: QualityProfile = isTouchDevice
       grassCount: 5200,
       decorDensity: 0.45,
       terrainSegments: 160,
-      critters: 8,
+      critters: 14,
       motes: 180,
+      rainDrops: 650,
+      rainSplashes: 40,
+      stuckItems: 45,
     }
   : {
       maxPixelRatio: 1.5,
@@ -51,6 +60,9 @@ export const quality: QualityProfile = isTouchDevice
       grassCount: 17000,
       decorDensity: 1,
       terrainSegments: 256,
-      critters: 18,
+      critters: 32,
       motes: 520,
+      rainDrops: 1800,
+      rainSplashes: 110,
+      stuckItems: 90,
     };

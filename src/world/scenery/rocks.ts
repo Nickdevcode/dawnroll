@@ -5,7 +5,7 @@ import { part } from '../../render/StaticBatch';
 import { noise3 } from '../../utils/noise';
 import { smoothstep } from '../../utils/math';
 import { terrainHeight } from '../Terrain';
-import type { SceneryContext } from './context';
+import { sphereVolume, type SceneryContext } from './context';
 
 const RockColors = ['#b9b1c9', '#aaa39b', '#cabfae', '#9fa6b8', '#c4b7a6'];
 const MossColors = ['#7fae4f', '#6d9d47', '#8dbb5a'];
@@ -47,19 +47,35 @@ export function buildRock(ctx: SceneryContext, x: number, z: number, size: numbe
   });
 
   const mesh = part(geometry, 0xffffff, 'stone', 1 + size * 0.35);
-  const y = terrainHeight(x, z) - size * 0.15;
+  const ground = terrainHeight(x, z);
+  const y = ground - size * 0.15;
   mesh.position.set(x, y, z);
   mesh.rotation.y = rng.next() * Math.PI * 2;
-  ctx.batch.addObject(mesh);
 
   // Casco convexo a partir dos próprios vértices; a rotação vai no corpo rígido.
   mesh.updateMatrix();
   const points = new Float32Array(geometry.getAttribute('position').array as ArrayLike<number>);
   const desc = RAPIER.ColliderDesc.convexHull(points);
-  if (desc) ctx.addCollider(desc, mesh.position, mesh.quaternion);
+  const colliders = desc ? [ctx.addCollider(desc, mesh.position, mesh.quaternion)] : [];
 
   ctx.addSolid(x, z, Math.min(sx, sz) * 0.85);
   ctx.addShade(x, z, Math.max(sx, sz) * 1.1, 0.75);
+
+  // Pedra é pesada: precisa de bola maior que ela, mas engorda bastante.
+  const pickSize = Math.max(sx, sz) * 0.8;
+  ctx.addPickable({
+    kind: 'rock',
+    root: mesh,
+    size: pickSize,
+    probeA: new THREE.Vector3(x, ground, z),
+    probeB: new THREE.Vector3(x, y + sy * 0.45, z),
+    probeRadius: Math.min(sx, sz) * 0.88,
+    colliders,
+    landingSpots: [],
+    tint: base,
+    volume: sphereVolume(Math.cbrt(sx * sy * sz) * 0.6),
+    extent: Math.max(sx, sy, sz) * 2,
+  });
 
   const pebbles = Math.round(rng.range(3, 8) * ctx.decor);
   for (let i = 0; i < pebbles; i++) {

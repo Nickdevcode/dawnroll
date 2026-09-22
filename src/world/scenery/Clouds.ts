@@ -10,19 +10,22 @@ const BELLY = new THREE.Color('#d9d6ef');
  * Nuvens de algodão passeando devagar: pompons fundidos, base achatada,
  * barriga levemente lilás (luz do céu por baixo) e topo branco.
  */
+const STORM_TINT = new THREE.Color('#8f94a3');
+
 export class Clouds {
   readonly group = new THREE.Group();
   private readonly clouds: THREE.Mesh[] = [];
+  private readonly material: THREE.MeshStandardMaterial;
 
   constructor(rng: Rng, count = 16) {
     this.group.name = 'clouds';
-    const material = new THREE.MeshStandardMaterial({
+    const material = (this.material = new THREE.MeshStandardMaterial({
       vertexColors: true,
       roughness: 1,
       emissive: '#fff4ea',
       emissiveIntensity: 0.28,
       fog: false,
-    });
+    }));
     for (let i = 0; i < count; i++) {
       const parts: THREE.BufferGeometry[] = [];
       const puffs = 5 + Math.floor(rng.next() * 6);
@@ -62,5 +65,11 @@ export class Clouds {
       cloud.position.x += dt * cloud.userData.speed;
       if (cloud.position.x > 170) cloud.position.x = -170;
     }
+  }
+
+  /** Tempo fechando: algodão vira nuvem de chuva (cinza e sem o brilho de sol). */
+  setOvercast(amount: number): void {
+    this.material.color.setRGB(1, 1, 1).lerp(STORM_TINT, amount);
+    this.material.emissiveIntensity = 0.28 * (1 - amount * 0.85);
   }
 }

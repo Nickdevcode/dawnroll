@@ -21,6 +21,24 @@ export const Palette = {
   groundBounce: new THREE.Color('#8fae62'),
 } as const;
 
+/** O mesmo jardim num dia de chuva: céu chumbo, neblina fria, luz sem direção. */
+export const StormPalette = {
+  skyZenith: new THREE.Color('#6d7788'),
+  skyTop: new THREE.Color('#87919f'),
+  skyHorizon: new THREE.Color('#c3c3bd'),
+  fog: new THREE.Color('#b3b7b8'),
+  sun: new THREE.Color('#dde4ea'),
+  hemiSky: new THREE.Color('#c6ced8'),
+  hemiGround: new THREE.Color('#8c8672'),
+} as const;
+
+interface SkyColors {
+  skyZenith: THREE.Color;
+  skyTop: THREE.Color;
+  skyHorizon: THREE.Color;
+  fog: THREE.Color;
+}
+
 /** Direção de onde vem o sol (normalizada). Usada pela luz, pelo céu e pela grama. */
 export const SUN_DIRECTION = new THREE.Vector3(0.55, 0.78, 0.3).normalize();
 
@@ -142,6 +160,7 @@ const FinishShader = {
   uniforms: {
     tDiffuse: { value: null as THREE.Texture | null },
     uTime: { value: 0 },
+    uOvercast: { value: 0 },
   },
   vertexShader: /* glsl */ `
     varying vec2 vUv;
@@ -150,6 +169,7 @@ const FinishShader = {
   fragmentShader: /* glsl */ `
     uniform sampler2D tDiffuse;
     uniform float uTime;
+    uniform float uOvercast;
     varying vec2 vUv;
     float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233)) + uTime) * 43758.5453); }
     void main() {
@@ -157,8 +177,9 @@ const FinishShader = {
       vec3 c = color.rgb;
       float luma = dot(c, vec3(0.299, 0.587, 0.114));
       c += vec3(0.04, 0.018, 0.055) * pow(1.0 - luma, 2.0);
-      c = mix(vec3(luma), c, 1.08);
-      c *= vec3(1.015, 1.0, 0.975);
+      // Dia de chuva: um pouco menos de cor e um tom mais frio (sem virar cinza morto).
+      c = mix(vec3(luma), c, 1.08 - uOvercast * 0.2);
+      c *= mix(vec3(1.015, 1.0, 0.975), vec3(0.975, 0.995, 1.025), uOvercast);
       vec2 d = vUv - 0.5;
       float vignette = smoothstep(0.9, 0.28, length(d * vec2(1.1, 1.0)));
       c *= mix(0.8, 1.0, vignette);
@@ -168,12 +189,60 @@ const FinishShader = {
   `,
 };
 
+/**
+ * Cúpula do céu: mistura o céu de sol com o de chuva pelo `uOvercast` e acende
+ * no relâmpago. Fica colada na câmera e é desenhada no plano do fundo (z = w),
+ * então nunca tampa nada — faz o papel do `scene.background`, mas com clima.
+ */
+function createSkyDome(sunny: THREE.Texture, storm: THREE.Texture): THREE.Mesh {
+  const material = new THREE.ShaderMaterial({
+    uniforms: {
+      tSunny: { value: sunny },
+      tStorm: { value: storm },
+      uOvercast: { value: 0 },
+      uFlash: { value: 0 },
+    },
+    vertexShader: /* glsl */ `
+      varying vec3 vDirection;
+      void main() {
+        vDirection = position;
+        vec4 clip = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        // Colado no plano do fundo (um fio antes dele: z == w exato é recortado em algumas GPUs).
+        gl_Position = vec4(clip.xy, clip.w * 0.99999, clip.w);
+      }`,
+    fragmentShader: /* glsl */ `
+      #include <common>
+      uniform sampler2D tSunny;
+      uniform sampler2D tStorm;
+      uniform float uOvercast;
+      uniform float uFlash;
+      varying vec3 vDirection;
+      void main() {
+        vec2 uv = equirectUv(normalize(vDirection));
+        vec3 color = mix(texture2D(tSunny, uv).rgb, texture2D(tStorm, uv).rgb, uOvercast);
+        color += vec3(0.75, 0.8, 0.95) * uFlash * (0.4 + 0.6 * smoothstep(-0.1, 0.6, normalize(vDirection).y));
+        gl_FragColor = vec4(color, 1.0);
+      }`,
+    depthWrite: false,
+    side: THREE.BackSide,
+  });
+  const mesh = new THREE.Mesh(new THREE.SphereGeometry(10, 48, 24), material);
+  mesh.frustumCulled = false;
+  mesh.renderOrder = -1000;
+  mesh.userData.skipAO = true;
+  mesh.name = 'sky-dome';
+  return mesh;
+}
+
 export class Graphics {
   readonly renderer: THREE.WebGLRenderer;
   readonly scene = new THREE.Scene();
   readonly camera: THREE.PerspectiveCamera;
   readonly sun: THREE.DirectionalLight;
 
+  private readonly hemi: THREE.HemisphereLight;
+  private readonly skyDome: THREE.Mesh;
+  private readonly fog: THREE.Fog;
   private readonly composer: EffectComposer;
   private readonly aoPass: GTAOPass;
   private readonly aoHide: AOVisibilityPass;
@@ -202,20 +271,22 @@ export class Graphics {
 
     this.camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 400);
 
-    this.scene.fog = new THREE.Fog(Palette.fog, 42, 175);
-    this.scene.background = this.createSkyTexture(2048, 1024, true);
+    this.fog = new THREE.Fog(Palette.fog, 42, 175);
+    this.scene.fog = this.fog;
+    this.skyDome = createSkyDome(this.createSkyTexture(2048, 1024, true, Palette), this.createSkyTexture(1024, 512, true, StormPalette));
+    this.scene.add(this.skyDome);
 
     // Reflexo ambiente do próprio céu (azul em cima, grama embaixo): dá vida ao
     // furta-cor do casco, ao verniz das frutinhas e ao brilho úmido da bosta.
     const pmrem = new THREE.PMREMGenerator(this.renderer);
-    const envSource = this.createSkyTexture(512, 256, false);
+    const envSource = this.createSkyTexture(512, 256, false, Palette);
     this.scene.environment = pmrem.fromEquirectangular(envSource).texture;
     this.scene.environmentIntensity = 0.5;
     envSource.dispose();
     pmrem.dispose();
 
-    const hemi = new THREE.HemisphereLight(Palette.hemiSky, Palette.hemiGround, 1.3);
-    this.scene.add(hemi);
+    this.hemi = new THREE.HemisphereLight(Palette.hemiSky, Palette.hemiGround, 1.3);
+    this.scene.add(this.hemi);
 
     this.sun = new THREE.DirectionalLight(Palette.sun, 2.5);
     this.sun.castShadow = true;
@@ -303,8 +374,33 @@ export class Graphics {
     this.onResize();
   }
 
+  /**
+   * Clima na luz: céu, sol (e a sombra dele), luz ambiente, neblina, reflexo e
+   * acabamento acompanham `overcast`; `flash` é o relâmpago (0..1).
+   */
+  setWeather(overcast: number, flash: number): void {
+    const k = THREE.MathUtils.clamp(overcast, 0, 1);
+    const sky = this.skyDome.material as THREE.ShaderMaterial;
+    sky.uniforms.uOvercast.value = k;
+    sky.uniforms.uFlash.value = flash;
+    this.sun.intensity = THREE.MathUtils.lerp(2.5, 0.6, k);
+    this.sun.color.copy(Palette.sun).lerp(StormPalette.sun, k);
+    // Céu fechado = luz difusa: a sombra do sol quase some.
+    this.sun.shadow.intensity = 1 - k * 0.75;
+    this.hemi.intensity = THREE.MathUtils.lerp(1.3, 1.15, k) + flash * 1.6;
+    this.hemi.color.copy(Palette.hemiSky).lerp(StormPalette.hemiSky, k);
+    this.hemi.groundColor.copy(Palette.hemiGround).lerp(StormPalette.hemiGround, k);
+    this.fog.color.copy(Palette.fog).lerp(StormPalette.fog, k);
+    this.fog.near = THREE.MathUtils.lerp(42, 26, k);
+    this.fog.far = THREE.MathUtils.lerp(175, 118, k);
+    this.scene.environmentIntensity = THREE.MathUtils.lerp(0.5, 0.36, k);
+    this.renderer.toneMappingExposure = 1.02 - k * 0.05 + flash * 0.35;
+    this.finishPass.uniforms.uOvercast.value = k;
+  }
+
   render(time: number): void {
     this.finishPass.uniforms.uTime.value = time % 100;
+    this.skyDome.position.copy(this.camera.position);
     const u = this.dofPass.uniforms;
     u.cameraNear.value = this.camera.near;
     u.cameraFar.value = this.camera.far;
@@ -328,64 +424,80 @@ export class Graphics {
    * Com `forBackground = false`, a metade de baixo vira "chão" (verde) para o reflexo
    * ambiente: o que está embaixo dos objetos reflete grama, não céu.
    */
-  private createSkyTexture(width: number, height: number, forBackground: boolean): THREE.Texture {
+  private createSkyTexture(width: number, height: number, forBackground: boolean, colors: SkyColors): THREE.Texture {
     const canvas = document.createElement('canvas');
     canvas.width = width;
     canvas.height = height;
     const ctx = canvas.getContext('2d')!;
     const hex = (c: THREE.Color) => `#${c.getHexString()}`;
+    const stormy = colors !== Palette;
 
     const gradient = ctx.createLinearGradient(0, 0, 0, height);
-    gradient.addColorStop(0, hex(Palette.skyZenith));
-    gradient.addColorStop(0.28, hex(Palette.skyTop));
-    gradient.addColorStop(0.44, hex(Palette.skyTop.clone().lerp(Palette.skyHorizon, 0.6)));
-    gradient.addColorStop(0.5, hex(Palette.skyHorizon));
+    gradient.addColorStop(0, hex(colors.skyZenith));
+    gradient.addColorStop(0.28, hex(colors.skyTop));
+    gradient.addColorStop(0.44, hex(colors.skyTop.clone().lerp(colors.skyHorizon, 0.6)));
+    gradient.addColorStop(0.5, hex(colors.skyHorizon));
     if (forBackground) {
-      gradient.addColorStop(1, hex(Palette.fog));
+      gradient.addColorStop(1, hex(colors.fog));
     } else {
-      gradient.addColorStop(0.53, hex(Palette.groundBounce.clone().lerp(Palette.skyHorizon, 0.4)));
+      gradient.addColorStop(0.53, hex(Palette.groundBounce.clone().lerp(colors.skyHorizon, 0.4)));
       gradient.addColorStop(1, hex(Palette.groundBounce.clone().multiplyScalar(0.7)));
     }
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, width, height);
 
-    // Posição do sol no mapa equiretangular (mesma convenção do three).
-    const azimuth = Math.atan2(SUN_DIRECTION.x, SUN_DIRECTION.z);
-    const elevation = Math.asin(SUN_DIRECTION.y);
-    const sx = (0.5 + azimuth / (Math.PI * 2)) * width;
-    const sy = (0.5 - elevation / Math.PI) * height;
+    // Posição do sol na convenção do `equirectUv` do three (a mesma que a cúpula usa).
+    const u = Math.atan2(SUN_DIRECTION.z, SUN_DIRECTION.x) / (Math.PI * 2) + 0.5;
+    const v = Math.asin(SUN_DIRECTION.y) / Math.PI + 0.5;
+    const sx = u * width;
+    const sy = (1 - v) * height;
 
-    if (forBackground) this.paintCloudBands(ctx, width, height);
+    if (forBackground) this.paintCloudBands(ctx, width, height, stormy);
 
-    const glowRadius = width * 0.11;
+    // Com chuva o sol não aparece: só uma claridade difusa onde ele estaria.
+    const glowRadius = width * (stormy ? 0.18 : 0.11);
     const glow = ctx.createRadialGradient(sx, sy, 0, sx, sy, glowRadius);
-    glow.addColorStop(0, 'rgba(255, 252, 240, 1)');
-    glow.addColorStop(0.05, 'rgba(255, 245, 220, 0.85)');
-    glow.addColorStop(0.2, 'rgba(255, 236, 200, 0.35)');
-    glow.addColorStop(1, 'rgba(255, 225, 190, 0)');
+    if (stormy) {
+      glow.addColorStop(0, 'rgba(235, 238, 240, 0.35)');
+      glow.addColorStop(1, 'rgba(235, 238, 240, 0)');
+    } else {
+      glow.addColorStop(0, 'rgba(255, 252, 240, 1)');
+      glow.addColorStop(0.05, 'rgba(255, 245, 220, 0.85)');
+      glow.addColorStop(0.2, 'rgba(255, 236, 200, 0.35)');
+      glow.addColorStop(1, 'rgba(255, 225, 190, 0)');
+    }
     ctx.fillStyle = glow;
     ctx.fillRect(0, 0, width, height);
 
     const texture = new THREE.CanvasTexture(canvas);
     texture.mapping = THREE.EquirectangularReflectionMapping;
     texture.colorSpace = THREE.SRGBColorSpace;
+    if (forBackground) {
+      // A cúpula amostra por direção: sem mipmap, a costura do atan (u = 0/1) não vira uma linha.
+      texture.generateMipmaps = false;
+      texture.minFilter = THREE.LinearFilter;
+    }
     return texture;
   }
 
-  /** Nuvens "de pincel" no céu de fundo: elipses macias empilhadas perto do horizonte. */
-  private paintCloudBands(ctx: CanvasRenderingContext2D, width: number, height: number): void {
-    const rng = createRng(4242);
+  /**
+   * Nuvens "de pincel" no céu de fundo: elipses macias empilhadas perto do horizonte.
+   * No céu de chuva são muitas, mais altas e cinzentas (o céu inteiro fecha).
+   */
+  private paintCloudBands(ctx: CanvasRenderingContext2D, width: number, height: number, stormy: boolean): void {
+    const rng = createRng(stormy ? 9191 : 4242);
     const horizon = height * 0.5;
-    const blob = (x: number, y: number, rx: number, ry: number, alpha: number) => {
+    const blob = (x: number, y: number, rx: number, ry: number, alpha: number, shade: number) => {
+      const c = Math.round(255 * shade);
       // Desenha também deslocado de uma volta inteira: a costura em u = 0/1 some.
       for (const offset of [-width, 0, width]) {
         ctx.save();
         ctx.translate(x + offset, y);
         ctx.scale(rx, ry);
         const g = ctx.createRadialGradient(0, 0, 0, 0, 0, 1);
-        g.addColorStop(0, `rgba(255, 255, 255, ${alpha})`);
-        g.addColorStop(0.55, `rgba(255, 253, 248, ${alpha * 0.55})`);
-        g.addColorStop(1, 'rgba(255, 250, 245, 0)');
+        g.addColorStop(0, `rgba(${c}, ${c}, ${Math.min(255, c + 4)}, ${alpha})`);
+        g.addColorStop(0.55, `rgba(${c}, ${c}, ${Math.min(255, c + 6)}, ${alpha * 0.55})`);
+        g.addColorStop(1, `rgba(${c}, ${c}, ${c}, 0)`);
         ctx.fillStyle = g;
         ctx.beginPath();
         ctx.arc(0, 0, 1, 0, Math.PI * 2);
@@ -393,13 +505,22 @@ export class Graphics {
         ctx.restore();
       }
     };
-    for (let i = 0; i < 26; i++) {
+    const count = stormy ? 70 : 26;
+    for (let i = 0; i < count; i++) {
       const cx = rng.next() * width;
-      const cy = horizon - height * rng.range(0.03, 0.2);
-      const span = width * rng.range(0.04, 0.1);
+      const cy = horizon - height * (stormy ? rng.range(0.02, 0.42) : rng.range(0.03, 0.2));
+      const span = width * rng.range(0.04, stormy ? 0.14 : 0.1);
       const puffs = 4 + Math.floor(rng.next() * 5);
       for (let j = 0; j < puffs; j++) {
-        blob(cx + rng.range(-1, 1) * span, cy + rng.range(-1, 0.4) * height * 0.015, span * rng.range(0.35, 0.7), height * rng.range(0.012, 0.03), rng.range(0.25, 0.5));
+        const shade = stormy ? rng.range(0.52, 0.72) : 1;
+        blob(
+          cx + rng.range(-1, 1) * span,
+          cy + rng.range(-1, 0.4) * height * 0.015,
+          span * rng.range(0.35, 0.7),
+          height * rng.range(0.012, stormy ? 0.05 : 0.03),
+          stormy ? rng.range(0.3, 0.6) : rng.range(0.25, 0.5),
+          shade,
+        );
       }
     }
   }

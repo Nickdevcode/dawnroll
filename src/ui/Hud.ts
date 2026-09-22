@@ -1,5 +1,6 @@
 import type { Input } from '../core/Input';
 import { isTouchDevice } from '../core/device';
+import type { SaveData } from '../core/save';
 
 /** Ícones SVG inline (sem emoji na interface, sem dependência de biblioteca). */
 const Icons = {
@@ -11,6 +12,9 @@ const Icons = {
   jump: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V6"/><path d="M6 11l6-6 6 6"/></svg>`,
   recall: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/><circle cx="12" cy="12" r="3"/></svg>`,
   run: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h10"/><path d="M11 6l6 6-6 6"/><path d="M19 6v12"/></svg>`,
+  trophy: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 4h8v5a4 4 0 0 1-8 0z"/><path d="M8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4"/><path d="M12 13v4M8.5 20h7M10 17h4"/></svg>`,
+  /** Seta do marcador da toca (aponta para cima; o HUD gira). */
+  pointer: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l7 11h-4.5v7h-5v-7H5z" fill="currentColor"/></svg>`,
 };
 
 /** Marcos de tamanho (cm) que disparam um aviso comemorativo. */
@@ -19,12 +23,35 @@ const MILESTONES: Array<[number, string]> = [
   [5, 'Olha o tamanho disso'],
   [8, 'Bola de campeonato'],
   [12, 'Lenda do esterco'],
-  [16, 'O Rei da Bosta'],
+  [16, 'Terror do jardim'],
+  [20, 'Planeta Bosta'],
+  [24, 'O Rei da Bosta'],
 ];
 
 const formatCm = (cm: number): string => `${cm.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} cm`;
+const plural = (n: number, one: string, many: string): string => `${n.toLocaleString('pt-BR')} ${n === 1 ? one : many}`;
 
-export type HintKind = 'none' | 'grab' | 'pushing' | 'tooSmall';
+export type HintKind = 'none' | 'grab' | 'pushing' | 'tooSmall' | 'burrowTooSmall' | 'dissolving';
+
+/** Onde desenhar o marcador da toca (coordenadas normalizadas da câmera). */
+export interface BurrowMarkerState {
+  /** -1..1 (esquerda → direita). */
+  ndcX: number;
+  /** -1..1 (baixo → cima). */
+  ndcY: number;
+  /** Ponto atrás da câmera (a direção na tela fica invertida). */
+  behind: boolean;
+  distanceCm: number;
+  /** A bola já tem tamanho para ser enterrada. */
+  ready: boolean;
+}
+
+export interface RoundResult {
+  diameterCm: number;
+  dungCount: number;
+  itemCount: number;
+  record: boolean;
+}
 
 /**
  * Interface do jogo: tela inicial, HUD, avisos e controles de toque.
@@ -45,13 +72,21 @@ export class Hud {
   private readonly startButton: HTMLButtonElement;
   private readonly startLabel: HTMLElement;
   private readonly liveRegion: HTMLElement;
+  private readonly recordChip: HTMLElement;
+  private readonly startRecord: HTMLElement;
+  private readonly marker: HTMLElement;
+  private readonly markerArrow: HTMLElement;
+  private readonly markerLabel: HTMLElement;
+  private readonly result: HTMLElement;
 
   private milestoneIndex = 0;
   private toastTimer = 0;
   private bumpTimer = 0;
-  private currentHint: HintKind = 'none';
+  private resultTimer = 0;
+  private currentHint = '';
   private lastCm = -1;
-  private lastCount = -1;
+  private lastMeta = '';
+  private lastMarkerLabel = '';
 
   readonly isTouch = isTouchDevice;
 
@@ -79,6 +114,12 @@ export class Hud {
     this.startButton = $('[data-play]');
     this.startLabel = $('[data-play-label]');
     this.liveRegion = $('[data-live]');
+    this.recordChip = $('[data-record]');
+    this.startRecord = $('[data-start-record]');
+    this.marker = $('[data-burrow]');
+    this.markerArrow = $('[data-burrow-arrow]');
+    this.markerLabel = $('[data-burrow-label]');
+    this.result = $('[data-result]');
 
     this.startButton.addEventListener('click', () => this.onStart?.());
     this.soundButton.addEventListener('click', (e) => {
@@ -122,7 +163,7 @@ export class Hud {
     return !this.startOverlay.hidden;
   }
 
-  setBall(diameterCm: number, dungCount: number): void {
+  setBall(diameterCm: number, dungCount: number, itemCount: number): void {
     const cm = Math.round(diameterCm * 10) / 10;
     if (cm !== this.lastCm) {
       this.ballValue.textContent = formatCm(cm);
@@ -138,29 +179,126 @@ export class Hud {
         this.milestoneIndex++;
       }
     }
-    if (dungCount !== this.lastCount) {
-      this.ballMeta.textContent = dungCount === 1 ? '1 montinho' : `${dungCount} montinhos`;
-      this.lastCount = dungCount;
+    const meta = itemCount > 0 ? `${plural(dungCount, 'montinho', 'montinhos')} · ${plural(itemCount, 'coisa', 'coisas')}` : plural(dungCount, 'montinho', 'montinhos');
+    if (meta !== this.lastMeta) {
+      this.ballMeta.textContent = meta;
+      this.lastMeta = meta;
     }
   }
 
-  setHint(kind: HintKind): void {
-    if (kind === this.currentHint) return;
-    this.currentHint = kind;
-    const messages: Record<HintKind, string> = {
-      none: '',
-      grab: this.isTouch
-        ? 'Toque na mão para agarrar a bola'
-        : 'Segure <span class="keycap">E</span> ou o botão esquerdo para agarrar a bola',
-      pushing: this.isTouch ? 'Empurre com o analógico · toque na mão para soltar' : 'Mire com o mouse e ande para rolar · solte para largar',
-      tooSmall: '',
-    };
-    const html = messages[kind];
-    if (html) {
-      this.hint.innerHTML = `<span class="chip">${html}</span>`;
+  /** Rodada nova: marcos e contadores voltam do zero (sem comemorar a bola pequena de novo). */
+  resetRound(): void {
+    this.milestoneIndex = 0;
+    this.lastCm = -1;
+    this.lastMeta = '';
+  }
+
+  /** Recorde e bolas enterradas (chip do HUD + linha da tela inicial). */
+  setProgress(save: SaveData): void {
+    const has = save.buried > 0;
+    this.recordChip.hidden = !has;
+    this.startRecord.hidden = !has;
+    if (!has) return;
+    const best = formatCm(save.bestCm);
+    const count = plural(save.buried, 'enterrada', 'enterradas');
+    this.recordChip.innerHTML = `${Icons.trophy}<span>Recorde <strong>${best}</strong></span><span class="record-chip__sep" aria-hidden="true">·</span><span>${count}</span>`;
+    this.startRecord.innerHTML = `${Icons.trophy}<span>Seu recorde: <strong>${best}</strong> · ${plural(save.buried, 'bola enterrada', 'bolas enterradas')}</span>`;
+  }
+
+  /** Cartão de comemoração ao enterrar uma bola. */
+  showResult(result: RoundResult): void {
+    const $ = (sel: string) => this.result.querySelector(sel) as HTMLElement;
+    $('[data-result-value]').textContent = formatCm(Math.round(result.diameterCm * 10) / 10);
+    const parts = [plural(result.dungCount, 'montinho', 'montinhos')];
+    if (result.itemCount > 0) parts.push(plural(result.itemCount, 'coisa grudada', 'coisas grudadas'));
+    $('[data-result-meta]').textContent = parts.join(' · ');
+    $('[data-result-badge]').hidden = !result.record;
+    this.result.classList.add('is-visible');
+    this.resultTimer = 4.6;
+    this.hint.classList.remove('is-visible');
+    this.liveRegion.textContent = `Bola enterrada: ${formatCm(result.diameterCm)}${result.record ? '. Novo recorde!' : ''}`;
+  }
+
+  setHint(kind: HintKind, value = 0): void {
+    const key = `${kind}|${value.toFixed(1)}`;
+    if (key === this.currentHint) return;
+    this.currentHint = key;
+    let html = '';
+    switch (kind) {
+      case 'grab':
+        html = this.isTouch ? 'Toque na mão para agarrar a bola' : 'Segure <span class="keycap">E</span> ou o botão esquerdo para agarrar a bola';
+        break;
+      case 'pushing':
+        html = this.isTouch ? 'Empurre com o analógico · toque na mão para soltar' : 'Mire com o mouse e ande para rolar · solte para largar';
+        break;
+      case 'tooSmall':
+        html = `Grande demais pra sua bola · cresça até <strong>${formatCm(value)}</strong>`;
+        break;
+      case 'burrowTooSmall':
+        html = `Bola pequena pra enterrar · cresça até <strong>${formatCm(value)}</strong>`;
+        break;
+      case 'dissolving':
+        html = 'A água tá derretendo sua bola! Saia da poça';
+        break;
+      case 'none':
+        break;
+    }
+    // Com o cartão de resultado na tela, dica nenhuma disputa o espaço com ele.
+    if (html && this.resultTimer <= 0) {
+      this.hint.innerHTML = `<span class="chip${kind === 'dissolving' ? ' chip--warn' : ''}">${html}</span>`;
       this.hint.classList.add('is-visible');
     } else {
       this.hint.classList.remove('is-visible');
+    }
+  }
+
+  /**
+   * Marcador da toca: pino em cima dela quando está na tela; seta presa na borda
+   * apontando para ela quando está fora. `null` esconde.
+   */
+  setBurrowMarker(state: BurrowMarkerState | null): void {
+    if (!state) {
+      this.marker.classList.remove('is-visible');
+      return;
+    }
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    // Área útil: fora do topo (cartão da bola) e, no toque, fora dos polegares.
+    const top = this.isTouch ? 150 : 120;
+    const bottom = this.isTouch ? 190 : 70;
+    const side = this.isTouch ? 70 : 56;
+
+    let x = (state.ndcX * 0.5 + 0.5) * w;
+    let y = (-state.ndcY * 0.5 + 0.5) * h;
+    const onScreen = !state.behind && x > side && x < w - side && y > top && y < h - bottom;
+    let angle = 180; // pino apontando para baixo (para a toca)
+    if (!onScreen) {
+      // Direção a partir do centro; atrás da câmera, a projeção vem espelhada.
+      const cx = w / 2;
+      const cy = (top + h - bottom) / 2;
+      let dx = x - cx;
+      let dy = y - cy;
+      if (state.behind) {
+        dx = -dx;
+        dy = -dy;
+      }
+      if (Math.abs(dx) < 1e-3 && Math.abs(dy) < 1e-3) dy = 1;
+      const hx = w / 2 - side;
+      const hy = (h - bottom - top) / 2;
+      const k = Math.min(hx / Math.abs(dx || 1e-3), hy / Math.abs(dy || 1e-3));
+      x = cx + dx * k;
+      y = cy + dy * k;
+      angle = (Math.atan2(dy, dx) * 180) / Math.PI + 90;
+    }
+    this.marker.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`;
+    this.markerArrow.style.transform = `rotate(${angle.toFixed(1)}deg)`;
+    this.marker.classList.add('is-visible');
+    this.marker.classList.toggle('is-ready', state.ready);
+    this.marker.classList.toggle('is-edge', !onScreen);
+    const label = `${state.ready ? 'Enterre aqui' : 'Toca'} · ${Math.round(state.distanceCm)} cm`;
+    if (label !== this.lastMarkerLabel) {
+      this.markerLabel.textContent = label;
+      this.lastMarkerLabel = label;
     }
   }
 
@@ -172,6 +310,14 @@ export class Hud {
     if (this.bumpTimer > 0) {
       this.bumpTimer -= dt;
       if (this.bumpTimer <= 0) this.ballCard.classList.remove('is-bump');
+    }
+    if (this.resultTimer > 0) {
+      this.resultTimer -= dt;
+      if (this.resultTimer <= 0) {
+        this.result.classList.remove('is-visible');
+        // Força a dica atual a reaparecer no próximo `setHint`.
+        this.currentHint = '';
+      }
     }
   }
 
@@ -294,15 +440,23 @@ export class Hud {
       </div>
 
       <div class="hud" data-hud>
+        <div class="burrow-marker" data-burrow aria-hidden="true">
+          <div class="burrow-marker__arrow" data-burrow-arrow>${Icons.pointer}</div>
+          <div class="burrow-marker__label" data-burrow-label>Toca</div>
+        </div>
+
         <div class="hud__top">
-          <div class="ball-card" data-ball-card>
-            <div class="ball-card__icon">${Icons.ball}</div>
-            <div style="flex:1">
-              <div class="ball-card__label">Sua bola</div>
-              <div class="ball-card__value" data-ball-value>1,3 cm</div>
-              <div class="ball-card__meta" data-ball-meta>0 montinhos</div>
-              <div class="progress" aria-hidden="true"><div class="progress__fill" data-progress></div></div>
+          <div class="hud__stack">
+            <div class="ball-card" data-ball-card>
+              <div class="ball-card__icon">${Icons.ball}</div>
+              <div style="flex:1">
+                <div class="ball-card__label">Sua bola</div>
+                <div class="ball-card__value" data-ball-value>2,0 cm</div>
+                <div class="ball-card__meta" data-ball-meta>0 montinhos</div>
+                <div class="progress" aria-hidden="true"><div class="progress__fill" data-progress></div></div>
+              </div>
             </div>
+            <div class="record-chip" data-record hidden></div>
           </div>
           <div class="hud__actions">
             <button class="btn btn--icon touch-only" data-recall type="button" aria-label="Trazer a bola de volta">${Icons.recall}</button>
@@ -313,6 +467,12 @@ export class Hud {
 
         <div class="hint" data-hint aria-hidden="true"></div>
         <div class="toast" data-toast aria-hidden="true"></div>
+        <div class="result" data-result aria-hidden="true">
+          <div class="result__badge" data-result-badge hidden>${Icons.trophy}<span>Novo recorde!</span></div>
+          <div class="result__title">Bola enterrada!</div>
+          <div class="result__value" data-result-value>0,0 cm</div>
+          <div class="result__meta" data-result-meta></div>
+        </div>
         <div class="sr-only" data-live aria-live="polite"></div>
 
         <div class="touch" aria-hidden="true">
@@ -329,7 +489,8 @@ export class Hud {
       <div class="overlay" data-start role="dialog" aria-modal="true" aria-labelledby="game-title">
         <div class="panel">
           <h1 class="title" id="game-title"><span>Rola</span> <span>Bosta</span></h1>
-          <p class="tagline">Empurre, role e faça a maior bola de bosta do jardim.</p>
+          <p class="tagline">Role a bola, engula o jardim e enterre tudo na toca.</p>
+          <p class="start-record" data-start-record hidden></p>
           <button class="btn btn--primary" data-play type="button" disabled><span data-play-label>Jogar</span></button>
 
           <div class="controls controls--desktop">
@@ -347,7 +508,7 @@ export class Hud {
             <div class="controls__row">Seta: pular</div>
             <div class="controls__row">Seta circular (no topo): trazer a bola</div>
           </div>
-          <p class="footnote">Dica: role por cima dos montinhos pra bola crescer. Grandona, ela pega até graveto e pedrinha.</p>
+          <p class="footnote">Bola grande arranca flor, cogumelo e até pedra. Siga a bandeirinha até a toca pra enterrar e bater recorde. Na chuva, fuja das poças: a água derrete a bosta.</p>
         </div>
       </div>
     `;

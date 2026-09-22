@@ -15,6 +15,7 @@ export class AmbientMotes {
     uTime: { value: 0 },
     uCenter: { value: new THREE.Vector3() },
     uScale: { value: 500 },
+    uVisibility: { value: 1 },
   };
 
   constructor(count: number, seed = 5) {
@@ -37,6 +38,7 @@ export class AmbientMotes {
         uniform float uTime;
         uniform vec3 uCenter;
         uniform float uScale;
+        uniform float uVisibility;
         varying float vAlpha;
         varying float vKind;
         void main() {
@@ -53,7 +55,7 @@ export class AmbientMotes {
           // Some na borda da caixa (sem "pipocar" quando dá a volta).
           float edge = 1.0 - smoothstep(0.7, 1.0, max(abs(rel.x), max(abs(rel.z), abs(rel.y))) / R);
           float twinkle = 0.55 + 0.45 * sin(uTime * (2.0 + aSeed.w * 3.0) + aSeed.x * 60.0);
-          vAlpha = edge * twinkle;
+          vAlpha = edge * twinkle * uVisibility;
           vKind = step(0.9, aSeed.w); // ~10% são fiapos maiores de dente-de-leão
           vec4 mvPosition = viewMatrix * vec4(world, 1.0);
           // Sem neblina aqui (somar a cor da neblina acenderia o céu): some com a distância.
@@ -84,6 +86,7 @@ export class AmbientMotes {
     this.uniforms.uTime = u.uTime as { value: number };
     this.uniforms.uCenter = u.uCenter as { value: THREE.Vector3 };
     this.uniforms.uScale = u.uScale as { value: number };
+    this.uniforms.uVisibility = u.uVisibility as { value: number };
 
     this.points = new THREE.Points(geometry, material);
     this.points.frustumCulled = false;
@@ -92,7 +95,10 @@ export class AmbientMotes {
     this.points.name = 'ambient-motes';
   }
 
-  update(time: number, center: THREE.Vector3, pixelScale: number): void {
+  /** @param visibility 0..1 (a chuva apaga o pólen). */
+  update(time: number, center: THREE.Vector3, pixelScale: number, visibility = 1): void {
+    this.uniforms.uVisibility.value = visibility;
+    this.points.visible = visibility > 0.01;
     this.uniforms.uTime.value = time;
     this.uniforms.uCenter.value.copy(center);
     this.uniforms.uScale.value = pixelScale;

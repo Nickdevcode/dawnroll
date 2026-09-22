@@ -13,6 +13,10 @@ export const globalUniforms = {
   uTime: { value: 0 },
   /** x, y, z = posição; w = raio de influência. */
   uPushers: { value: Array.from({ length: MAX_PUSHERS }, () => new THREE.Vector4(0, -999, 0, 0)) },
+  /** 0..1: quão molhado está o mundo (chuva). Escurece e dá brilho às superfícies. */
+  uWetness: { value: 0 },
+  /** 0..1: intensidade da chuva agora (anéis nas poças, gotas escorrendo). */
+  uRain: { value: 0 },
 };
 
 /** Ruído de valor barato (hash sem textura) em 2D e 3D. */

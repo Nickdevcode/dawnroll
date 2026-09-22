@@ -5,7 +5,7 @@ import { InstancePool } from '../render/InstancePool';
 import { claySphere, displace, paintVertices, solidColor, taperedTube } from '../render/geometry';
 import { createRng, smoothstep, type Rng } from '../utils/math';
 import { noise3 } from '../utils/noise';
-import { snailShell } from '../fx/critters/models';
+import { dungFlyBody, dungFlyWing, snailShell } from '../fx/critters/models';
 import { leafGeometry, latheGeometry, smoothProfile } from './scenery/shapes';
 import { terrainHeight, PLAY_RADIUS } from './Terrain';
 import type { Scenery } from './Scenery';
@@ -94,13 +94,14 @@ export class Collectibles {
       DUNG_PILES,
     );
     this.flyBodyPool = new InstancePool(
-      buildFlyBody(),
+      dungFlyBody(),
       clay(0xffffff, { vertexColors: true, roughness: 0.35, sheen: 0.3, iridescence: 0.7, clearcoat: 0.4, bump: 0, mottle: 0 }),
       DUNG_PILES * 2,
     );
     this.flyWingPool = new InstancePool(
-      new THREE.SphereGeometry(0.06, 12, 6).scale(1, 0.12, 0.5),
-      new THREE.MeshPhysicalMaterial({ color: '#e8f3ff', transparent: true, opacity: 0.45, roughness: 0.15, iridescence: 1, depthWrite: false }),
+      dungFlyWing(),
+      // Dupla face: a asa esquerda é a direita espelhada (escala -1 em X).
+      new THREE.MeshPhysicalMaterial({ color: '#e8f3ff', vertexColors: true, transparent: true, opacity: 0.5, roughness: 0.15, iridescence: 1, depthWrite: false, side: THREE.DoubleSide }),
       DUNG_PILES * 4,
       false,
     );
@@ -116,8 +117,11 @@ export class Collectibles {
     const center = ball.position(new THREE.Vector3());
     const r = ball.radius;
 
+    // Bola sendo enterrada não pega nada (mas os montinhos continuam renascendo).
+    const solid = ball.isSolid;
     for (const pile of this.piles) {
       if (pile.state === 'idle') {
+        if (!solid) continue;
         const p = pile.mesh.position;
         const dist = Math.hypot(p.x - center.x, p.y + pile.size * 0.4 - center.y, p.z - center.z);
         if (dist < r + pile.size * 0.75) {
@@ -134,8 +138,8 @@ export class Collectibles {
           pile.state = 'gone';
           pile.timer = RESPAWN_SECONDS;
           pile.mesh.visible = false;
-          // Nem todo o volume vira bola — o resto "espalha". Mantém o crescimento gostoso, sem explodir.
-          ball.addVolume((4 / 3) * Math.PI * Math.pow(pile.size * 0.85, 3));
+          // O montinho inteiro vira bola (o Katamari do cenário dá o resto do crescimento).
+          ball.addVolume((4 / 3) * Math.PI * Math.pow(pile.size, 3));
           ball.dungCount++;
           const dir = pile.absorbFrom.clone().setY(pile.absorbFrom.y + pile.size * 0.4).sub(center);
           if (dir.lengthSq() < 1e-6) dir.set(0, 1, 0);
@@ -148,7 +152,7 @@ export class Collectibles {
       }
     }
 
-    for (let i = 0; i < this.debris.length; i++) {
+    for (let i = 0; i < this.debris.length && solid; i++) {
       const item = this.debris[i];
       if (!item.active) continue;
       if (r < item.size * 0.9) continue; // bola pequena demais: passa por cima sem pegar
@@ -161,9 +165,15 @@ export class Collectibles {
         item.active = false;
         const at = p.clone();
         if (item.pool) item.pool.remove(item.slot);
-        ball.stick(item.object, item.size);
+        ball.stick(item.object, {
+          // Afunda ~um terço do item na bosta; fica com cara de "grudou mesmo".
+          depth: -item.size * 0.18,
+          lieTangent: item.object.userData.lieTangent === true,
+          burySize: item.size,
+        });
+        ball.itemCount++;
         // Grudar também engorda um pouquinho a bola.
-        ball.addVolume((4 / 3) * Math.PI * Math.pow(item.size * 0.35, 3));
+        ball.addVolume((4 / 3) * Math.PI * Math.pow(item.size * 0.45, 3));
         this.onCollect?.({ kind: 'debris', position: at, size: item.size, color: (item.object.userData.tint as THREE.Color) ?? DUNG_TINT });
         // Repõe o mundo para nunca "acabar" o que pegar — na MESMA vaga do array
         // (o que grudou agora pertence à bola; a lista não cresce com a sessão).
@@ -198,9 +208,10 @@ export class Collectibles {
         const radius = 1.1 + Math.sin(t * 0.7) * 0.25;
         fly.body.position.set(Math.cos(t) * radius, 1.4 + Math.sin(t * 2.3) * 0.3, Math.sin(t) * radius);
         fly.body.rotation.y = -t;
-        const flap = Math.sin(this.time * 70 + i) * 0.6;
-        fly.wings[0].rotation.x = flap;
-        fly.wings[1].rotation.x = -flap;
+        // Asa articulada na raiz: girar em Z levanta a ponta (a espelhada gira ao contrário).
+        const flap = 0.25 + Math.sin(this.time * 70 + i) * 0.7;
+        fly.wings[0].rotation.z = flap;
+        fly.wings[1].rotation.z = -flap;
       });
       pile.mesh.updateMatrixWorld(true);
       for (const fly of pile.flies) {
@@ -215,6 +226,13 @@ export class Collectibles {
     this.flyBodyPool.hide(fly.bodySlot);
     this.flyWingPool.hide(fly.wingSlots[0]);
     this.flyWingPool.hide(fly.wingSlots[1]);
+  }
+
+  /** Rodada nova: todo montinho que foi comido volta para o jardim de uma vez. */
+  respawnAll(player: THREE.Vector3): void {
+    for (const pile of this.piles) {
+      if (pile.state !== 'idle') this.respawnPile(pile, player);
+    }
   }
 
   /** Montinhos inteiros perto de um ponto (de onde sobe o "fedor" animado). */
@@ -280,10 +298,12 @@ export class Collectibles {
 
   private buildFly(parent: THREE.Object3D): Fly {
     const body = new THREE.Object3D();
+    // Raiz das asas no alto do tórax; a do lado -X é a mesma asa espelhada.
     const wingL = new THREE.Object3D();
-    wingL.position.set(0.06, 0.05, -0.02);
+    wingL.position.set(0.024, 0.048, -0.012);
     const wingR = new THREE.Object3D();
-    wingR.position.set(-0.06, 0.05, -0.02);
+    wingR.position.set(-0.024, 0.048, -0.012);
+    wingR.scale.x = -1;
     body.add(wingL, wingR);
     // Moscas são filhas do montinho, mas não queremos que a escala dele as afete demais.
     body.scale.setScalar(2.2);
@@ -439,20 +459,6 @@ function buildPileGeometry(): THREE.BufferGeometry {
     const crease = Math.max(0, -n.y) * 0.35;
     return c.multiplyScalar(1 - crease + noise3(p.x * 9, p.y * 9, p.z * 9) * 0.12);
   });
-}
-
-function buildFlyBody(): THREE.BufferGeometry {
-  const body = solidColor(claySphere(0.07, 3, 0.05, 2, 1), '#2a2733');
-  body.scale(1, 0.9, 1.3);
-  const eyes: THREE.BufferGeometry[] = [];
-  for (const side of [1, -1]) {
-    const eye = solidColor(claySphere(0.035, 2, 0.02), '#b3262b');
-    eye.translate(side * 0.035, 0.02, 0.08);
-    eyes.push(eye);
-  }
-  const parts = [body, ...eyes];
-  for (const g of parts) for (const name of Object.keys(g.attributes)) if (name !== 'position' && name !== 'normal' && name !== 'color') g.deleteAttribute(name);
-  return mergeGeometries(parts)!;
 }
 
 /** Materiais dos detritos: cores nos vértices, três acabamentos. */

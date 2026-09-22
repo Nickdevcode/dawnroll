@@ -179,6 +179,7 @@ function installClayShader(material: THREE.MeshPhysicalMaterial, mottle: number,
     shader.uniforms.uMottle = { value: mottle };
     shader.uniforms.uMottleScale = { value: mottleScale };
     shader.uniforms.uWet = { value: wet };
+    shader.uniforms.uWetness = globalUniforms.uWetness;
     if (sway || useFlex) shader.uniforms.uTime = globalUniforms.uTime;
     if (useFlex) {
       shader.uniforms.uPushers = globalUniforms.uPushers;
@@ -228,6 +229,7 @@ function installClayShader(material: THREE.MeshPhysicalMaterial, mottle: number,
         uniform float uMottle;
         uniform float uMottleScale;
         uniform float uWet;
+        uniform float uWetness;
         ${noiseGLSL}`,
       )
       .replace(
@@ -235,7 +237,9 @@ function installClayShader(material: THREE.MeshPhysicalMaterial, mottle: number,
         /* glsl */ `#include <color_fragment>
         vec3 clayQ = vClayPos * uMottleScale;
         float clayN = clayNoise3(clayQ) * 0.65 + clayNoise3(clayQ * 2.7 + 13.1) * 0.35;
-        diffuseColor.rgb *= 1.0 + (clayN - 0.5) * uMottle * 2.0;`,
+        diffuseColor.rgb *= 1.0 + (clayN - 0.5) * uMottle * 2.0;
+        // Chuva: massinha molhada fica um tom mais escura.
+        diffuseColor.rgb *= 1.0 - uWetness * 0.14;`,
       )
       .replace(
         '#include <roughnessmap_fragment>',
@@ -243,6 +247,11 @@ function installClayShader(material: THREE.MeshPhysicalMaterial, mottle: number,
         if (uWet > 0.0) {
           float wetMask = smoothstep(0.5, 0.72, clayNoise3(clayQ * 1.9 + 41.0));
           roughnessFactor = mix(roughnessFactor, 0.2, wetMask * uWet);
+        }
+        // Chuva: película d'água em manchas (nunca 100% espelhada, senão vira plástico).
+        if (uWetness > 0.0) {
+          float film = 0.55 + 0.45 * smoothstep(0.35, 0.65, clayNoise3(clayQ * 0.8 - 7.0));
+          roughnessFactor = mix(roughnessFactor, 0.28, uWetness * film * 0.75);
         }`,
       );
   };

@@ -131,6 +131,7 @@ function createGrassMaterial(): THREE.MeshStandardMaterial {
     shader.uniforms.uTime = globalUniforms.uTime;
     shader.uniforms.uPushers = globalUniforms.uPushers;
     shader.uniforms.uSunDirection = sunDirection;
+    shader.uniforms.uWetness = globalUniforms.uWetness;
     shader.vertexShader = shader.vertexShader
       .replace(
         '#include <common>',
@@ -162,10 +163,18 @@ function createGrassMaterial(): THREE.MeshStandardMaterial {
         '#include <common>',
         /* glsl */ `#include <common>
         varying float vGrassH;
-        uniform vec3 uSunDirection;`,
+        uniform vec3 uSunDirection;
+        uniform float uWetness;`,
       )
       // Normal "de tufo" (quase para cima) nos dois lados: sem o verso escuro de folha fina.
       .replace('#include <normal_fragment_begin>', THREE.ShaderChunk.normal_fragment_begin.replace('gl_FrontFacing ? 1.0 : - 1.0', '1.0'))
+      .replace(
+        '#include <roughnessmap_fragment>',
+        /* glsl */ `#include <roughnessmap_fragment>
+        // Grama molhada: verde mais fundo e um brilho de orvalho nas pontas.
+        diffuseColor.rgb *= 1.0 - uWetness * 0.12;
+        roughnessFactor = mix(roughnessFactor, 0.4, uWetness * (0.35 + vGrassH * 0.4));`,
+      )
       .replace(
         '#include <emissivemap_fragment>',
         /* glsl */ `#include <emissivemap_fragment>

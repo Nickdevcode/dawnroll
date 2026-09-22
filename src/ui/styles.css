@@ -397,6 +397,199 @@ body {
 }
 
 /* ==========================================================================
+   Recorde, toca e resultado da rodada
+   ========================================================================== */
+.hud__stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.record-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px var(--space-3) 6px 10px;
+  border-radius: var(--radius-pill);
+  background: var(--color-cream);
+  box-shadow: var(--shadow-clay-pressed), var(--inner-highlight);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-ink-soft);
+  white-space: nowrap;
+}
+.record-chip[hidden],
+.start-record[hidden],
+.result__badge[hidden] {
+  display: none;
+}
+.record-chip svg {
+  width: 16px;
+  height: 16px;
+  color: var(--color-accent-deep);
+  flex-shrink: 0;
+}
+.record-chip strong {
+  color: var(--color-dung);
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+}
+.record-chip__sep {
+  opacity: 0.5;
+}
+
+.start-record {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: calc(-1 * var(--space-2)) 0 var(--space-5);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-pill);
+  background: rgba(244, 167, 59, 0.16);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--color-ink-soft);
+}
+.start-record svg {
+  width: 18px;
+  height: 18px;
+  color: var(--color-accent-deep);
+}
+.start-record strong {
+  color: var(--color-dung);
+}
+
+.chip--warn {
+  background: #ffe2c2;
+  color: #7a3b12;
+}
+
+/* Marcador da toca: pino sobre ela na tela, ou seta presa na borda apontando para ela. */
+.burrow-marker {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  /* O translate (posição) vem do JS; o ponto de ancoragem é o centro da seta. */
+  margin: -17px 0 0 -17px;
+  opacity: 0;
+  transition: opacity var(--dur-med) var(--ease-out);
+  will-change: transform;
+}
+.burrow-marker.is-visible {
+  opacity: 0.78;
+}
+.burrow-marker.is-visible.is-ready {
+  opacity: 1;
+}
+.burrow-marker__arrow {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--color-cream);
+  color: var(--color-dung);
+  box-shadow: var(--shadow-clay), var(--inner-highlight);
+  transition: background-color var(--dur-med) var(--ease-out), color var(--dur-med) var(--ease-out);
+}
+.burrow-marker__arrow svg {
+  width: 20px;
+  height: 20px;
+}
+.burrow-marker.is-ready .burrow-marker__arrow {
+  background: var(--color-accent);
+  color: #3a2208;
+  animation: marker-pulse 1.6s var(--ease-out) infinite;
+}
+.burrow-marker__label {
+  padding: 3px var(--space-2);
+  border-radius: var(--radius-pill);
+  background: rgba(58, 42, 34, 0.72);
+  color: var(--color-cream);
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.result {
+  position: absolute;
+  left: 50%;
+  top: 26%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: var(--space-4) var(--space-6) var(--space-4);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(180deg, var(--color-cream) 0%, var(--color-cream-2) 100%);
+  box-shadow: 0 5px 0 rgba(58, 42, 34, 0.2), 0 22px 44px rgba(58, 42, 34, 0.28), var(--inner-highlight);
+  text-align: center;
+  opacity: 0;
+  transform: translate(-50%, 14px) scale(0.86);
+  transition:
+    opacity var(--dur-med) var(--ease-out),
+    transform var(--dur-slow) var(--ease-spring);
+  pointer-events: none;
+}
+.result.is-visible {
+  opacity: 1;
+  transform: translate(-50%, 0) scale(1);
+}
+.result__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: var(--space-2);
+  padding: 4px var(--space-3);
+  border-radius: var(--radius-pill);
+  background: var(--color-accent);
+  color: #3a2208;
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  animation: wobble 2.4s var(--ease-out) infinite;
+}
+.result__badge svg {
+  width: 16px;
+  height: 16px;
+}
+.result__title {
+  font-size: 13px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-ink-soft);
+}
+.result__value {
+  font-family: var(--font-display);
+  font-size: 44px;
+  font-weight: 900;
+  line-height: 1.05;
+  color: var(--color-dung);
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 2px 0 var(--color-dung-light), 0 4px 0 #5a371d;
+}
+.result__meta {
+  margin-top: var(--space-1);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-ink-soft);
+}
+
+@keyframes marker-pulse {
+  0%, 100% { box-shadow: var(--shadow-clay), var(--inner-highlight), 0 0 0 0 rgba(244, 167, 59, 0.55); }
+  60% { box-shadow: var(--shadow-clay), var(--inner-highlight), 0 0 0 12px rgba(244, 167, 59, 0); }
+}
+
+/* ==========================================================================
    Controles de toque
    ========================================================================== */
 .touch,
@@ -547,6 +740,12 @@ body {
   .toast {
     font-size: 18px;
   }
+  .result {
+    padding: var(--space-3) var(--space-5);
+  }
+  .result__value {
+    font-size: 36px;
+  }
 }
 
 @media (max-height: 520px) {
@@ -578,7 +777,14 @@ body {
   bottom: auto;
 }
 .is-touch .toast {
-  top: calc(max(var(--space-4), env(safe-area-inset-top)) + 150px);
+  top: calc(max(var(--space-4), env(safe-area-inset-top)) + 196px);
+}
+/* O topo do celular já é apertado: o recorde aparece na tela de início/pausa. */
+.is-touch .record-chip {
+  display: none;
+}
+.is-touch .result {
+  top: 34%;
 }
 
 /* Celular deitado: pouca altura, a tela inicial fica compacta. */
@@ -614,5 +820,18 @@ body {
   }
   .is-touch .hint {
     top: calc(max(var(--space-4), env(safe-area-inset-top)) + 80px);
+  }
+  .is-touch .toast {
+    top: calc(max(var(--space-4), env(safe-area-inset-top)) + 132px);
+  }
+  .record-chip {
+    display: none;
+  }
+  .result,
+  .is-touch .result {
+    top: 22%;
+  }
+  .start-record {
+    margin-bottom: var(--space-3);
   }
 }

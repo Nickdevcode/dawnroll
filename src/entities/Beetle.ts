@@ -61,6 +61,8 @@ export class Beetle {
   pushing = false;
   /** Velocidade de queda no último pouso (força da poeira/tremida). */
   landingSpeed = 0;
+  /** Multiplicador de velocidade do terreno (água até a canela = mais devagar). O jogo atualiza a cada passo. */
+  speedScale = 1;
   private pushBlend = 0;
   private readonly pushDir = new THREE.Vector3(0, 0, 1);
   private pushStrain = 0;
@@ -164,7 +166,7 @@ export class Beetle {
 
     // --- agarrar / soltar ---
     if (input.grab && !this.pushing && this.canGrab()) this.startPush();
-    if (!input.grab && this.pushing) this.releaseBall();
+    if ((!input.grab || !this.ball.isSolid) && this.pushing) this.releaseBall();
 
     let desired: THREE.Vector3;
     if (this.pushing) {
@@ -192,7 +194,8 @@ export class Beetle {
     const ballPos = this.ball.position(tmpC);
     const away = new THREE.Vector3(this.position.x - ballPos.x, 0, this.position.z - ballPos.z);
     const minDist = this.ball.radius + COLLIDER_RADIUS;
-    const overlap = minDist - Math.hypot(away.x, away.z, this.position.y - ballPos.y);
+    // Bola sendo enterrada não empurra ninguém (ela está afundando na toca).
+    const overlap = this.ball.isSolid ? minDist - Math.hypot(away.x, away.z, this.position.y - ballPos.y) : -1;
     if (overlap > 0) {
       if (away.lengthSq() < 1e-6) away.set(0, 0, -1);
       away.normalize();
@@ -255,6 +258,7 @@ export class Beetle {
   }
 
   private canGrab(): boolean {
+    if (!this.ball.isSolid) return false;
     const ballPos = this.ball.position(tmpC);
     const r = this.ball.radius;
     const dx = ballPos.x - this.position.x;
@@ -282,7 +286,7 @@ export class Beetle {
   }
 
   private updateWalk(dt: number, wish: THREE.Vector3, amount: number, run: boolean): THREE.Vector3 {
-    const speed = run ? RUN_SPEED : WALK_SPEED;
+    const speed = (run ? RUN_SPEED : WALK_SPEED) * this.speedScale;
     const accel = this.grounded ? GROUND_ACCEL : AIR_ACCEL;
     const targetX = wish.x * speed * amount;
     const targetZ = wish.z * speed * amount;
@@ -331,9 +335,10 @@ export class Beetle {
       this.pushDir.set(Math.sin(next), 0, Math.cos(next));
     }
 
-    // Velocidade alvo da bola: menor e mais "pesada" quanto maior ela é.
-    const sizeFactor = 1 / (1 + 0.24 * (r - 0.5));
-    const maxSpeed = (run ? 4.4 : 3.1) * sizeFactor;
+    // Velocidade alvo da bola: menor e mais "pesada" quanto maior ela é — até ~12 cm;
+    // daí em diante estabiliza (bola gigante cobre mais chão por volta, não pode virar lesma).
+    const sizeFactor = 1 / (1 + 0.24 * (Math.min(r, 3) - 0.5));
+    const maxSpeed = (run ? 4.4 : 3.1) * sizeFactor * this.speedScale;
     const desiredVel = new THREE.Vector3();
     if (amount > 0.1) {
       if (pulling) desiredVel.copy(wish).multiplyScalar(maxSpeed * 0.45 * amount);

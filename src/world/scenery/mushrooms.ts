@@ -6,7 +6,7 @@ import { noise3 } from '../../utils/noise';
 import { smoothstep } from '../../utils/math';
 import { terrainHeight } from '../Terrain';
 import { latheGeometry, smoothProfile } from './shapes';
-import type { SceneryContext } from './context';
+import { sphereVolume, type SceneryContext } from './context';
 
 interface CapStyle {
   top: string;
@@ -152,15 +152,28 @@ function buildMushroom(ctx: SceneryContext, x: number, z: number, height: number
     }
   }
 
-  ctx.batch.addObject(root);
   ctx.addSolid(x, z, stemR * 1.4);
-  ctx.addLandingSpot(new THREE.Vector3(x, baseY + capY + capH, z));
+  const spot = ctx.addLandingSpot(new THREE.Vector3(x, baseY + capY + capH, z));
 
-  if (collider) {
-    ctx.addCollider(RAPIER.ColliderDesc.cylinder(height / 2, stemR), new THREE.Vector3(x, baseY + height / 2, z));
-    ctx.addCollider(
-      RAPIER.ColliderDesc.roundCylinder(capH * 0.3, capR * 0.85, capH * 0.15),
-      new THREE.Vector3(x, baseY + capY + capH * 0.35, z),
-    );
-  }
+  const colliders = collider
+    ? [
+        ctx.addCollider(RAPIER.ColliderDesc.cylinder(height / 2, stemR), new THREE.Vector3(x, baseY + height / 2, z)),
+        ctx.addCollider(RAPIER.ColliderDesc.roundCylinder(capH * 0.3, capR * 0.85, capH * 0.15), new THREE.Vector3(x, baseY + capY + capH * 0.35, z)),
+      ]
+    : [];
+
+  const size = height * 0.5;
+  ctx.addPickable({
+    kind: 'mushroom',
+    root,
+    size,
+    probeA: new THREE.Vector3(x, baseY, z),
+    probeB: new THREE.Vector3(x, baseY + capY + capH * 0.4, z),
+    probeRadius: Math.max(stemR * 1.3, capR * 0.86),
+    colliders,
+    landingSpots: [spot],
+    tint: style.top,
+    volume: sphereVolume(size * 0.48),
+    extent: Math.max(height + capH, capR * 2),
+  });
 }

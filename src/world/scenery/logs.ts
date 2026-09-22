@@ -103,8 +103,6 @@ export function buildLog(ctx: SceneryContext, x: number, z: number): void {
   }
   root.add(sprout);
 
-  ctx.batch.addObject(root);
-
   const dirX = Math.cos(yaw);
   const dirZ = -Math.sin(yaw);
   const steps = Math.ceil(length / (radius * 2));
@@ -113,5 +111,22 @@ export function buildLog(ctx: SceneryContext, x: number, z: number): void {
     ctx.addSolid(x + dirX * length * t, z + dirZ * length * t, radius * 0.9);
     ctx.addShade(x + dirX * length * t, z + dirZ * length * t, radius * 1.4, 0.55);
   }
-  ctx.addCollider(RAPIER.ColliderDesc.capsule(length / 2, radius), root.position, root.quaternion);
+  const collider = ctx.addCollider(RAPIER.ColliderDesc.capsule(length / 2, radius), root.position, root.quaternion);
+
+  // Eixo do tronco no mundo (o +Y local, deitado).
+  const axis = new THREE.Vector3(0, 1, 0).applyQuaternion(root.quaternion).multiplyScalar(length / 2);
+  const size = length * 0.4;
+  ctx.addPickable({
+    kind: 'log',
+    root,
+    size,
+    probeA: root.position.clone().sub(axis),
+    probeB: root.position.clone().add(axis),
+    probeRadius: radius,
+    colliders: [collider],
+    landingSpots: [],
+    tint: BARK_LIGHT,
+    volume: Math.PI * radius * radius * length * 0.75,
+    extent: length,
+  });
 }
