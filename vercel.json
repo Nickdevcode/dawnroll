@@ -2,9 +2,9 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "redirects": [
     {
-      "source": "/:path*",
+      "source": "/(.*)",
       "has": [{ "type": "host", "value": "rola-bosta.vercel.app" }],
-      "destination": "https://dawnroll.vercel.app/:path*",
+      "destination": "https://dawnroll.vercel.app/$1",
       "permanent": true
     }
   ]
