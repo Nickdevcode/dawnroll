@@ -3,12 +3,22 @@
  * Tudo curto, macio e "molhado", combinando com o visual de massinha.
  *
  * O AudioContext só nasce no primeiro gesto do usuário (regra dos navegadores).
+ *
+ * Mixagem: efeitos (passos, bosta, estalos) e ambiente (brisa, chuva, trovão)
+ * têm cada um seu canal, e os dois passam pelo volume geral.
  */
+
+/** Ganho final com volume geral em 100% (o sintetizado é alto de fábrica). */
+const MASTER_GAIN = 0.7;
+
 export class Sfx {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
+  private fx: GainNode | null = null;
+  private ambience: GainNode | null = null;
   private noiseBuffer: AudioBuffer | null = null;
   private muted = false;
+  private volumes = { master: 0.8, effects: 1, ambience: 0.8 };
   /** Camadas da chuva (chiado agudo + ronco grave), com volume seguindo a intensidade. */
   private rainHiss: GainNode | null = null;
   private rainRumble: GainNode | null = null;
@@ -24,8 +34,12 @@ export class Sfx {
     const ctx = new AudioContext();
     this.ctx = ctx;
     this.master = ctx.createGain();
-    this.master.gain.value = 0.55;
     this.master.connect(ctx.destination);
+    this.fx = ctx.createGain();
+    this.fx.connect(this.fx!);
+    this.ambience = ctx.createGain();
+    this.ambience.connect(this.fx!);
+    this.applyVolumes(0);
 
     const length = ctx.sampleRate;
     this.noiseBuffer = ctx.createBuffer(1, length, ctx.sampleRate);
@@ -37,9 +51,32 @@ export class Sfx {
   }
 
   toggleMute(): boolean {
-    this.muted = !this.muted;
-    if (this.master && this.ctx) this.master.gain.setTargetAtTime(this.muted ? 0 : 0.55, this.ctx.currentTime, 0.05);
+    this.setMuted(!this.muted);
     return this.muted;
+  }
+
+  setMuted(muted: boolean): void {
+    this.muted = muted;
+    this.applyVolumes(0.05);
+  }
+
+  /** Volumes 0..1: geral, efeitos e ambiente (brisa, chuva e trovão). */
+  setVolumes(master: number, effects: number, ambience: number): void {
+    this.volumes = { master, effects, ambience };
+    this.applyVolumes(0.05);
+  }
+
+  private applyVolumes(smoothing: number): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.master || !this.fx || !this.ambience) return;
+    const set = (node: GainNode, value: number) => {
+      if (smoothing > 0) node.gain.setTargetAtTime(value, ctx.currentTime, smoothing);
+      else node.gain.value = value;
+    };
+    // Curva quadrática: o slider "soa" linear pro ouvido.
+    set(this.master, this.muted ? 0 : MASTER_GAIN * this.volumes.master ** 2);
+    set(this.fx, this.volumes.effects ** 2);
+    set(this.ambience, this.volumes.ambience ** 2);
   }
 
   get isMuted(): boolean {
@@ -63,7 +100,7 @@ export class Sfx {
     gain.gain.setValueAtTime(0.0001, t);
     gain.gain.exponentialRampToValueAtTime(0.9, t + 0.012);
     gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
-    src.connect(filter).connect(gain).connect(this.master);
+    src.connect(filter).connect(gain).connect(this.fx!);
     src.start(t, Math.random() * 0.5, 0.3);
 
     // Corpo grave do "ploft".
@@ -134,7 +171,7 @@ export class Sfx {
     if (this.dropTimer <= 0) {
       this.dropTimer = 0.05 + Math.random() * (0.5 - level * 0.4);
       const f = 1400 + Math.random() * 2200;
-      this.tone(f, f * 0.7, 0.04, 0.03 + Math.random() * 0.04 * level, 'sine');
+      this.tone(f, f * 0.7, 0.04, 0.03 + Math.random() * 0.04 * level, 'sine', 0, 'ambience');
     }
   }
 
@@ -155,7 +192,7 @@ export class Sfx {
     gain.gain.exponentialRampToValueAtTime(0.9 - distance * 0.4, t + 0.06);
     gain.gain.exponentialRampToValueAtTime(0.35, t + 0.7);
     gain.gain.exponentialRampToValueAtTime(0.0001, t + 3.2);
-    src.connect(filter).connect(gain).connect(this.master);
+    src.connect(filter).connect(gain).connect(this.ambience!);
     src.start(t, Math.random() * 0.5);
     src.stop(t + 3.3);
   }
@@ -176,13 +213,14 @@ export class Sfx {
     gain.gain.setValueAtTime(0.0001, t);
     gain.gain.exponentialRampToValueAtTime(volume, t + 0.01);
     gain.gain.exponentialRampToValueAtTime(0.0001, t + duration);
-    src.connect(filter).connect(gain).connect(this.master);
+    src.connect(filter).connect(gain).connect(this.fx!);
     src.start(t, Math.random() * 0.5, duration + 0.05);
   }
 
-  private tone(from: number, to: number, duration: number, volume: number, type: OscillatorType, delay = 0): void {
+  private tone(from: number, to: number, duration: number, volume: number, type: OscillatorType, delay = 0, bus: 'fx' | 'ambience' = 'fx'): void {
     const ctx = this.ctx;
     if (!ctx || !this.master) return;
+    const out = bus === 'fx' ? this.fx! : this.ambience!;
     const t = ctx.currentTime + delay;
     const osc = ctx.createOscillator();
     osc.type = type;
@@ -192,7 +230,7 @@ export class Sfx {
     gain.gain.setValueAtTime(0.0001, t);
     gain.gain.exponentialRampToValueAtTime(volume, t + 0.01);
     gain.gain.exponentialRampToValueAtTime(0.0001, t + duration);
-    osc.connect(gain).connect(this.master);
+    osc.connect(gain).connect(out);
     osc.start(t);
     osc.stop(t + duration + 0.02);
   }
@@ -213,7 +251,7 @@ export class Sfx {
     const lfoGain = ctx.createGain();
     lfoGain.gain.value = 0.03;
     lfo.connect(lfoGain).connect(gain.gain);
-    src.connect(filter).connect(gain).connect(this.master!);
+    src.connect(filter).connect(gain).connect(this.ambience!);
     src.start();
     lfo.start();
   }
@@ -231,7 +269,7 @@ export class Sfx {
       filter.Q.value = q;
       const gain = ctx.createGain();
       gain.gain.value = 0;
-      src.connect(filter).connect(gain).connect(this.master!);
+      src.connect(filter).connect(gain).connect(this.ambience!);
       // Começa em pontos diferentes do mesmo ruído: as duas camadas não "batem".
       src.start(0, Math.random() * 0.9);
       return gain;

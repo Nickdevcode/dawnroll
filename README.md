@@ -1,8 +1,10 @@
-# 🪲 Rola Bosta
+# 🌅 Dawnroll
 
 Um besouro rola-bosta de massinha num jardim em miniatura. Você rola uma bola de bosta, ela cresce, **engole o jardim** (flor, cogumelo, pedra, tronco...) e no fim você **enterra ela na toca** pra marcar recorde. Aí o jardim se refaz e começa tudo de novo, com bola pequena. 💩➡️🟤➡️🕳️
 
-### ▶️ Jogar agora: **[rola-bosta.vercel.app](https://rola-bosta.vercel.app)** (PC ou celular)
+### ▶️ Jogar agora: **[dawnroll.vercel.app](https://dawnroll.vercel.app)** (PC, celular ou controle)
+
+> 🌞 **Por que Dawnroll?** Os egípcios viam o besouro rola-bosta empurrando a bola e imaginaram **Khepri**, o deus-escaravelho que rola o sol pelo céu, enterra ele à noite e faz ele renascer de manhã. É o ciclo do jogo: você rola seu "solzinho", enterra na toca e uma bola nova nasce. O jogo se chamava **Rola Bosta**; o link antigo redireciona pro novo.
 
 > Visual inspirado em **Human Fall Flat**: tudo com cara de massinha (fosco, aveludado, com marquinha de dedo e até digital), luz suave, oclusão ambiente forte e um desfoque de **maquete** que faz o jardim parecer um diorama fotografado de pertinho.
 
@@ -18,22 +20,27 @@ Um besouro rola-bosta de massinha num jardim em miniatura. Você rola uma bola d
 | 🕳️ **A toca** | Buraco de terra fofa com bandeirinha de folha no monte escavado. Um anel tracejado pulsa quando a bola já pode ser enterrada |
 | 🌧️ **Clima** | Sol → nublando → chuva (com rajadas, relâmpago e trovão) → abrindo. O céu fecha, a luz fica difusa, tudo fica molhado e brilhante |
 | 💧 **Poças** | Seis bacias rasas (uma de lama no meio da trilha) que enchem na chuva, com anéis de gota, reflexo do céu e borda rasa transparente. Secam devagar |
+| 🌙 **Menu** | A "madrugada" por cima do jardim ao vivo: logo com o "o" virando um solzinho de massinha, e Jogar faz amanhecer. Configurações e Como jogar abrem em placas por cima |
+| ⚙️ **Configurações** | Qualidade (Auto, Baixa, Média, Alta, Ultra ou Personalizada), resolução, sombras, oclusão ambiente, desfoque de maquete, brilho, densidade da grama, FPS, volumes, sensibilidade e inversão da câmera, tremida de câmera e vibração do controle. Tudo aplica na hora e fica salvo |
+| 🌐 **Idiomas** | Português (Brasil) e inglês. No automático, o jogo segue o idioma do navegador/sistema, e dá pra fixar um nas configurações |
 | 💨 **Efeitos** | Poeira nos passos e na bola, respingo ao pegar bosta, brilho ao grudar, confete nos marcos, rastro da bola no chão, fedor subindo dos montinhos, suor quando o besouro faz força, torrões e pétalas ao arrancar coisas, terra voando no enterro, respingos d'água, folhas caindo e pólen no ar |
 
 ---
 
 ## 🎮 Como jogar
 
-| Ação | Teclado / mouse | Celular |
-|---|---|---|
-| Andar | `W` `A` `S` `D` (ou setas) | Analógico à esquerda |
-| Olhar em volta | Mouse | Arrastar na metade direita |
-| **Agarrar / empurrar a bola** | **Segurar `E`** ou o botão esquerdo | Botão da mão (liga/desliga) |
-| Pular | `Espaço` | Botão de seta |
-| Correr | `Shift` | Botão de correr |
-| Trazer a bola de volta | `R` | Botão circular no topo |
-| Zoom | Roda do mouse | — |
-| Pausar | `Esc` | — |
+| Ação | Teclado / mouse | Controle (Xbox / PlayStation) | Celular |
+|---|---|---|---|
+| Andar | `W` `A` `S` `D` (ou setas) | Analógico esquerdo | Analógico à esquerda |
+| Olhar em volta | Mouse | Analógico direito | Arrastar na metade direita |
+| **Agarrar / empurrar a bola** | **Segurar `E`** ou o botão esquerdo | **Segurar `RT` / `R2`** (ou `X` / `□`) | Botão da mão (liga/desliga) |
+| Pular | `Espaço` | `A` / `✕` | Botão de seta |
+| Correr | `Shift` | `LT` / `L2` (ou `B` / `○`) | Botão de correr |
+| Trazer a bola de volta | `R` | `Y` / `△` | Botão circular no topo |
+| Zoom | Roda do mouse | `LB` / `RB` (`L1` / `R1`) | — |
+| Pausar | `Esc` | `Start` / `Options` | Botão de pausa no topo |
+
+🎮 **Controle:** é só conectar (USB ou Bluetooth) e mexer. O jogo detecta se é de Xbox ou PlayStation e mostra os botões certos nas dicas. No menu, direcional/analógico navegam, `A`/`✕` escolhe e `B`/`○` volta. Com o controle, a câmera volta sozinha pra trás do besouro e ele vibra nas batidas e no enterro (dá pra desligar).
 
 ### 🟤 A mecânica
 - **Empurrar:** chega perto da bola e segura `E`. O besouro vira de costas, apoia a cabeça no chão e empurra com as patas traseiras, de ré, igualzinho ao rola-bosta de verdade. Você só aponta a direção.
@@ -72,10 +79,10 @@ Outros comandos:
 
 | Onde | Link |
 |---|---|
-| 🐙 Código | [github.com/Nickdevcode/rola-bosta](https://github.com/Nickdevcode/rola-bosta) |
-| ▲ Produção | [rola-bosta.vercel.app](https://rola-bosta.vercel.app) |
+| 🐙 Código | [github.com/Nickdevcode/dawnroll](https://github.com/Nickdevcode/dawnroll) |
+| ▲ Produção | [dawnroll.vercel.app](https://dawnroll.vercel.app) |
 
-A Vercel tá ligada ao repo: **todo `git push` na `main` publica sozinho** em produção. Pull requests e outras branches ganham um link de preview próprio.
+A Vercel tá ligada ao repo: **todo `git push` na `main` publica sozinho** em produção. Pull requests e outras branches ganham um link de preview próprio. O domínio antigo (`rola-bosta.vercel.app`) redireciona pro novo com um 308 permanente, configurado no `vercel.json`.
 
 ---
 
@@ -83,7 +90,7 @@ A Vercel tá ligada ao repo: **todo `git push` na `main` publica sozinho** em pr
 
 - Aparece um analógico (andar), uma área de arrastar pra olhar e botões de correr, agarrar e pular.
 - A câmera volta sozinha pra trás do besouro quando você para de mexer nela.
-- Perfil gráfico mais leve: sem oclusão ambiente, sem desfoque de maquete e sem bloom, menos pixels, sombra menor, menos grama, menos enfeites e menos bichinhos. Se ainda assim ficar abaixo de ~40 fps, o jogo reduz mais (e mais um degrau se cair abaixo de ~30).
+- Perfil gráfico mais leve: sem oclusão ambiente, sem desfoque de maquete e sem bloom, menos pixels, sombra menor, menos grama, menos enfeites e menos bichinhos. Na qualidade **Auto**, se ainda assim ficar abaixo de ~40 fps, o jogo reduz mais (e mais um degrau se cair abaixo de ~30). Escolhendo uma qualidade fixa nas configurações, ele obedece e não mexe sozinho.
 - Pausa sozinho se você sair do app ou trocar de aba.
 
 ---
@@ -104,11 +111,13 @@ Não tem nenhum arquivo de modelo, textura ou som: **tudo é gerado por código*
 
 ```
 src/
-├── main.ts                 # entrada: checa WebGL 2 e sobe o jogo
+├── main.ts                 # entrada: idioma, checa WebGL 2 e sobe o jogo
 ├── Game.ts                 # laço de jogo, rodadas, clima, água/lama, dicas, qualidade adaptativa
 ├── core/
 │   ├── Physics.ts          # mundo Rapier, passo fixo 60 Hz, grupos de colisão
-│   ├── Input.ts            # teclado + mouse (pointer lock) + toque
+│   ├── Input.ts            # teclado + mouse (pointer lock) + toque + controle; último dispositivo usado
+│   ├── GamepadInput.ts     # Gamepad API: analógicos, gatilhos, menu, vibração, Xbox x PlayStation
+│   ├── settings.ts         # configurações salvas e validadas, predefinições de qualidade
 │   ├── device.ts           # perfis de qualidade (PC x celular)
 │   ├── save.ts             # recorde e bolas enterradas no localStorage (validado)
 │   └── ThirdPersonCamera.ts # órbita, colisão com o cenário e tremidinha de impacto
@@ -147,8 +156,15 @@ src/
 │   ├── Rain.ts             # riscos de chuva (100% no shader) + anéis de respingo
 │   └── critters/           # fauna instanciada por espécie: voadores, rasteiros, formigas,
 │                           # tatuzinho, gafanhoto, minhoca, sapo (reage à chuva e às poças)
-├── audio/Sfx.ts            # efeitos sintetizados
-└── ui/                     # HUD, tela inicial, controles de toque, design tokens
+├── audio/Sfx.ts            # efeitos sintetizados (canais de efeitos e ambiente)
+├── i18n/                   # dicionários pt-BR/en tipados + detecção do idioma do navegador
+└── ui/
+    ├── Hud.ts              # HUD em jogo, dicas, marcador da toca, resultado, toque
+    ├── Menu.ts             # menu de início/pausa, configurações (abas) e como jogar
+    ├── controls.ts         # seletor, chave e slider acessíveis (teclado, leitor de tela)
+    ├── icons.ts            # ícones SVG
+    ├── styles.css          # design tokens + HUD
+    └── menu.css            # o menu "madrugada → amanhecer"
 ```
 
 ---
@@ -177,4 +193,9 @@ src/
 - **Molhado em tudo com um uniform só:** `uWetness` é compartilhado por massinha, chão e grama: escurece e tira aspereza em manchas (nunca 100% espelhado, senão vira plástico).
 - **Muito bicho, poucos draw calls:** cada parte de cada espécie (corpo, asa, pata...) é um `InstancedMesh` com as matrizes calculadas na CPU; parte sem ninguém visível desliga sozinha. São ~26 draw calls de fauna no seco e ~31 na chuva, com ~0,2 ms de CPU por frame.
 - **Pouso que some:** os pontos de pouso dos insetos formam um array vivo; quando a bola arranca a flor, o ponto sai da lista e a borboleta que estava ali levanta voo.
-- **Recorde à prova de lixo:** o save é lido com validação (número finito, não negativo, com teto); aba anônima ou storage bloqueado só não salva.
+- **Idiomas tipados:** o português é o dicionário de referência e o inglês tem o tipo `Messages`, então faltar uma tradução é erro de compilação. No automático, o idioma sai de `navigator.languages` (o primeiro que o jogo fala ganha; qualquer `pt-*` vira pt-BR, o resto cai no inglês) e o evento `languagechange` troca ao vivo.
+- **Plural sem `Intl.PluralRules`:** pro português ele trata o zero como singular ("0 montinho"); na interface o natural é "0 montinhos", então a regra é `n === 1`.
+- **Configurações como em jogo de PC:** escolher uma qualidade preenche os ajustes; mexer num ajuste solto vira "Personalizada". A resolução é fração da densidade de pixels da tela (com teto de 2x). Tudo aplica ao vivo (`Graphics.configure`), e a qualidade adaptativa só age no Auto.
+- **Controle sem evento:** a Gamepad API não avisa quando um botão muda, então o estado é lido a cada quadro e as "apertadas" saem da comparação com o quadro anterior. Enquanto o menu está aberto, nada do controle vaza pro jogo (o `A` que escolhe "Jogar" não vira pulo).
+- **Xbox antes de PlayStation:** "Xbox Wireless Controller" contém "Wireless Controller", que é o nome do controle de PS4 em vários navegadores, então o teste por Xbox (e pelo fabricante `045e`) vem primeiro.
+- **Recorde à prova de lixo:** o save é lido com validação (número finito, não negativo, com teto); aba anônima ou storage bloqueado só não salva. O recorde da época do Rola Bosta é migrado pra chave nova na primeira leitura.

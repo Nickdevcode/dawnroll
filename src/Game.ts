@@ -3,7 +3,8 @@ import { Physics, FIXED_DT, RAPIER, Groups, interactionGroups } from './core/Phy
 import { Input } from './core/Input';
 import { ThirdPersonCamera } from './core/ThirdPersonCamera';
 import { loadSave, writeSave, type SaveData } from './core/save';
-import { Graphics } from './render/Graphics';
+import { settings, nativePixelRatio, type GameSettings } from './core/settings';
+import { Graphics, type RenderOptions } from './render/Graphics';
 import { globalUniforms } from './render/shaderChunks';
 import { Terrain, terrainHeight, terrainNormal, dirtAmount, BURROW } from './world/Terrain';
 import { Scenery } from './world/Scenery';
@@ -21,6 +22,8 @@ import { Effects, type EffectsFrame } from './fx/Effects';
 import type { SurfaceProbe } from './fx/Rain';
 import { Sfx } from './audio/Sfx';
 import { Hud, type HintKind } from './ui/Hud';
+import { Menu } from './ui/Menu';
+import { t } from './i18n';
 import { quality } from './core/device';
 import { clamp } from './utils/math';
 
@@ -46,6 +49,7 @@ export class Game {
   private readonly graphics: Graphics;
   private readonly input: Input;
   private readonly hud: Hud;
+  private readonly menu: Menu;
   private readonly sfx = new Sfx();
   private readonly cameraRig: ThirdPersonCamera;
   private readonly weather = new Weather();
@@ -83,10 +87,15 @@ export class Game {
   private burrowHintTimer = 0;
   private digSoundToggle = false;
 
-  // Qualidade adaptativa (em até dois degraus)
+  // Qualidade adaptativa (só no "Auto", em até dois degraus)
   private perfSamples = 0;
   private perfTime = 0;
   private perfStage = 0;
+  /** Degrau que a qualidade adaptativa já desceu (0 = nada). */
+  private adaptiveLevel = 0;
+  // Contador de FPS do HUD (média de meio segundo).
+  private fpsFrames = 0;
+  private fpsTime = 0;
 
   private readonly tmpPlayer = new THREE.Vector3();
   private readonly tmpBall = new THREE.Vector3();
@@ -100,6 +109,7 @@ export class Game {
     this.graphics = new Graphics(canvas);
     this.input = new Input(canvas);
     this.hud = new Hud(uiRoot, this.input);
+    this.menu = new Menu(uiRoot, this.hud.isTouch);
     this.cameraRig = new ThirdPersonCamera(this.graphics.camera);
 
     this.frameInfo = {
@@ -123,23 +133,32 @@ export class Game {
       ballWater: 0,
     };
 
-    this.hud.onStart = () => this.start();
-    this.hud.onToggleSound = () => this.sfx.toggleMute();
+    this.menu.onPlay = () => this.start();
+    this.hud.onOpenMenu = () => this.pause();
+    this.hud.onToggleSound = () => {
+      const muted = this.sfx.toggleMute();
+      settings.update({ muted });
+      return muted;
+    };
     this.hud.onMilestone = () => {
       this.effects.celebrate(this.ball.root.position, this.ball.radius);
       this.sfx.pop();
     };
     this.weather.onThunder = (distance) => this.sfx.thunder(distance);
+    this.input.gamepad.onConnectionChange = (connected, style) => {
+      this.menu.setGamepad(connected ? style : null);
+      if (connected) this.hud.notify(t('gamepad.connected'));
+    };
     document.addEventListener('pointerlockchange', this.onPointerLockChange);
     document.addEventListener('visibilitychange', () => {
       if (!document.hidden) return;
       this.lastTime = 0;
       // No celular não existe Esc: sair do app (ou trocar de aba) pausa o jogo.
-      if (this.started) this.hud.showStart(true);
+      if (this.started) this.pause();
     });
     window.addEventListener('keydown', (e) => {
       // Enter na tela inicial também começa (acessível pelo teclado).
-      if (this.hud.isStartVisible && !this.startDisabled && (e.code === 'Enter' || e.code === 'NumpadEnter')) this.start();
+      if (this.menu.isVisible && !this.startDisabled && document.activeElement === document.body && (e.code === 'Enter' || e.code === 'NumpadEnter')) this.start();
       // Atalho de desenvolvimento: F8 adianta o tempo para a próxima fase (sol → nublando → chuva...).
       if (import.meta.env.DEV && e.code === 'F8') this.weather.skipAhead();
     });
@@ -211,9 +230,13 @@ export class Game {
     this.graphics.renderer.compile(scene, this.graphics.camera);
 
     this.startDisabled = false;
+    this.applySettings(settings.get());
+    settings.subscribe((s, changed) => this.applySettings(s, changed));
     this.hud.setLoaded();
+    this.menu.setReady();
     this.hud.setBall(this.ball.diameterCm, 0, 0);
     this.hud.setProgress(this.save);
+    this.menu.setProgress(this.save);
     requestAnimationFrame(this.frame);
 
     if (import.meta.env.DEV) {
@@ -252,6 +275,7 @@ export class Game {
       this.effects.pluck(event.ground, event.position, event.tint, event.size, event.kind === 'flower');
       this.effects.startle(event.ground, 4 + event.size * 2);
       this.cameraRig.shake(0.03 + Math.min(event.size, 3) * 0.03);
+      this.rumble(0.25 + Math.min(event.size, 3) * 0.15, 0.5, 140);
     };
     this.ball.onImpact = (strength) => {
       if (strength > 0.25) {
@@ -260,6 +284,7 @@ export class Game {
         this.effects.impact(at, this.ball.radius, strength);
         this.effects.startle(at, 2 + this.ball.radius);
         this.cameraRig.shake(strength * 0.12 * Math.min(1, this.ball.radius / 1.5));
+        this.rumble(strength * 0.7, strength * 0.4, 110);
       }
     };
     this.ball.onShed = (at) => this.effects.shed(at);
@@ -268,6 +293,7 @@ export class Game {
       this.sfx.grab();
       this.effects.startle(at, 6 + radius);
       this.cameraRig.shake(0.05);
+      this.rumble(0.2, 0.45, 1800);
     };
     this.burrow.onDig = (at, strength) => {
       this.effects.dig(at, strength);
@@ -295,7 +321,12 @@ export class Game {
   private start(): void {
     if (this.startDisabled) return;
     this.sfx.unlock();
-    this.hud.hideStart();
+    // O som nasce no primeiro gesto: aplica volumes e mudo salvos agora.
+    const s = settings.get();
+    this.sfx.setVolumes(s.masterVolume, s.effectsVolume, s.ambienceVolume);
+    this.sfx.setMuted(s.muted);
+    this.menu.hide();
+    this.hud.setVisible(true);
     this.started = true;
     if (!this.hud.isTouch) this.input.requestPointerLock();
     this.canvas.focus();
@@ -303,11 +334,109 @@ export class Game {
 
   private onPointerLockChange = (): void => {
     // Perdeu o mouse (Esc): pausa e mostra a tela de controles.
-    if (!this.input.pointerLocked && this.started && !this.hud.isTouch) this.hud.showStart(true);
+    if (!this.input.pointerLocked && this.started && !this.hud.isTouch) this.pause();
   };
 
+  /**
+   * Controle: Start pausa/continua; com o menu aberto, direções/A/B navegam nele.
+   * Nada do que se aperta no menu vaza pro jogo (o A que escolhe "Jogar" não vira pulo).
+   */
+  private handleGamepadMenu(): void {
+    if (!this.paused) {
+      if (this.input.pausePressed) this.pause();
+      return;
+    }
+    const state = this.input.state;
+    state.jumpPressed = false;
+    state.resetPressed = false;
+    if (this.startDisabled) return;
+    for (const action of this.input.menuActions) {
+      if (action === 'start') {
+        this.start();
+        return;
+      }
+      const used = this.menu.handleGamepad(action);
+      // B sem placa aberta = continuar o jogo (se já tinha começado).
+      if (!used && action === 'back' && this.started) {
+        this.start();
+        return;
+      }
+    }
+  }
+
+  /** Vibração do controle, se o jogador está nele e não desligou nas configurações. */
+  private rumble(strong: number, weak: number, durationMs: number): void {
+    if (this.input.device !== 'gamepad' || !settings.get().gamepadVibration) return;
+    this.input.gamepad.rumble(strong, weak, durationMs);
+  }
+
+  /** Pausa: a noite cai sobre o jardim e o menu volta (com "Continuar"). */
+  private pause(): void {
+    if (this.menu.isVisible) return;
+    if (this.input.pointerLocked) document.exitPointerLock();
+    this.menu.show(true);
+    this.hud.setVisible(false);
+  }
+
   private get paused(): boolean {
-    return this.hud.isStartVisible;
+    return this.menu.isVisible;
+  }
+
+  /**
+   * Aplica as configurações (na hora, sem recarregar). `changed` diz o que mudou;
+   * sem ele, aplica tudo (primeira vez).
+   */
+  private applySettings(s: Readonly<GameSettings>, changed?: ReadonlySet<keyof GameSettings>): void {
+    const has = (...keys: Array<keyof GameSettings>) => !changed || keys.some((k) => changed.has(k));
+    if (has('quality', 'resolution', 'shadows', 'ambientOcclusion', 'depthOfField', 'bloom', 'grassDensity')) {
+      // Qualidade manual desliga a adaptativa (e desfaz o que ela tinha baixado).
+      if (s.quality !== 'auto') {
+        this.adaptiveLevel = 0;
+        this.perfStage = 2;
+      } else if (changed?.has('quality')) {
+        this.adaptiveLevel = 0;
+        this.perfStage = 0;
+        this.perfTime = 0;
+        this.perfSamples = 0;
+      }
+      this.applyRender(s);
+    }
+    if (has('masterVolume', 'effectsVolume', 'ambienceVolume')) this.sfx.setVolumes(s.masterVolume, s.effectsVolume, s.ambienceVolume);
+    if (has('muted')) {
+      this.sfx.setMuted(s.muted);
+      this.hud.setMuted(s.muted);
+    }
+    this.cameraRig.sensitivity = s.mouseSensitivity;
+    this.cameraRig.invertY = s.invertY;
+    this.cameraRig.shakeEnabled = s.cameraShake;
+    if (has('showFps') && !s.showFps) this.hud.setFps(null);
+  }
+
+  /** Configurações gráficas + o degrau da qualidade adaptativa → renderizador e vegetação. */
+  private applyRender(s: Readonly<GameSettings>): void {
+    const options: RenderOptions = {
+      pixelRatio: nativePixelRatio() * s.resolution,
+      shadows: s.shadows,
+      ambientOcclusion: s.ambientOcclusion,
+      depthOfField: s.depthOfField,
+      bloom: s.bloom,
+    };
+    let grass = s.grassDensity;
+    if (this.adaptiveLevel >= 1) {
+      options.ambientOcclusion = false;
+      options.depthOfField = false;
+      options.bloom = false;
+      options.pixelRatio = Math.min(options.pixelRatio, 1);
+      if (options.shadows === 'high') options.shadows = 'low';
+      grass *= 0.6;
+    }
+    if (this.adaptiveLevel >= 2) {
+      options.pixelRatio = Math.min(options.pixelRatio, 0.8);
+      grass *= 0.6;
+    }
+    this.graphics.configure(options);
+    this.grass.setDensity(grass);
+    this.groundCover.setDensity(Math.min(1, grass * 0.9));
   }
 
   private frame = (now: number): void => {
@@ -319,11 +448,13 @@ export class Game {
 
     this.input.update();
     const look = this.input.consumeLook();
+    this.hud.setInputDevice(this.input.device, this.input.gamepad.style);
+    this.handleGamepadMenu();
 
     if (!this.paused) {
       this.cameraRig.applyLook(look.x, look.y, look.zoom);
       // No toque, mirar com o dedão é trabalhoso: a câmera volta sozinha pra trás do besouro.
-      if (this.hud.isTouch) {
+      if (this.hud.isTouch || this.input.device === 'gamepad') {
         if (look.x !== 0 || look.y !== 0) this.lastLookTime = this.elapsed;
         if (this.elapsed - this.lastLookTime > 0.9) this.cameraRig.autoFollow(frameTime, this.beetle.travelDirection());
       }
@@ -345,6 +476,7 @@ export class Game {
     const alpha = this.paused ? 1 : this.accumulator / FIXED_DT;
     this.renderFrame(alpha, frameTime);
     this.trackPerformance(frameTime);
+    this.countFps(frameTime);
   };
 
   private fixedStep(): void {
@@ -448,10 +580,12 @@ export class Game {
     this.save.bestCm = Math.max(this.save.bestCm, result.diameterCm);
     writeSave(this.save);
     this.hud.setProgress(this.save);
+    this.menu.setProgress(this.save);
     this.hud.showResult({ ...result, record });
     this.effects.buried(at, result.diameterCm / 4);
     this.sfx.fanfare(record);
     this.cameraRig.shake(0.1);
+    this.rumble(0.8, 1, record ? 500 : 300);
   }
 
   /** Rodada nova: o jardim volta inteiro e uma bola pequena brota do lado do besouro. */
@@ -587,13 +721,24 @@ export class Game {
     });
   }
 
+  /** Média de FPS a cada meio segundo, se o jogador ligou o contador. */
+  private countFps(frameTime: number): void {
+    if (!settings.get().showFps) return;
+    this.fpsFrames++;
+    this.fpsTime += frameTime;
+    if (this.fpsTime < 0.5) return;
+    this.hud.setFps(this.fpsFrames / this.fpsTime);
+    this.fpsFrames = 0;
+    this.fpsTime = 0;
+  }
+
   /**
-   * Mede os primeiros segundos de jogo; se o aparelho não segurar ~40 fps,
-   * desliga AO/DOF/bloom, reduz a resolução e afina a vegetação. Se mesmo assim
-   * ficar abaixo de ~30 fps, desce mais um degrau (sombra menor, menos pixels).
+   * Qualidade "Auto": mede os primeiros segundos de jogo; se o aparelho não segurar
+   * ~40 fps, desliga AO/DOF/bloom, limita a resolução e afina a vegetação. Se mesmo
+   * assim ficar abaixo de ~30 fps, desce mais um degrau.
    */
   private trackPerformance(frameTime: number): void {
-    if (this.perfStage >= 2 || this.paused) return;
+    if (this.perfStage >= 2 || this.paused || settings.get().quality !== 'auto') return;
     this.perfTime += frameTime;
     this.perfSamples++;
     if (this.perfTime < 4) return;
@@ -605,17 +750,12 @@ export class Game {
         this.perfStage = 2; // aguentou: não mede mais
         return;
       }
-      this.graphics.setLowQuality(true);
-      this.grass.setDensity(0.6);
-      this.groundCover.setDensity(0.5);
+      this.adaptiveLevel = 1;
       this.perfStage = 1;
     } else {
-      if (fps < 30) {
-        this.graphics.setMinimumQuality();
-        this.grass.setDensity(0.35);
-        this.groundCover.setDensity(0.3);
-      }
+      if (fps < 30) this.adaptiveLevel = 2;
       this.perfStage = 2;
     }
+    this.applyRender(settings.get());
   }
 }

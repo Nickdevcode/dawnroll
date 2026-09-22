@@ -34,14 +34,23 @@ export class ThirdPersonCamera {
 
   constructor(private readonly camera: THREE.PerspectiveCamera) {}
 
+  /** Multiplicador da velocidade do mouse/dedo (configurações). */
+  sensitivity = 1;
+  /** Inverte o olhar vertical (configurações). */
+  invertY = false;
+  /** Desligar a tremida ajuda quem enjoa com câmera mexendo (configurações). */
+  shakeEnabled = true;
+
   /** Tremidinha de impacto (soma com a que já estiver rolando, com teto). */
   shake(amount: number): void {
+    if (!this.shakeEnabled) return;
     this.shakeAmount = Math.min(this.shakeAmount + amount, 0.35);
   }
 
   applyLook(dx: number, dy: number, zoomSteps: number): void {
-    this.yaw -= dx * MOUSE_SENSITIVITY;
-    this.pitch = clamp(this.pitch + dy * MOUSE_SENSITIVITY, MIN_PITCH, MAX_PITCH);
+    const k = MOUSE_SENSITIVITY * this.sensitivity;
+    this.yaw -= dx * k;
+    this.pitch = clamp(this.pitch + dy * k * (this.invertY ? -1 : 1), MIN_PITCH, MAX_PITCH);
     this.zoom = clamp(this.zoom + zoomSteps * 0.12, 0.55, 2.2);
   }
 

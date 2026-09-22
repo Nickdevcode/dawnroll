@@ -1,7 +1,13 @@
+import { GamepadInput, type MenuAction } from './GamepadInput';
+import { isTouchDevice } from './device';
+
 /**
- * Estado de entrada unificado: teclado + mouse (pointer lock) + toque.
+ * Estado de entrada unificado: teclado + mouse (pointer lock) + toque + controle.
  * O resto do jogo só lê `move`, `look`, `grab`, `jump`, `run` — não sabe de onde veio.
  */
+
+/** De onde veio a última entrada (as dicas na tela acompanham). */
+export type InputDevice = 'keyboard' | 'touch' | 'gamepad';
 
 export interface InputState {
   /** Eixo de movimento no plano: x = direita, y = frente. Magnitude ≤ 1. */
@@ -40,7 +46,14 @@ export class Input {
   private lookY = 0;
   private zoomDelta = 0;
 
+  readonly gamepad = new GamepadInput();
+  /** Último dispositivo usado (aparelho de toque começa no toque, não no teclado). */
+  device: InputDevice = isTouchDevice ? 'touch' : 'keyboard';
+  /** Start/Options apertado neste quadro (pausar). */
+  pausePressed = false;
+
   private readonly keys = new Set<string>();
+  private lastUpdate = 0;
   private mouseGrab = false;
   private jumpQueued = false;
   private resetQueued = false;
@@ -71,10 +84,22 @@ export class Input {
     if (result instanceof Promise) result.catch(() => undefined);
   }
 
+  /** Ações de menu vindas do controle neste quadro. */
+  get menuActions(): readonly MenuAction[] {
+    return this.gamepad.menuActions;
+  }
+
   /** Chamado uma vez por frame, antes da simulação. */
   update(): void {
-    let x = 0;
-    let y = 0;
+    const now = performance.now();
+    const dt = this.lastUpdate === 0 ? 1 / 60 : Math.min((now - this.lastUpdate) / 1000, 0.1);
+    this.lastUpdate = now;
+    const pad = this.gamepad;
+    pad.poll(dt);
+    if (pad.active) this.device = 'gamepad';
+
+    let x = pad.moveX;
+    let y = pad.moveY;
     for (const code of this.keys) {
       const axis = MOVE_KEYS[code];
       if (axis) {
@@ -92,8 +117,14 @@ export class Input {
     const s = this.state;
     s.moveX = x;
     s.moveY = y;
-    s.run = this.keys.has('ShiftLeft') || this.keys.has('ShiftRight') || this.touchRun;
-    s.grab = this.mouseGrab || this.keys.has('KeyE') || this.touchGrab;
+    s.run = this.keys.has('ShiftLeft') || this.keys.has('ShiftRight') || this.touchRun || pad.run;
+    s.grab = this.mouseGrab || this.keys.has('KeyE') || this.touchGrab || pad.grab;
+    this.lookX += pad.lookX;
+    this.lookY += pad.lookY;
+    this.zoomDelta += pad.zoom;
+    if (pad.jumpPressed) this.jumpQueued = true;
+    if (pad.recallPressed) this.resetQueued = true;
+    this.pausePressed = pad.startPressed;
     // "Pegajoso" até um passo de física consumir: em telas de 144 Hz há frames sem passo fixo.
     s.jumpPressed = s.jumpPressed || this.jumpQueued;
     s.resetPressed = s.resetPressed || this.resetQueued;
@@ -111,10 +142,12 @@ export class Input {
 
   // --- API de toque (usada pelos controles virtuais do HUD) ---
   setTouchMove(x: number, y: number): void {
+    this.device = 'touch';
     this.touchMove.x = x;
     this.touchMove.y = y;
   }
   addTouchLook(dx: number, dy: number): void {
+    this.device = 'touch';
     this.lookX += dx;
     this.lookY += dy;
   }
@@ -132,6 +165,7 @@ export class Input {
   }
 
   private onKeyDown = (e: KeyboardEvent): void => {
+    this.device = 'keyboard';
     if (e.repeat) return;
     if (e.code === 'Space') {
       this.jumpQueued = true;
@@ -163,6 +197,7 @@ export class Input {
 
   private onMouseMove = (e: MouseEvent): void => {
     if (!this.pointerLocked) return;
+    this.device = 'keyboard';
     this.lookX += e.movementX;
     this.lookY += e.movementY;
   };

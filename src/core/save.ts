@@ -13,7 +13,9 @@ export interface SaveData {
   totalCm: number;
 }
 
-const KEY = 'rola-bosta:progresso:v1';
+const KEY = 'dawnroll:progresso:v1';
+/** Chave de quando o jogo se chamava Rola Bosta: lida uma vez e migrada. */
+const LEGACY_KEY = 'rola-bosta:progresso:v1';
 
 const EMPTY: SaveData = { bestCm: 0, buried: 0, totalCm: 0 };
 
@@ -24,7 +26,15 @@ function sane(value: unknown, max: number): number {
 
 export function loadSave(): SaveData {
   try {
-    const raw = window.localStorage.getItem(KEY);
+    let raw = window.localStorage.getItem(KEY);
+    if (!raw) {
+      // Recorde de antes da troca de nome: traz pra chave nova (ninguém perde progresso).
+      raw = window.localStorage.getItem(LEGACY_KEY);
+      if (raw) {
+        window.localStorage.setItem(KEY, raw);
+        window.localStorage.removeItem(LEGACY_KEY);
+      }
+    }
     if (!raw) return { ...EMPTY };
     const data = JSON.parse(raw) as Partial<Record<keyof SaveData, unknown>> | null;
     if (!data || typeof data !== 'object') return { ...EMPTY };

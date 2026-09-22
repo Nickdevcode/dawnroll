@@ -1,5 +1,11 @@
 import './ui/styles.css';
+import './ui/menu.css';
+import { settings } from './core/settings';
+import { setLanguagePreference, t } from './i18n';
 import { Game } from './Game';
+
+// Idioma antes de qualquer tela: salvo pelo jogador ou, no automático, o do navegador.
+setLanguagePreference(settings.get().language);
 
 const canvas = document.getElementById('scene') as HTMLCanvasElement | null;
 const ui = document.getElementById('ui');
@@ -13,7 +19,7 @@ function showFatal(message: string): void {
   panel.className = 'panel';
   const title = document.createElement('h1');
   title.className = 'title';
-  title.textContent = 'Ops!';
+  title.textContent = t('fatal.title');
   const text = document.createElement('p');
   text.className = 'tagline';
   text.textContent = message;
@@ -35,11 +41,11 @@ if (!canvas || !ui) {
 }
 
 if (!hasWebGL2()) {
-  showFatal('Seu navegador não suporta WebGL 2. Tente um Chrome, Edge, Firefox ou Safari atualizado.');
+  showFatal(t('fatal.webgl'));
 } else {
   const game = new Game(canvas, ui);
   game.init().catch((error: unknown) => {
     console.error(error);
-    showFatal('Não deu pra carregar o jogo. Recarregue a página e tente de novo.');
+    showFatal(t('fatal.load'));
   });
 }

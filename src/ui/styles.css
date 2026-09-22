@@ -91,10 +91,10 @@ body {
 /* ==========================================================================
    Componentes base
    ========================================================================== */
+/* Texto corrido (inline-block, não flex): a dica mistura texto e "tecla" e precisa quebrar linha como frase. */
 .chip {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
+  display: inline-block;
+  line-height: 1.55;
   padding: var(--space-2) var(--space-4);
   border-radius: var(--radius-pill);
   background: var(--color-cream);
@@ -168,9 +168,16 @@ body {
   font-size: 13px;
   color: var(--color-ink);
 }
+/* Tecla no meio de uma frase (dicas): alinhada ao texto, com respiro dos lados. */
+.chip .keycap {
+  height: 26px;
+  min-width: 26px;
+  margin: 0 4px;
+  vertical-align: middle;
+}
 
 /* ==========================================================================
-   Tela inicial / pausa
+   Tela de erro (sem WebGL / falha ao carregar). O menu do jogo mora em menu.css.
    ========================================================================== */
 .overlay {
   position: absolute;
@@ -237,34 +244,6 @@ body {
   color: var(--color-ink-soft);
 }
 
-.controls {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-3) var(--space-5);
-  margin: var(--space-6) 0 var(--space-2);
-  text-align: left;
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--color-ink-soft);
-}
-.controls__row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-.controls__keys {
-  display: inline-flex;
-  gap: 3px;
-  flex-shrink: 0;
-}
-
-.footnote {
-  margin-top: var(--space-5);
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--color-ink-soft);
-  opacity: 0.8;
-}
 
 /* ==========================================================================
    HUD em jogo
@@ -420,8 +399,8 @@ body {
   white-space: nowrap;
 }
 .record-chip[hidden],
-.start-record[hidden],
-.result__badge[hidden] {
+.result__badge[hidden],
+.fps-chip[hidden] {
   display: none;
 }
 .record-chip svg {
@@ -439,26 +418,6 @@ body {
   opacity: 0.5;
 }
 
-.start-record {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  margin: calc(-1 * var(--space-2)) 0 var(--space-5);
-  padding: var(--space-2) var(--space-4);
-  border-radius: var(--radius-pill);
-  background: rgba(244, 167, 59, 0.16);
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--color-ink-soft);
-}
-.start-record svg {
-  width: 18px;
-  height: 18px;
-  color: var(--color-accent-deep);
-}
-.start-record strong {
-  color: var(--color-dung);
-}
 
 .chip--warn {
   background: #ffe2c2;
@@ -602,15 +561,6 @@ body {
 .is-touch .touch {
   display: block;
 }
-.is-touch .controls--desktop {
-  display: none;
-}
-.controls--touch {
-  display: none;
-}
-.is-touch .controls--touch {
-  display: grid;
-}
 
 .joystick {
   position: absolute;
@@ -728,9 +678,6 @@ body {
   .panel {
     padding: var(--space-5) var(--space-4) var(--space-4);
   }
-  .controls {
-    grid-template-columns: 1fr;
-  }
   .ball-card {
     min-width: 0;
   }
@@ -748,15 +695,6 @@ body {
   }
 }
 
-@media (max-height: 520px) {
-  .controls {
-    margin-top: var(--space-3);
-    gap: var(--space-2) var(--space-5);
-  }
-  .tagline {
-    margin: var(--space-2) 0 var(--space-3);
-  }
-}
 
 @media (prefers-reduced-motion: reduce) {
   *,
@@ -804,9 +742,6 @@ body {
     padding: var(--space-3) var(--space-6);
     font-size: 19px;
   }
-  .footnote {
-    display: none;
-  }
   .ball-card {
     padding: var(--space-2) var(--space-3) var(--space-2) var(--space-2);
   }
@@ -830,8 +765,5 @@ body {
   .result,
   .is-touch .result {
     top: 22%;
-  }
-  .start-record {
-    margin-bottom: var(--space-3);
   }
 }

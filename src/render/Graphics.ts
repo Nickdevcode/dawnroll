@@ -6,7 +6,8 @@ import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { Pass } from 'three/examples/jsm/postprocessing/Pass.js';
-import { quality } from '../core/device';
+import { isTouchDevice, quality } from '../core/device';
+import type { ShadowQuality } from '../core/settings';
 import { createRng } from '../utils/math';
 
 /** Paleta do "clima" da cena. Centralizada para ajustar o tom do jogo num lugar só. */
@@ -43,6 +44,16 @@ interface SkyColors {
 export const SUN_DIRECTION = new THREE.Vector3(0.55, 0.78, 0.3).normalize();
 
 const SHADOW_EXTENT = 26;
+
+/** O que o renderizador liga e desliga (vem das configurações, já com a qualidade adaptativa aplicada). */
+export interface RenderOptions {
+  /** Pixels desenhados por ponto de tela (1 = um por ponto). */
+  pixelRatio: number;
+  shadows: ShadowQuality;
+  ambientOcclusion: boolean;
+  depthOfField: boolean;
+  bloom: boolean;
+}
 const tmpSize = new THREE.Vector2();
 
 /**
@@ -251,7 +262,13 @@ export class Graphics {
   private readonly bloomPass: UnrealBloomPass;
   private readonly finishPass: ShaderPass;
   private pixelRatio: number;
-  private lowQuality = false;
+  private options: RenderOptions = {
+    pixelRatio: 1,
+    shadows: 'high',
+    ambientOcclusion: quality.ambientOcclusion,
+    depthOfField: quality.depthOfField,
+    bloom: quality.bloom,
+  };
 
   constructor(canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({
@@ -354,23 +371,26 @@ export class Graphics {
     this.dofPass.uniforms.uFocus.value = Math.max(distance, 1);
   }
 
-  /** Reduz custo quando o aparelho não aguenta: sem AO/DOF/bloom e com menos pixels. */
-  setLowQuality(low: boolean): void {
-    this.lowQuality = low;
-    this.pixelRatio = low ? Math.min(window.devicePixelRatio, 1) : Math.min(window.devicePixelRatio, quality.maxPixelRatio);
-    this.sun.shadow.radius = low ? 1 : 4;
-    this.applyQuality();
-    this.onResize();
-  }
+  /**
+   * Aplica resolução, sombras e pós-processamento na hora (sem recarregar).
+   * Trocar o tamanho do mapa de sombra descarta o antigo; o three cria o novo no próximo quadro.
+   */
+  configure(options: RenderOptions): void {
+    this.options = { ...options, depthOfField: options.depthOfField && options.ambientOcclusion };
+    this.pixelRatio = Math.max(0.3, options.pixelRatio);
 
-  /** Segundo degrau (aparelho bem fraco): sombra menor e resolução abaixo de 1:1. */
-  setMinimumQuality(): void {
-    this.setLowQuality(true);
-    const size = Math.min(this.sun.shadow.mapSize.x, 1024);
-    this.sun.shadow.mapSize.set(size, size);
-    this.sun.shadow.map?.dispose();
-    this.sun.shadow.map = null;
-    this.pixelRatio = Math.min(window.devicePixelRatio, 0.8);
+    const cast = options.shadows !== 'off';
+    this.sun.castShadow = cast;
+    if (cast) {
+      const size = options.shadows === 'high' ? (isTouchDevice ? 2048 : 4096) : 1024;
+      if (this.sun.shadow.mapSize.x !== size) {
+        this.sun.shadow.mapSize.set(size, size);
+        this.sun.shadow.map?.dispose();
+        this.sun.shadow.map = null;
+      }
+      this.sun.shadow.radius = options.shadows === 'high' ? 4 : 2;
+    }
+    this.applyQuality();
     this.onResize();
   }
 
@@ -408,13 +428,13 @@ export class Graphics {
   }
 
   private applyQuality(): void {
-    const ao = quality.ambientOcclusion && !this.lowQuality;
+    const ao = this.options.ambientOcclusion;
     this.aoPass.enabled = ao;
     this.aoHide.enabled = ao;
     this.aoRestore.enabled = ao;
     // O DOF lê a profundidade do GTAO: sem AO, sem DOF.
-    this.dofPass.enabled = ao && quality.depthOfField;
-    this.bloomPass.enabled = quality.bloom && !this.lowQuality;
+    this.dofPass.enabled = ao && this.options.depthOfField;
+    this.bloomPass.enabled = this.options.bloom;
   }
 
   /**

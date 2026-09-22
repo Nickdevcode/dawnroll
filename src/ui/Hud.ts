@@ -1,35 +1,20 @@
-import type { Input } from '../core/Input';
+import type { Input, InputDevice } from '../core/Input';
+import { PAD_LABELS, type PadStyle } from '../core/GamepadInput';
 import { isTouchDevice } from '../core/device';
 import type { SaveData } from '../core/save';
+import { formatCm, onLocaleChange, t, tn, type MessageKey } from '../i18n';
+import { Icons } from './icons';
 
-/** Ícones SVG inline (sem emoji na interface, sem dependência de biblioteca). */
-const Icons = {
-  ball: `<svg viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="25" r="19" fill="#7b4c2a"/><circle cx="24" cy="25" r="19" fill="url(#g)"/><defs><radialGradient id="g" cx="0.35" cy="0.3" r="0.8"><stop offset="0" stop-color="#b17a47"/><stop offset="0.6" stop-color="#7b4c2a" stop-opacity="0"/></radialGradient></defs><circle cx="17" cy="19" r="3.2" fill="#9a6a3c"/><circle cx="30" cy="31" r="4" fill="#5b3820"/><path d="M12 30c4 2 6 1 9-1" stroke="#e6c46a" stroke-width="2" stroke-linecap="round" fill="none"/></svg>`,
-  soundOn: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M16.5 8.5a5 5 0 0 1 0 7"/><path d="M19 6a8.5 8.5 0 0 1 0 12"/></svg>`,
-  soundOff: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M17 9l5 6M22 9l-5 6"/></svg>`,
-  help: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="6" width="19" height="12" rx="3"/><path d="M6.5 10h.01M10 10h.01M13.5 10h.01M17 10h.01M7 14h10"/></svg>`,
-  grab: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 13V6.5a1.5 1.5 0 0 1 3 0V12"/><path d="M11 11V5a1.5 1.5 0 0 1 3 0v6"/><path d="M14 11V6.5a1.5 1.5 0 0 1 3 0V14a6 6 0 0 1-6 6h-.5A5.5 5.5 0 0 1 6 17.2L4.3 13.8a1.5 1.5 0 0 1 2.6-1.5L8 14"/></svg>`,
-  jump: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V6"/><path d="M6 11l6-6 6 6"/></svg>`,
-  recall: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/><circle cx="12" cy="12" r="3"/></svg>`,
-  run: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h10"/><path d="M11 6l6 6-6 6"/><path d="M19 6v12"/></svg>`,
-  trophy: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 4h8v5a4 4 0 0 1-8 0z"/><path d="M8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4"/><path d="M12 13v4M8.5 20h7M10 17h4"/></svg>`,
-  /** Seta do marcador da toca (aponta para cima; o HUD gira). */
-  pointer: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l7 11h-4.5v7h-5v-7H5z" fill="currentColor"/></svg>`,
-};
-
-/** Marcos de tamanho (cm) que disparam um aviso comemorativo. */
-const MILESTONES: Array<[number, string]> = [
-  [3, 'Bola respeitável'],
-  [5, 'Olha o tamanho disso'],
-  [8, 'Bola de campeonato'],
-  [12, 'Lenda do esterco'],
-  [16, 'Terror do jardim'],
-  [20, 'Planeta Bosta'],
-  [24, 'O Rei da Bosta'],
+/** Marcos de tamanho (cm) que disparam um aviso comemorativo; o nome vem do dicionário. */
+const MILESTONES: ReadonlyArray<[number, MessageKey]> = [
+  [3, 'milestone.1'],
+  [5, 'milestone.2'],
+  [8, 'milestone.3'],
+  [12, 'milestone.4'],
+  [16, 'milestone.5'],
+  [20, 'milestone.6'],
+  [24, 'milestone.7'],
 ];
-
-const formatCm = (cm: number): string => `${cm.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} cm`;
-const plural = (n: number, one: string, many: string): string => `${n.toLocaleString('pt-BR')} ${n === 1 ? one : many}`;
 
 export type HintKind = 'none' | 'grab' | 'pushing' | 'tooSmall' | 'burrowTooSmall' | 'dissolving';
 
@@ -54,12 +39,12 @@ export interface RoundResult {
 }
 
 /**
- * Interface do jogo: tela inicial, HUD, avisos e controles de toque.
- * Só manipula DOM — o estado de jogo chega pelos métodos `set*`.
+ * Interface em jogo: carregando, cartão da bola, dicas, avisos, marcador da toca,
+ * resultado da rodada e controles de toque. Só manipula DOM — o estado de jogo
+ * chega pelos métodos `set*`. O menu (início/pausa/configurações) mora em `Menu`.
  */
 export class Hud {
   private readonly root: HTMLElement;
-  private readonly startOverlay: HTMLElement;
   private readonly hud: HTMLElement;
   private readonly ballCard: HTMLElement;
   private readonly ballValue: HTMLElement;
@@ -69,15 +54,15 @@ export class Hud {
   private readonly toast: HTMLElement;
   private readonly soundButton: HTMLButtonElement;
   private readonly loader: HTMLElement;
-  private readonly startButton: HTMLButtonElement;
-  private readonly startLabel: HTMLElement;
   private readonly liveRegion: HTMLElement;
   private readonly recordChip: HTMLElement;
-  private readonly startRecord: HTMLElement;
   private readonly marker: HTMLElement;
   private readonly markerArrow: HTMLElement;
   private readonly markerLabel: HTMLElement;
   private readonly result: HTMLElement;
+  private readonly fps: HTMLElement;
+  /** Textos fixos: elemento + chave (+ atributo, se não for o texto). */
+  private readonly texts: Array<[HTMLElement, MessageKey, string?]> = [];
 
   private milestoneIndex = 0;
   private toastTimer = 0;
@@ -87,11 +72,21 @@ export class Hud {
   private lastCm = -1;
   private lastMeta = '';
   private lastMarkerLabel = '';
+  private lastFps = -1;
+  private muted = false;
+  private lastSave: SaveData | null = null;
+  private lastResult: RoundResult | null = null;
+  private hintState: { kind: HintKind; value: number } = { kind: 'none', value: 0 };
+  /** Último dispositivo usado e estilo do controle (as dicas falam a língua dele). */
+  private device: InputDevice = isTouchDevice ? 'touch' : 'keyboard';
+  private padStyle: PadStyle = 'xbox';
+  private markerState: BurrowMarkerState | null = null;
 
   readonly isTouch = isTouchDevice;
 
-  onStart: (() => void) | null = null;
   onToggleSound: (() => boolean) | null = null;
+  /** Botão de pausa/menu do HUD. */
+  onOpenMenu: (() => void) | null = null;
   /** Passou de um marco de tamanho (índice do marco). */
   onMilestone: ((index: number) => void) | null = null;
 
@@ -101,7 +96,6 @@ export class Hud {
     this.root.innerHTML = this.template();
 
     const $ = <T extends HTMLElement>(sel: string) => this.root.querySelector(sel) as T;
-    this.startOverlay = $('[data-start]');
     this.hud = $('[data-hud]');
     this.ballCard = $('[data-ball-card]');
     this.ballValue = $('[data-ball-value]');
@@ -111,56 +105,49 @@ export class Hud {
     this.toast = $('[data-toast]');
     this.soundButton = $('[data-sound]');
     this.loader = $('[data-loader]');
-    this.startButton = $('[data-play]');
-    this.startLabel = $('[data-play-label]');
     this.liveRegion = $('[data-live]');
     this.recordChip = $('[data-record]');
-    this.startRecord = $('[data-start-record]');
     this.marker = $('[data-burrow]');
     this.markerArrow = $('[data-burrow-arrow]');
     this.markerLabel = $('[data-burrow-label]');
     this.result = $('[data-result]');
+    this.fps = $('[data-fps]');
+    this.root.querySelectorAll<HTMLElement>('[data-t]').forEach((el) => this.texts.push([el, el.dataset.t as MessageKey]));
+    this.root.querySelectorAll<HTMLElement>('[data-t-aria]').forEach((el) => this.texts.push([el, el.dataset.tAria as MessageKey, 'aria-label']));
 
-    this.startButton.addEventListener('click', () => this.onStart?.());
     this.soundButton.addEventListener('click', (e) => {
       e.stopPropagation();
-      const muted = this.onToggleSound?.() ?? false;
-      this.soundButton.innerHTML = muted ? Icons.soundOff : Icons.soundOn;
-      this.soundButton.setAttribute('aria-label', muted ? 'Ligar som' : 'Desligar som');
+      this.setMuted(this.onToggleSound?.() ?? false);
     });
-    $<HTMLButtonElement>('[data-help]').addEventListener('click', (e) => {
+    $<HTMLButtonElement>('[data-menu-open]').addEventListener('click', (e) => {
       e.stopPropagation();
-      this.showStart(true);
+      this.onOpenMenu?.();
     });
-
     $<HTMLButtonElement>('[data-recall]').addEventListener('click', (e) => {
       e.stopPropagation();
       this.input.queueReset();
     });
 
     if (this.isTouch) this.bindTouchControls();
+    onLocaleChange(() => this.refreshTexts());
+    this.refreshTexts();
   }
 
+  /** Mundo pronto: o "carregando" some. */
   setLoaded(): void {
     this.loader.classList.add('is-done');
-    this.startButton.disabled = false;
-    this.startButton.focus({ preventScroll: true });
   }
 
-  /** Mostra a tela inicial (ou de pausa, se o jogo já começou). */
-  showStart(paused: boolean): void {
-    this.startOverlay.hidden = false;
-    this.startLabel.textContent = paused ? 'Continuar' : 'Jogar';
-    this.hud.classList.remove('is-visible');
+  /** HUD aparece durante o jogo e some por trás do menu. */
+  setVisible(visible: boolean): void {
+    this.hud.classList.toggle('is-visible', visible);
   }
 
-  hideStart(): void {
-    this.startOverlay.hidden = true;
-    this.hud.classList.add('is-visible');
-  }
-
-  get isStartVisible(): boolean {
-    return !this.startOverlay.hidden;
+  /** Estado do botão de som (vem das configurações salvas ou do clique). */
+  setMuted(muted: boolean): void {
+    this.muted = muted;
+    this.soundButton.innerHTML = muted ? Icons.soundOff : Icons.soundOn;
+    this.soundButton.setAttribute('aria-label', t(muted ? 'hud.unmute' : 'hud.mute'));
   }
 
   setBall(diameterCm: number, dungCount: number, itemCount: number): void {
@@ -174,12 +161,14 @@ export class Hud {
       this.lastCm = cm;
 
       while (this.milestoneIndex < MILESTONES.length && cm >= MILESTONES[this.milestoneIndex][0]) {
-        this.showToast(`${MILESTONES[this.milestoneIndex][1]} · ${formatCm(MILESTONES[this.milestoneIndex][0])}`);
+        const [value, name] = MILESTONES[this.milestoneIndex];
+        this.showToast(`${t(name)} · ${formatCm(value)}`);
         this.onMilestone?.(this.milestoneIndex);
         this.milestoneIndex++;
       }
     }
-    const meta = itemCount > 0 ? `${plural(dungCount, 'montinho', 'montinhos')} · ${plural(itemCount, 'coisa', 'coisas')}` : plural(dungCount, 'montinho', 'montinhos');
+    const dung = tn('hud.dung', dungCount);
+    const meta = itemCount > 0 ? `${dung} · ${tn('hud.items', itemCount)}` : dung;
     if (meta !== this.lastMeta) {
       this.ballMeta.textContent = meta;
       this.lastMeta = meta;
@@ -193,52 +182,51 @@ export class Hud {
     this.lastMeta = '';
   }
 
-  /** Recorde e bolas enterradas (chip do HUD + linha da tela inicial). */
+  /** Recorde e bolas enterradas (chip do HUD). */
   setProgress(save: SaveData): void {
+    this.lastSave = save;
     const has = save.buried > 0;
     this.recordChip.hidden = !has;
-    this.startRecord.hidden = !has;
     if (!has) return;
-    const best = formatCm(save.bestCm);
-    const count = plural(save.buried, 'enterrada', 'enterradas');
-    this.recordChip.innerHTML = `${Icons.trophy}<span>Recorde <strong>${best}</strong></span><span class="record-chip__sep" aria-hidden="true">·</span><span>${count}</span>`;
-    this.startRecord.innerHTML = `${Icons.trophy}<span>Seu recorde: <strong>${best}</strong> · ${plural(save.buried, 'bola enterrada', 'bolas enterradas')}</span>`;
+    this.recordChip.innerHTML = `${Icons.trophy}<span data-best></span><span class="record-chip__sep" aria-hidden="true">·</span><span data-count></span>`;
+    (this.recordChip.querySelector('[data-best]') as HTMLElement).textContent = t('hud.record', { cm: formatCm(save.bestCm) });
+    (this.recordChip.querySelector('[data-count]') as HTMLElement).textContent = tn('hud.buried', save.buried);
   }
 
   /** Cartão de comemoração ao enterrar uma bola. */
   showResult(result: RoundResult): void {
-    const $ = (sel: string) => this.result.querySelector(sel) as HTMLElement;
-    $('[data-result-value]').textContent = formatCm(Math.round(result.diameterCm * 10) / 10);
-    const parts = [plural(result.dungCount, 'montinho', 'montinhos')];
-    if (result.itemCount > 0) parts.push(plural(result.itemCount, 'coisa grudada', 'coisas grudadas'));
-    $('[data-result-meta]').textContent = parts.join(' · ');
-    $('[data-result-badge]').hidden = !result.record;
+    this.lastResult = result;
+    this.fillResult(result);
     this.result.classList.add('is-visible');
     this.resultTimer = 4.6;
     this.hint.classList.remove('is-visible');
-    this.liveRegion.textContent = `Bola enterrada: ${formatCm(result.diameterCm)}${result.record ? '. Novo recorde!' : ''}`;
+    this.liveRegion.textContent = `${t('result.live', { cm: formatCm(result.diameterCm) })}${result.record ? ` ${t('result.record')}` : ''}`;
   }
 
   setHint(kind: HintKind, value = 0): void {
+    this.hintState = { kind, value };
     const key = `${kind}|${value.toFixed(1)}`;
     if (key === this.currentHint) return;
     this.currentHint = key;
     let html = '';
     switch (kind) {
       case 'grab':
-        html = this.isTouch ? 'Toque na mão para agarrar a bola' : 'Segure <span class="keycap">E</span> ou o botão esquerdo para agarrar a bola';
+        if (this.device === 'gamepad') html = escapeHtml(t('hint.grab.gamepad')).replace('{button}', this.padCap());
+        else if (this.device === 'touch') html = escapeHtml(t('hint.grab.touch'));
+        else html = escapeHtml(t('hint.grab.desktop')).replace('{key}', '<span class="keycap">E</span>');
         break;
       case 'pushing':
-        html = this.isTouch ? 'Empurre com o analógico · toque na mão para soltar' : 'Mire com o mouse e ande para rolar · solte para largar';
+        if (this.device === 'gamepad') html = escapeHtml(t('hint.pushing.gamepad')).replace('{button}', this.padCap());
+        else html = escapeHtml(t(this.device === 'touch' ? 'hint.pushing.touch' : 'hint.pushing.desktop'));
         break;
       case 'tooSmall':
-        html = `Grande demais pra sua bola · cresça até <strong>${formatCm(value)}</strong>`;
+        html = escapeHtml(t('hint.tooSmall', { cm: '{cm}' })).replace('{cm}', `<strong>${formatCm(value)}</strong>`);
         break;
       case 'burrowTooSmall':
-        html = `Bola pequena pra enterrar · cresça até <strong>${formatCm(value)}</strong>`;
+        html = escapeHtml(t('hint.burrowTooSmall', { cm: '{cm}' })).replace('{cm}', `<strong>${formatCm(value)}</strong>`);
         break;
       case 'dissolving':
-        html = 'A água tá derretendo sua bola! Saia da poça';
+        html = escapeHtml(t('hint.dissolving'));
         break;
       case 'none':
         break;
@@ -252,11 +240,36 @@ export class Hud {
     }
   }
 
+  /** Dispositivo em uso mudou: as dicas passam a citar os botões dele. */
+  setInputDevice(device: InputDevice, padStyle: PadStyle): void {
+    if (device === this.device && padStyle === this.padStyle) return;
+    this.device = device;
+    this.padStyle = padStyle;
+    this.currentHint = '';
+    this.setHint(this.hintState.kind, this.hintState.value);
+  }
+
+  /** Aviso rápido no topo (ex.: controle conectado). */
+  notify(text: string): void {
+    this.showToast(text);
+  }
+
+  /** FPS no canto (null esconde). */
+  setFps(fps: number | null): void {
+    this.fps.hidden = fps === null;
+    if (fps === null) return;
+    const rounded = Math.round(fps);
+    if (rounded === this.lastFps) return;
+    this.lastFps = rounded;
+    this.fps.textContent = t('hud.fps', { n: rounded });
+  }
+
   /**
    * Marcador da toca: pino em cima dela quando está na tela; seta presa na borda
    * apontando para ela quando está fora. `null` esconde.
    */
   setBurrowMarker(state: BurrowMarkerState | null): void {
+    this.markerState = state;
     if (!state) {
       this.marker.classList.remove('is-visible');
       return;
@@ -295,7 +308,7 @@ export class Hud {
     this.marker.classList.add('is-visible');
     this.marker.classList.toggle('is-ready', state.ready);
     this.marker.classList.toggle('is-edge', !onScreen);
-    const label = `${state.ready ? 'Enterre aqui' : 'Toca'} · ${Math.round(state.distanceCm)} cm`;
+    const label = `${t(state.ready ? 'marker.bury' : 'marker.burrow')} · ${Math.round(state.distanceCm)} cm`;
     if (label !== this.lastMarkerLabel) {
       this.markerLabel.textContent = label;
       this.lastMarkerLabel = label;
@@ -319,6 +332,38 @@ export class Hud {
         this.currentHint = '';
       }
     }
+  }
+
+  /** Idioma trocou: textos fixos na hora; os dinâmicos são refeitos a partir do último estado. */
+  private refreshTexts(): void {
+    for (const [el, key, attr] of this.texts) {
+      if (attr) el.setAttribute(attr, t(key));
+      else el.textContent = t(key);
+    }
+    this.setMuted(this.muted);
+    this.lastCm = -1;
+    this.lastMeta = '';
+    this.lastMarkerLabel = '';
+    this.lastFps = -1;
+    this.currentHint = '';
+    if (this.lastSave) this.setProgress(this.lastSave);
+    if (this.lastResult) this.fillResult(this.lastResult);
+    this.setHint(this.hintState.kind, this.hintState.value);
+    if (this.markerState) this.setBurrowMarker(this.markerState);
+  }
+
+  /** Botão de segurar a bola (RT / R2) como "tecla" na dica. */
+  private padCap(): string {
+    return `<span class="keycap padcap">${escapeHtml(PAD_LABELS[this.padStyle].rt)}</span>`;
+  }
+
+  private fillResult(result: RoundResult): void {
+    const $ = (sel: string) => this.result.querySelector(sel) as HTMLElement;
+    $('[data-result-value]').textContent = formatCm(Math.round(result.diameterCm * 10) / 10);
+    const parts = [tn('hud.dung', result.dungCount)];
+    if (result.itemCount > 0) parts.push(tn('result.items', result.itemCount));
+    $('[data-result-meta]').textContent = parts.join(' · ');
+    $('[data-result-badge]').hidden = !result.record;
   }
 
   private bump(): void {
@@ -430,19 +475,18 @@ export class Hud {
   }
 
   private template(): string {
-    const key = (k: string) => `<span class="keycap">${k}</span>`;
     return /* html */ `
       <div class="loader" data-loader role="status" aria-live="polite">
         <div>
           <div class="loader__ball"></div>
-          <div class="loader__text">Amassando a massinha…</div>
+          <div class="loader__text" data-t="loader.text"></div>
         </div>
       </div>
 
       <div class="hud" data-hud>
         <div class="burrow-marker" data-burrow aria-hidden="true">
           <div class="burrow-marker__arrow" data-burrow-arrow>${Icons.pointer}</div>
-          <div class="burrow-marker__label" data-burrow-label>Toca</div>
+          <div class="burrow-marker__label" data-burrow-label></div>
         </div>
 
         <div class="hud__top">
@@ -450,27 +494,28 @@ export class Hud {
             <div class="ball-card" data-ball-card>
               <div class="ball-card__icon">${Icons.ball}</div>
               <div style="flex:1">
-                <div class="ball-card__label">Sua bola</div>
-                <div class="ball-card__value" data-ball-value>2,0 cm</div>
-                <div class="ball-card__meta" data-ball-meta>0 montinhos</div>
+                <div class="ball-card__label" data-t="hud.yourBall"></div>
+                <div class="ball-card__value" data-ball-value></div>
+                <div class="ball-card__meta" data-ball-meta></div>
                 <div class="progress" aria-hidden="true"><div class="progress__fill" data-progress></div></div>
               </div>
             </div>
             <div class="record-chip" data-record hidden></div>
           </div>
           <div class="hud__actions">
-            <button class="btn btn--icon touch-only" data-recall type="button" aria-label="Trazer a bola de volta">${Icons.recall}</button>
-            <button class="btn btn--icon" data-help type="button" aria-label="Ver controles">${Icons.help}</button>
-            <button class="btn btn--icon" data-sound type="button" aria-label="Desligar som">${Icons.soundOn}</button>
+            <button class="btn btn--icon touch-only" data-recall type="button" data-t-aria="hud.recall">${Icons.recall}</button>
+            <button class="btn btn--icon" data-menu-open type="button" data-t-aria="hud.menu">${Icons.menu}</button>
+            <button class="btn btn--icon" data-sound type="button">${Icons.soundOn}</button>
           </div>
         </div>
 
+        <div class="fps-chip" data-fps hidden aria-hidden="true"></div>
         <div class="hint" data-hint aria-hidden="true"></div>
         <div class="toast" data-toast aria-hidden="true"></div>
         <div class="result" data-result aria-hidden="true">
-          <div class="result__badge" data-result-badge hidden>${Icons.trophy}<span>Novo recorde!</span></div>
-          <div class="result__title">Bola enterrada!</div>
-          <div class="result__value" data-result-value>0,0 cm</div>
+          <div class="result__badge" data-result-badge hidden>${Icons.trophy}<span data-t="result.record"></span></div>
+          <div class="result__title" data-t="result.title"></div>
+          <div class="result__value" data-result-value></div>
           <div class="result__meta" data-result-meta></div>
         </div>
         <div class="sr-only" data-live aria-live="polite"></div>
@@ -479,38 +524,17 @@ export class Hud {
           <div class="look-zone" data-look></div>
           <div class="joystick" data-joystick><div class="joystick__knob" data-knob></div></div>
           <div class="touch-buttons">
-            <button class="btn touch-btn" data-touch-run type="button" aria-label="Correr">${Icons.run}</button>
-            <button class="btn touch-btn" data-touch-grab type="button" aria-label="Agarrar a bola" aria-pressed="false">${Icons.grab}</button>
-            <button class="btn touch-btn" data-touch-jump type="button" aria-label="Pular">${Icons.jump}</button>
+            <button class="btn touch-btn" data-touch-run type="button" data-t-aria="touch.runButton">${Icons.run}</button>
+            <button class="btn touch-btn" data-touch-grab type="button" data-t-aria="touch.grabButton" aria-pressed="false">${Icons.grab}</button>
+            <button class="btn touch-btn" data-touch-jump type="button" data-t-aria="touch.jumpButton">${Icons.jump}</button>
           </div>
-        </div>
-      </div>
-
-      <div class="overlay" data-start role="dialog" aria-modal="true" aria-labelledby="game-title">
-        <div class="panel">
-          <h1 class="title" id="game-title"><span>Rola</span> <span>Bosta</span></h1>
-          <p class="tagline">Role a bola, engula o jardim e enterre tudo na toca.</p>
-          <p class="start-record" data-start-record hidden></p>
-          <button class="btn btn--primary" data-play type="button" disabled><span data-play-label>Jogar</span></button>
-
-          <div class="controls controls--desktop">
-            <div class="controls__row"><span class="controls__keys">${key('W')}${key('A')}${key('S')}${key('D')}</span> Andar</div>
-            <div class="controls__row"><span class="controls__keys">${key('Mouse')}</span> Olhar em volta</div>
-            <div class="controls__row"><span class="controls__keys">${key('E')}</span> ou clique: segurar a bola</div>
-            <div class="controls__row"><span class="controls__keys">${key('Espaço')}</span> Pular</div>
-            <div class="controls__row"><span class="controls__keys">${key('Shift')}</span> Correr</div>
-            <div class="controls__row"><span class="controls__keys">${key('R')}</span> Trazer a bola de volta</div>
-          </div>
-          <div class="controls controls--touch">
-            <div class="controls__row">Analógico à esquerda: andar</div>
-            <div class="controls__row">Arraste à direita: olhar em volta</div>
-            <div class="controls__row">Mão: agarrar/soltar a bola</div>
-            <div class="controls__row">Seta: pular</div>
-            <div class="controls__row">Seta circular (no topo): trazer a bola</div>
-          </div>
-          <p class="footnote">Bola grande arranca flor, cogumelo e até pedra. Siga a bandeirinha até a toca pra enterrar e bater recorde. Na chuva, fuja das poças: a água derrete a bosta.</p>
         </div>
       </div>
     `;
   }
+}
+
+/** Texto traduzido vai pro innerHTML junto com marcação nossa: escapa antes. */
+function escapeHtml(text: string): string {
+  return text.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 }
