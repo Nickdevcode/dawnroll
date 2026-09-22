@@ -1,0 +1,13 @@
+node_modules/
+dist/
+docs/
+.env
+.env.*
+*.log
+.DS_Store
+.vscode/
+.idea/
+.playwright-mcp/
+.impeccable/
+.vercel/
+shots/
