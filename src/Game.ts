@@ -20,7 +20,8 @@ import { DungBall, START_RADIUS } from './entities/DungBall';
 import { Beetle } from './entities/Beetle';
 import { Effects, type EffectsFrame } from './fx/Effects';
 import type { SurfaceProbe } from './fx/Rain';
-import { Sfx } from './audio/Sfx';
+import { GameAudio } from './audio/GameAudio';
+import type { AudioFrame } from './audio/frame';
 import { Hud, type HintKind } from './ui/Hud';
 import { Menu } from './ui/Menu';
 import { t } from './i18n';
@@ -50,7 +51,7 @@ export class Game {
   private readonly input: Input;
   private readonly hud: Hud;
   private readonly menu: Menu;
-  private readonly sfx = new Sfx();
+  private readonly audio: GameAudio;
   private readonly cameraRig: ThirdPersonCamera;
   private readonly weather = new Weather();
   private readonly save: SaveData = loadSave();
@@ -103,6 +104,7 @@ export class Game {
   private readonly tmpMarker = new THREE.Vector3();
   private readonly stink: StinkSource[] = [];
   private readonly frameInfo: EffectsFrame;
+  private readonly audioFrame: AudioFrame;
   private readonly surfaceHit = { y: 0, water: false, normal: new THREE.Vector3(0, 1, 0) };
 
   constructor(private readonly canvas: HTMLCanvasElement, uiRoot: HTMLElement) {
@@ -111,6 +113,7 @@ export class Game {
     this.hud = new Hud(uiRoot, this.input);
     this.menu = new Menu(uiRoot, this.hud.isTouch);
     this.cameraRig = new ThirdPersonCamera(this.graphics.camera);
+    this.audio = new GameAudio(uiRoot);
 
     this.frameInfo = {
       time: 0,
@@ -132,22 +135,40 @@ export class Game {
       playerWater: 0,
       ballWater: 0,
     };
+    this.audioFrame = {
+      scene: this.frameInfo,
+      paused: true,
+      footfalls: 0,
+      feetClearance: 0,
+      playerDirt: 0,
+      ballDirt: 0,
+      ballSolid: true,
+      ballClearance: 0,
+      ballDissolving: false,
+      ballItems: 0,
+      ballDiameterCm: START_RADIUS * 4,
+      burying: false,
+      overcast: 0,
+    };
 
     this.menu.onPlay = () => this.start();
     this.hud.onOpenMenu = () => this.pause();
     this.hud.onToggleSound = () => {
-      const muted = this.sfx.toggleMute();
+      const muted = !settings.get().muted;
       settings.update({ muted });
       return muted;
     };
-    this.hud.onMilestone = () => {
+    this.hud.onMilestone = (index) => {
       this.effects.celebrate(this.ball.root.position, this.ball.radius);
-      this.sfx.pop();
+      this.audio.milestone(index);
     };
-    this.weather.onThunder = (distance) => this.sfx.thunder(distance);
+    this.weather.onThunder = (distance) => this.audio.thunder(distance);
     this.input.gamepad.onConnectionChange = (connected, style) => {
       this.menu.setGamepad(connected ? style : null);
-      if (connected) this.hud.notify(t('gamepad.connected'));
+      if (connected) {
+        this.hud.notify(t('gamepad.connected'));
+        this.audio.notify();
+      }
     };
     document.addEventListener('pointerlockchange', this.onPointerLockChange);
     document.addEventListener('visibilitychange', () => {
@@ -219,6 +240,7 @@ export class Game {
       landingSpots: this.scenery.landingSpots,
       isGroundFree: (x, z) => !this.scenery.isInsideSolid(x, z, 0.5) && !this.scenery.isDug(x, z),
       surface,
+      sounds: this.audio.critterSounds,
     });
     scene.add(this.effects.group);
 
@@ -243,6 +265,7 @@ export class Game {
       // Handle de depuração para testes automatizados no navegador.
       (window as unknown as { __game: unknown; __terrainHeight: unknown }).__game = this;
       (window as unknown as { __terrainHeight: unknown }).__terrainHeight = terrainHeight;
+      (window as unknown as { __audio: unknown }).__audio = this.audio;
     }
   }
 
@@ -250,28 +273,26 @@ export class Game {
     this.beetle.onEvent = (event) => {
       const feet = this.beetle.renderPosition(1, this.tmpPlayer);
       if (event === 'jump') {
-        this.sfx.jump();
+        this.audio.jump(feet);
         this.effects.jump(feet);
       } else if (event === 'land') {
-        this.sfx.land();
         const strength = THREE.MathUtils.clamp((this.beetle.landingSpeed - 6) / 10, 0, 1);
+        this.audio.land(feet, strength);
         this.effects.land(feet, strength);
         this.cameraRig.shake(0.04 + strength * 0.08);
       } else if (event === 'grab') {
-        this.sfx.grab();
+        this.audio.grab(feet);
+      } else if (event === 'release') {
+        this.audio.release(feet);
       }
     };
     this.collectibles.onCollect = (event) => {
-      if (event.kind === 'dung') {
-        this.sfx.squish(Math.min(this.ball.radius / 3, 1));
-        this.effects.splat(event.position, event.size);
-      } else {
-        this.sfx.pop();
-        this.effects.sparkle(event.position, event.color);
-      }
+      this.audio.collect(event, this.ball.radius);
+      if (event.kind === 'dung') this.effects.splat(event.position, event.size);
+      else this.effects.sparkle(event.position, event.color);
     };
     this.pickables.onPick = (event) => {
-      this.sfx.pluck(event.size);
+      this.audio.pluck(event);
       this.effects.pluck(event.ground, event.position, event.tint, event.size, event.kind === 'flower');
       this.effects.startle(event.ground, 4 + event.size * 2);
       this.cameraRig.shake(0.03 + Math.min(event.size, 3) * 0.03);
@@ -279,18 +300,21 @@ export class Game {
     };
     this.ball.onImpact = (strength) => {
       if (strength > 0.25) {
-        this.sfx.thud(strength);
         const at = this.ball.position(this.tmpBall);
+        this.audio.impact(at, strength, this.ball.radius);
         this.effects.impact(at, this.ball.radius, strength);
         this.effects.startle(at, 2 + this.ball.radius);
         this.cameraRig.shake(strength * 0.12 * Math.min(1, this.ball.radius / 1.5));
         this.rumble(strength * 0.7, strength * 0.4, 110);
       }
     };
-    this.ball.onShed = (at) => this.effects.shed(at);
+    this.ball.onShed = (at) => {
+      this.effects.shed(at);
+      this.audio.shed(at);
+    };
 
     this.burrow.onBurialStart = (at, radius) => {
-      this.sfx.grab();
+      this.audio.burialStart(at, radius);
       this.effects.startle(at, 6 + radius);
       this.cameraRig.shake(0.05);
       this.rumble(0.2, 0.45, 1800);
@@ -299,7 +323,7 @@ export class Game {
       this.effects.dig(at, strength);
       // Som de terra a cada dois torrões (senão vira chiado contínuo).
       this.digSoundToggle = !this.digSoundToggle;
-      if (this.digSoundToggle) this.sfx.dig(strength);
+      if (this.digSoundToggle) this.audio.dig(at, strength);
       this.cameraRig.shake(0.012 + strength * 0.012);
     };
     this.burrow.onBuried = (result, at) => this.finishRound(result, at);
@@ -320,11 +344,9 @@ export class Game {
 
   private start(): void {
     if (this.startDisabled) return;
-    this.sfx.unlock();
-    // O som nasce no primeiro gesto: aplica volumes e mudo salvos agora.
-    const s = settings.get();
-    this.sfx.setVolumes(s.masterVolume, s.effectsVolume, s.ambienceVolume);
-    this.sfx.setMuted(s.muted);
+    // Jogar/Continuar é um gesto: garante o áudio de pé e faz amanhecer.
+    this.audio.unlock();
+    this.audio.setPaused(false);
     this.menu.hide();
     this.hud.setVisible(true);
     this.started = true;
@@ -375,6 +397,7 @@ export class Game {
     if (this.menu.isVisible) return;
     if (this.input.pointerLocked) document.exitPointerLock();
     this.menu.show(true);
+    this.audio.setPaused(true);
     this.hud.setVisible(false);
   }
 
@@ -401,9 +424,11 @@ export class Game {
       }
       this.applyRender(s);
     }
-    if (has('masterVolume', 'effectsVolume', 'ambienceVolume')) this.sfx.setVolumes(s.masterVolume, s.effectsVolume, s.ambienceVolume);
+    if (has('masterVolume', 'musicVolume', 'effectsVolume', 'ambienceVolume')) {
+      this.audio.setVolumes({ master: s.masterVolume, music: s.musicVolume, effects: s.effectsVolume, ambience: s.ambienceVolume });
+    }
     if (has('muted')) {
-      this.sfx.setMuted(s.muted);
+      this.audio.setMuted(s.muted);
       this.hud.setMuted(s.muted);
     }
     this.cameraRig.sensitivity = s.mouseSensitivity;
@@ -472,7 +497,7 @@ export class Game {
       this.cameraRig.applyLook(-frameTime * 60 * 0.35, 0, 0);
     }
 
-    this.applyWeather(frameTime);
+    this.applyWeather();
     const alpha = this.paused ? 1 : this.accumulator / FIXED_DT;
     this.renderFrame(alpha, frameTime);
     this.trackPerformance(frameTime);
@@ -538,7 +563,7 @@ export class Game {
 
     const wet = this.ballWater > 0.03;
     if (wet && !this.ballWasWet && speed > 0.8) {
-      this.sfx.splash(Math.min(r / 3, 1));
+      this.audio.splash(this.tmpFocus.set(p.x, surface ?? p.y, p.z), Math.min(r / 3, 1));
       this.effects.waterSplash(this.tmpFocus.set(p.x, surface ?? p.y, p.z), Math.min(0.4 + r * 0.25, 1.4));
     }
     this.ballWasWet = wet;
@@ -547,19 +572,18 @@ export class Game {
     this.playerWater = this.puddles.depthAt(c.x, c.z);
     this.beetle.speedScale = 1 - 0.45 * clamp(this.playerWater / 0.5, 0, 1);
     const playerWet = this.playerWater > 0.04;
-    if (playerWet && !this.playerWasWet) this.sfx.splash(0.15);
+    if (playerWet && !this.playerWasWet) this.audio.splash(c, 0.15);
     this.playerWasWet = playerWet;
   }
 
-  /** Clima → luz, céu, superfícies molhadas, poças e som. Roda também na pausa (o mundo segue vivo). */
-  private applyWeather(dt: number): void {
+  /** Clima → luz, céu, superfícies molhadas e poças (o som do clima lê o retrato do quadro). Roda também na pausa (o mundo segue vivo). */
+  private applyWeather(): void {
     const w = this.weather;
     this.graphics.setWeather(w.overcast, w.flash);
     this.scenery.setOvercast(w.overcast);
     globalUniforms.uWetness.value = w.wetness;
     globalUniforms.uRain.value = w.rain;
     this.puddles.setFill(w.puddleFill);
-    this.sfx.setRain(this.paused ? w.rain * 0.35 : w.rain, dt);
   }
 
   /** Traz a bola para a frente do besouro. */
@@ -569,7 +593,9 @@ export class Game {
     const r = this.ball.radius;
     const x = this.beetle.center.x + facing.x * (r + 1);
     const z = this.beetle.center.z + facing.z * (r + 1);
-    this.ball.teleport(new THREE.Vector3(x, terrainHeight(x, z) + r + 0.4, z));
+    const to = new THREE.Vector3(x, terrainHeight(x, z) + r + 0.4, z);
+    this.ball.teleport(to);
+    this.audio.recall(to);
   }
 
   /** Bola enterrada: placar, recorde salvo e festa. */
@@ -583,7 +609,7 @@ export class Game {
     this.menu.setProgress(this.save);
     this.hud.showResult({ ...result, record });
     this.effects.buried(at, result.diameterCm / 4);
-    this.sfx.fanfare(record);
+    this.audio.buried(at, result.diameterCm / 4, record);
     this.cameraRig.shake(0.1);
     this.rumble(0.8, 1, record ? 500 : 300);
   }
@@ -611,7 +637,7 @@ export class Game {
     this.ball.endBurial();
     this.hud.resetRound();
     this.effects.sparkle(position, new THREE.Color('#e6c46a'));
-    this.sfx.pop();
+    this.audio.newBall(position);
   }
 
   private renderFrame(alpha: number, dt: number): void {
@@ -646,6 +672,7 @@ export class Game {
     this.hud.setHint(hint.kind, hint.value);
     this.updateBurrowMarker(player);
     this.hud.update(dt);
+    this.updateAudio(dt, player);
 
     this.graphics.render(this.elapsed);
   }
@@ -676,6 +703,26 @@ export class Game {
     this.effects.update(dt, f);
   }
 
+  /** Retrato do quadro para o áudio (roda também na pausa: a madrugada do menu tem som). */
+  private updateAudio(dt: number, player: THREE.Vector3): void {
+    const a = this.audioFrame;
+    const ball = this.ball.root.position;
+    const r = this.ball.radius;
+    a.paused = this.paused;
+    a.footfalls = this.beetle.model.footfalls;
+    a.feetClearance = player.y - terrainHeight(player.x, player.z);
+    a.playerDirt = dirtAmount(player.x, player.z);
+    a.ballDirt = dirtAmount(ball.x, ball.z);
+    a.ballSolid = this.ball.isSolid;
+    a.ballClearance = ball.y - r - terrainHeight(ball.x, ball.z);
+    a.ballDissolving = this.dissolving;
+    a.ballItems = this.ball.itemCount;
+    a.ballDiameterCm = this.ball.diameterCm;
+    a.burying = this.burrow.isBusy;
+    a.overcast = this.weather.overcast;
+    this.audio.update(dt, a);
+  }
+
   /** Tatuzinho enrolado que encosta na bola gruda nela (Katamari de bicho). */
   private collectCritters(): void {
     if (!this.ball.isSolid) return;
@@ -685,8 +732,9 @@ export class Game {
     this.ball.stick(found.object, { depth: found.size * 0.12, burySize: found.size });
     this.ball.itemCount++;
     this.ball.addVolume(sphereVolume(found.size * 0.4));
-    this.sfx.pop();
-    this.effects.sparkle(found.object.getWorldPosition(new THREE.Vector3()), found.color);
+    const at = found.object.getWorldPosition(new THREE.Vector3());
+    this.audio.critterStuck(at);
+    this.effects.sparkle(at, found.color);
   }
 
   private computeHint(): { kind: HintKind; value: number } {

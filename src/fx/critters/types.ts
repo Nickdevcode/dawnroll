@@ -42,9 +42,24 @@ export interface CollectedCritter {
   color: THREE.Color;
 }
 
+/** Barulho pontual de bicho (coaxada, pulo). */
+export type CritterCall = 'croak' | 'hop';
+/** Barulho contínuo de bicho: só o mais perto de cada tipo soa (zumbido, cantoria). */
+export type CritterHum = 'bee' | 'stridulate';
+
+/**
+ * Onde os bichos avisam que fizeram barulho. Os bichos não sabem nada de áudio:
+ * só contam o que fizeram e onde; quem escuta decide o que tocar.
+ */
+export interface CritterSounds {
+  call(kind: CritterCall, position: THREE.Vector3, size: number): void;
+  hum(kind: CritterHum, position: THREE.Vector3): void;
+}
+
 /** Estado compartilhado que todas as espécies leem a cada frame. */
 export interface CritterContext {
   readonly rng: Rng;
+  readonly sounds: CritterSounds;
   /** Pontos de pouso VIVOS (entradas somem quando a flor é arrancada e voltam na rodada nova). */
   readonly spots: THREE.Vector3[];
   readonly isGroundFree: GroundFilter;

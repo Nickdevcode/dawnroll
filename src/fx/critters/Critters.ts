@@ -5,9 +5,12 @@ import { Ladybugs, PillBugs, Snails } from './crawlers';
 import { AntColonies } from './ants';
 import { Frogs, Grasshoppers } from './hoppers';
 import { Earthworms } from './worms';
-import type { CollectedCritter, CritterContext, CritterWorld, GroundFilter, Species } from './types';
+import type { CollectedCritter, CritterContext, CritterSounds, CritterWorld, GroundFilter, Species } from './types';
 
-export type { CollectedCritter, CritterPuddle, CritterWorld, GroundFilter } from './types';
+export type { CollectedCritter, CritterPuddle, CritterSounds, CritterWorld, GroundFilter } from './types';
+
+/** Ninguém escutando (testes, ou jogo sem áudio). */
+const SILENT: CritterSounds = { call() {}, hum() {} };
 
 /** Mundo "vazio" até o primeiro frame (os construtores já precisam de um jogador para espalhar os bichos). */
 function initialWorld(): CritterWorld {
@@ -36,9 +39,9 @@ export class Critters {
   private readonly species: Species[] = [];
   private readonly pillBugs: PillBugs;
 
-  constructor(count: number, spots: THREE.Vector3[], isGroundFree: GroundFilter, seed = 31) {
+  constructor(count: number, spots: THREE.Vector3[], isGroundFree: GroundFilter, sounds: CritterSounds = SILENT, seed = 31) {
     this.group.name = 'critters';
-    this.ctx = { rng: createRng(seed), spots, isGroundFree, world: initialWorld(), time: 0, viewDir: new THREE.Vector3(0, 0, -1) };
+    this.ctx = { rng: createRng(seed), sounds, spots, isGroundFree, world: initialWorld(), time: 0, viewDir: new THREE.Vector3(0, 0, -1) };
     const n = (share: number, min: number) => Math.max(min, Math.round(count * share));
     const ctx = this.ctx;
     const g = this.group;

@@ -122,6 +122,15 @@ export class BeetleModel {
     return this.head.getWorldPosition(target);
   }
 
+  /**
+   * Quantas vezes um trio de patas já pousou no chão (marcha em tripé: a pata
+   * desce quando o cosseno da fase dela cruza zero, a cada meia volta da
+   * passada). O som dos passos conta os incrementos e fica no ritmo da animação.
+   */
+  get footfalls(): number {
+    return Math.floor(this.stride / Math.PI + 0.5);
+  }
+
   private buildShell(): void {
     const shell = shellMaterial();
     const belly = clay(Colors.belly, { roughness: 0.5, sheen: 0.5, iridescence: 0.5, bump: 0.25, mottleScale: 8 });

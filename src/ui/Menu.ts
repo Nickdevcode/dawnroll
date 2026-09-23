@@ -382,10 +382,11 @@ export class Menu {
       add(toggle('set-fps', null, (v) => settings.update({ showFps: v })), (s) => s.showFps).element);
 
     // Áudio
-    const volume = (id: string, label: MessageKey, key: 'masterVolume' | 'effectsVolume' | 'ambienceVolume') =>
+    const volume = (id: string, label: MessageKey, key: 'masterVolume' | 'musicVolume' | 'effectsVolume' | 'ambienceVolume') =>
       this.row('audio', id, label, null,
         add(slider(`set-${id}`, { min: 0, max: 100, step: 5, format: percent }, (v) => settings.update({ [key]: v / 100 } as Partial<GameSettings>)), (s) => Math.round(s[key] * 100)).element);
     volume('master', 'settings.master', 'masterVolume');
+    volume('music', 'settings.music', 'musicVolume');
     volume('effects', 'settings.effects', 'effectsVolume');
     volume('ambience', 'settings.ambience', 'ambienceVolume');
 

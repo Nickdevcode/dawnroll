@@ -158,13 +158,19 @@ export class Grasshoppers implements Species {
         }
         // "Canto" do gafanhoto: tremidinha da perna de vez em quando.
         const song = Math.sin((ctx.time + h.seed) * 0.6);
-        if (song > 0.8) shake = Math.sin(ctx.time * 60) * 0.05;
+        if (song > 0.8) {
+          shake = Math.sin(ctx.time * 60) * 0.05;
+          ctx.sounds.hum('stridulate', h.position);
+        }
         h.up.lerp(terrainNormal(h.position.x, h.position.z, vTmp).lerp(UP, 0.4).normalize(), 1 - Math.exp(-8 * dt));
       } else if (h.state === 'crouch') {
         h.timer -= dt;
         femur = -0.3;
         tibia = -0.15;
-        if (h.timer <= 0) h.state = 'jump';
+        if (h.timer <= 0) {
+          h.state = 'jump';
+          ctx.sounds.call('hop', h.position, h.scale);
+        }
       } else {
         const leap = h.leap;
         leap.t = Math.min(1, leap.t + dt / leap.duration);
@@ -380,6 +386,7 @@ export class Frogs implements Species {
         if (frog.croak <= 0) {
           frog.croakTime = 1.4;
           frog.croak = ctx.rng.range(4, 9);
+          ctx.sounds.call('croak', frog.position, frog.scale);
         }
         frog.up.lerp(terrainNormal(frog.position.x, frog.position.z, vUp).lerp(UP, 0.6).normalize(), 1 - Math.exp(-4 * dt));
       } else if (frog.state === 'hop' || frog.state === 'leave') {

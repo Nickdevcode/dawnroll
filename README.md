@@ -18,10 +18,12 @@ Um besouro rola-bosta de massinha num jardim em miniatura. Você rola uma bola d
 | 🪨 **Pedras e troncos** | Rochedos com musgo e líquen, troncos com anéis na ponta e orelha-de-pau |
 | 🦋 **Bichinhos** | Borboletas (9 paletas), abelhas com cestinha de pólen, libélulas de 4 asas, joaninhas que abrem os élitros e voam, caracóis que recolhem os olhos, **formigas em trilha** saindo dos formigueiros (algumas carregando folhinha), **tatuzinhos** que viram bolinha (e grudam na bola!), **gafanhotos** que pulam, **minhocas** que saem na chuva e **sapos** na beira das poças cheias |
 | 🕳️ **A toca** | Buraco de terra fofa com bandeirinha de folha no monte escavado. Um anel tracejado pulsa quando a bola já pode ser enterrada |
-| 🌧️ **Clima** | Sol → nublando → chuva (com rajadas, relâmpago e trovão) → abrindo. O céu fecha, a luz fica difusa, tudo fica molhado e brilhante |
+| 🌧️ **Clima** | Nada muda de supetão: nuvenzinhas passando no sol → o céu fecha devagar → **garoa que vai engrossando** → chuva que "respira" (trechos fracos e rajadas) → amaina aos poucos → abre. Cada chuva é sorteada: **pancada** curta e fraca ou **tempestade** longa com raio, trovoada ao longe antes de chegar e depois de ir embora. O céu fecha, a luz fica difusa, tudo fica molhado e brilhante |
 | 💧 **Poças** | Seis bacias rasas (uma de lama no meio da trilha) que enchem na chuva, com anéis de gota, reflexo do céu e borda rasa transparente. Secam devagar |
+| 🔊 **Som** | Tudo sintetizado na hora (nenhum arquivo de áudio) e em 3D. A bola rolando muda com o chão (grama, terra, lama, água), com o tamanho e com a tralha grudada; cada coisa que gruda tem o seu som (pedrinha "toc", graveto estala, tampinha tilinta) e uma notinha que sobe a cada item seguido, estilo Katamari. Passinhos no ritmo das patas, vento e folhas, chuva em camadas com gota na folha e na poça, trovão que rola, passarinhos de dia, grilos e coruja na madrugada do menu, abelha zumbindo, moscas nos montinhos, sapo coaxando no ritmo do papo e gafanhoto cantando |
+| 🎵 **Trilha** | Generativa, em Fá maior, nunca repete igual: madrugada no menu (caixinha de música), dia jogando (marimba, baixo e, conforme a bola cresce, chocalho, bloco, bumbo e melodia de kalimba) e chuva (Ré menor, gotas de kalimba). Amanhecer ao jogar, anoitecer ao pausar, vinheta nos marcos e fanfarra no enterro (maior no recorde) |
 | 🌙 **Menu** | A "madrugada" por cima do jardim ao vivo: logo com o "o" virando um solzinho de massinha, e Jogar faz amanhecer. Configurações e Como jogar abrem em placas por cima |
-| ⚙️ **Configurações** | Qualidade (Auto, Baixa, Média, Alta, Ultra ou Personalizada), resolução, sombras, oclusão ambiente, desfoque de maquete, brilho, densidade da grama, FPS, volumes, sensibilidade e inversão da câmera, tremida de câmera e vibração do controle. Tudo aplica na hora e fica salvo |
+| ⚙️ **Configurações** | Qualidade (Auto, Baixa, Média, Alta, Ultra ou Personalizada), resolução, sombras, oclusão ambiente, desfoque de maquete, brilho, densidade da grama, FPS, volumes (geral, música, efeitos, natureza e clima — cada slider toca uma prévia do próprio canal), sensibilidade e inversão da câmera, tremida de câmera e vibração do controle. Tudo aplica na hora e fica salvo |
 | 🌐 **Idiomas** | Português (Brasil) e inglês. No automático, o jogo segue o idioma do navegador/sistema, e dá pra fixar um nas configurações |
 | 💨 **Efeitos** | Poeira nos passos e na bola, respingo ao pegar bosta, brilho ao grudar, confete nos marcos, rastro da bola no chão, fedor subindo dos montinhos, suor quando o besouro faz força, torrões e pétalas ao arrancar coisas, terra voando no enterro, respingos d'água, folhas caindo e pólen no ar |
 
@@ -71,7 +73,7 @@ Outros comandos:
 | `npm run preview` | Serve a pasta `dist/` pra testar a versão final |
 | `npm run typecheck` | Só checa os tipos do TypeScript |
 
-> 🧪 No `npm run dev`, a tecla **F8** adianta o clima pra próxima fase (sol → nublando → chuva → abrindo). Não existe na versão publicada.
+> 🧪 No `npm run dev`, a tecla **F8** adianta o clima pra próxima fase (sol → nublando → garoa → chuva → amainando → abrindo). Não existe na versão publicada.
 
 ---
 
@@ -103,7 +105,7 @@ A Vercel tá ligada ao repo: **todo `git push` na `main` publica sozinho** em pr
 | [Rapier](https://rapier.rs) 0.20 (WASM) | Física: bola rolando, colisões, controlador do besouro |
 | [Vite](https://vite.dev) 8 + TypeScript | Build e servidor de desenvolvimento |
 
-Não tem nenhum arquivo de modelo, textura ou som: **tudo é gerado por código** (modelos procedurais, normal map de massinha, céu pintado em canvas, partículas, sons sintetizados com Web Audio).
+Não tem nenhum arquivo de modelo, textura ou som: **tudo é gerado por código** (modelos procedurais, normal map de massinha, céu pintado em canvas, partículas, e **todo o som e a trilha sintetizados na hora com Web Audio**).
 
 ---
 
@@ -156,7 +158,16 @@ src/
 │   ├── Rain.ts             # riscos de chuva (100% no shader) + anéis de respingo
 │   └── critters/           # fauna instanciada por espécie: voadores, rasteiros, formigas,
 │                           # tatuzinho, gafanhoto, minhoca, sapo (reage à chuva e às poças)
-├── audio/Sfx.ts            # efeitos sintetizados (canais de efeitos e ambiente)
+├── audio/
+│   ├── GameAudio.ts        # fachada: eventos do jogo + retrato do quadro -> som
+│   ├── AudioEngine.ts      # contexto, mesa de mixagem, reverb, som 3D, liga/desliga
+│   ├── Foley.ts            # bola rolando (camadas por chão), passos, água, bola derretendo
+│   ├── Soundscape.ts       # vento, chuva, trovão, passarinhos, grilos e coruja
+│   ├── Wildlife.ts         # abelha, moscas, sapo e gafanhoto (os bichos avisam, o áudio toca)
+│   ├── Music.ts            # trilha generativa e vinhetas
+│   ├── UiSounds.ts         # sons do menu por delegação de eventos
+│   ├── dsp.ts / loops.ts   # ruídos, reverb, onda do pad; peças dos sons contínuos
+│   └── voices/             # receitas de som (foley, natureza, instrumentos, interface)
 ├── i18n/                   # dicionários pt-BR/en tipados + detecção do idioma do navegador
 └── ui/
     ├── Hud.ts              # HUD em jogo, dicas, marcador da toca, resultado, toque
@@ -197,5 +208,12 @@ src/
 - **Plural sem `Intl.PluralRules`:** pro português ele trata o zero como singular ("0 montinho"); na interface o natural é "0 montinhos", então a regra é `n === 1`.
 - **Configurações como em jogo de PC:** escolher uma qualidade preenche os ajustes; mexer num ajuste solto vira "Personalizada". A resolução é fração da densidade de pixels da tela (com teto de 2x). Tudo aplica ao vivo (`Graphics.configure`), e a qualidade adaptativa só age no Auto.
 - **Controle sem evento:** a Gamepad API não avisa quando um botão muda, então o estado é lido a cada quadro e as "apertadas" saem da comparação com o quadro anterior. Enquanto o menu está aberto, nada do controle vaza pro jogo (o `A` que escolhe "Jogar" não vira pulo).
+- **Som só depois de um gesto:** navegador não deixa tocar antes de um clique/toque/tecla, então o áudio nasce no primeiro gesto (qualquer um, não só o Jogar) e qualquer gesto depois acorda ele (o iOS interrompe em ligação, alarme e troca de app). Aba escondida ou mudo põem o contexto pra dormir (bateria), e som novo nem é montado enquanto ele dorme — senão tudo tocaria junto na volta.
+- **Volume zero é silêncio de verdade:** cada canal manda uma parte pro reverb, e esse envio passa pelo volume do canal (senão sobraria cauda de reverb com o slider zerado).
+- **Ouvido entre a câmera e o besouro:** em terceira pessoa, ouvir "da câmera" deixa o herói longe demais; o ouvinte fica a 60% do caminho, com a orientação da câmera (a esquerda da tela é o ouvido esquerdo).
+- **Passos no ritmo da animação:** a marcha é em tripé, então um trio de patas pousa a cada meia volta da passada; o modelo expõe esse contador e o som toca um passinho por incremento.
+- **Pausa abafa o mundo:** menu aberto passa o som do jardim por um passa-baixa (atrás de uma porta), enquanto grilos, coruja e trilha da madrugada ficam num canal que não abafa.
+- **Mixagem medida, não chutada:** cada receita foi renderizada offline (`OfflineAudioContext`) e medida em pico e RMS, e os canais foram medidos ao vivo com ponderação próxima da audição (corta sub-grave, realça médios) — o medidor comum superestima vento e baixo.
+- **Bichos não sabem de áudio:** as espécies só avisam "coaxei aqui", "estou zumbindo ali"; o áudio escolhe o mais perto de cada tipo pra zumbir (uma abelha nítida vale mais que dez embolando).
 - **Xbox antes de PlayStation:** "Xbox Wireless Controller" contém "Wireless Controller", que é o nome do controle de PS4 em vários navegadores, então o teste por Xbox (e pelo fabricante `045e`) vem primeiro.
 - **Recorde à prova de lixo:** o save é lido com validação (número finito, não negativo, com teto); aba anônima ou storage bloqueado só não salva. O recorde da época do Rola Bosta é migrado pra chave nova na primeira leitura.

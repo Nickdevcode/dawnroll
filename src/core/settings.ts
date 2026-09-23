@@ -31,6 +31,7 @@ export interface GameSettings extends GraphicsSettings {
   showFps: boolean;
   muted: boolean;
   masterVolume: number;
+  musicVolume: number;
   effectsVolume: number;
   ambienceVolume: number;
   /** Multiplicador da velocidade da câmera (0,4 a 2). */
@@ -85,6 +86,7 @@ function defaults(): GameSettings {
     showFps: false,
     muted: false,
     masterVolume: 0.8,
+    musicVolume: 0.7,
     effectsVolume: 1,
     ambienceVolume: 0.8,
     mouseSensitivity: 1,
@@ -117,6 +119,7 @@ function sanitize(raw: unknown): GameSettings {
   if (isBool(r.showFps)) out.showFps = r.showFps;
   if (isBool(r.muted)) out.muted = r.muted;
   if (inRange(r.masterVolume, 0, 1)) out.masterVolume = r.masterVolume;
+  if (inRange(r.musicVolume, 0, 1)) out.musicVolume = r.musicVolume;
   if (inRange(r.effectsVolume, 0, 1)) out.effectsVolume = r.effectsVolume;
   if (inRange(r.ambienceVolume, 0, 1)) out.ambienceVolume = r.ambienceVolume;
   if (inRange(r.mouseSensitivity, 0.4, 2)) out.mouseSensitivity = r.mouseSensitivity;

@@ -410,8 +410,9 @@ export class Bees implements Species {
         if (bee.position.y < ground) bee.position.y = ground;
         if (Math.hypot(bee.velocity.x, bee.velocity.z) > 0.15) bee.yaw = dampAngle(bee.yaw, Math.atan2(bee.velocity.x, bee.velocity.z), 8, dt);
         if (repelFromCamera(bee.position, w.camera, dt) && bee.state !== 'leave' && bee.flower.distanceTo(w.camera) < 3.5) this.pickFlower(bee, ctx);
-        // Asa em borrão: bate rápido demais para ver.
+        // Asa em borrão: bate rápido demais para ver (mas não para ouvir).
         wingAngle = 0.4 + Math.sin(t * 90) * 0.5;
+        ctx.sounds.hum('bee', bee.position);
       }
       this.draw(bee, wingAngle, wingSweep, pitch, jitter, t);
     }

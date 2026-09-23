@@ -44,10 +44,14 @@ interface DungPile {
   readonly absorbFrom: THREE.Vector3;
 }
 
+/** Do que o detrito é feito (decide o som de quando ele gruda na bola). */
+export type DebrisMaterial = 'pebble' | 'twig' | 'leaf' | 'berry' | 'seed' | 'acorn' | 'clover' | 'petal' | 'shell' | 'cap' | 'pillbug';
+
 interface Debris {
   object: THREE.Object3D;
   /** "Tamanho efetivo" para a regra de grudar (a bola precisa ser maior). */
   size: number;
+  material: DebrisMaterial;
   active: boolean;
   /** Parado no chão, é desenhado como instância; ao grudar vira um Mesh de verdade na bola. */
   pool: InstancePool | null;
@@ -61,6 +65,8 @@ export interface CollectEvent {
   size: number;
   /** Cor predominante do que foi pego (para as partículas). */
   color: THREE.Color;
+  /** Do que é feito (só detrito; montinho de bosta é `null`). */
+  material: DebrisMaterial | null;
 }
 
 export interface StinkSource {
@@ -144,7 +150,7 @@ export class Collectibles {
           const dir = pile.absorbFrom.clone().setY(pile.absorbFrom.y + pile.size * 0.4).sub(center);
           if (dir.lengthSq() < 1e-6) dir.set(0, 1, 0);
           const hit = center.clone().addScaledVector(dir.normalize(), r);
-          this.onCollect?.({ kind: 'dung', position: hit, size: pile.size, color: DUNG_TINT });
+          this.onCollect?.({ kind: 'dung', position: hit, size: pile.size, color: DUNG_TINT, material: null });
         }
       } else {
         pile.timer -= dt;
@@ -174,7 +180,7 @@ export class Collectibles {
         ball.itemCount++;
         // Grudar também engorda um pouquinho a bola.
         ball.addVolume((4 / 3) * Math.PI * Math.pow(item.size * 0.45, 3));
-        this.onCollect?.({ kind: 'debris', position: at, size: item.size, color: (item.object.userData.tint as THREE.Color) ?? DUNG_TINT });
+        this.onCollect?.({ kind: 'debris', position: at, size: item.size, color: (item.object.userData.tint as THREE.Color) ?? DUNG_TINT, material: item.material });
         // Repõe o mundo para nunca "acabar" o que pegar — na MESMA vaga do array
         // (o que grudou agora pertence à bola; a lista não cresce com a sessão).
         this.debris[i] = this.spawnDebris(playerPosition);
@@ -323,16 +329,19 @@ export class Collectibles {
     const kind = rng.next();
     let object: THREE.Mesh;
     let size: number;
+    let material: DebrisMaterial;
     let yOffset = 0.15;
 
     if (kind < 0.24) {
       size = rng.range(0.18, 0.7);
       object = DebrisKit.pebble(rng);
+      material = 'pebble';
       object.scale.setScalar(size * 0.5);
     } else if (kind < 0.38) {
       const length = rng.range(0.6, 1.6);
       size = length * 0.55;
       object = DebrisKit.twig(rng);
+      material = 'twig';
       object.scale.set(1, length, 1);
       object.rotation.set(Math.PI / 2, rng.next() * Math.PI, 0);
       // Ao grudar, graveto deita tangente à bola em vez de ficar espetado.
@@ -341,46 +350,54 @@ export class Collectibles {
     } else if (kind < 0.54) {
       size = rng.range(0.35, 0.9);
       object = DebrisKit.leaf(rng);
+      material = 'leaf';
       object.scale.setScalar(size);
       object.rotation.y = rng.next() * Math.PI * 2;
       yOffset = 0.03;
     } else if (kind < 0.64) {
       size = rng.range(0.2, 0.42);
       object = DebrisKit.berry(rng);
+      material = 'berry';
       object.scale.setScalar(size * 0.5);
     } else if (kind < 0.71) {
       size = rng.range(0.25, 0.5);
       object = DebrisKit.seed();
+      material = 'seed';
       object.scale.setScalar(size);
       object.rotation.y = rng.next() * Math.PI * 2;
       yOffset = 0.08;
     } else if (kind < 0.79) {
       size = rng.range(0.35, 0.6);
       object = DebrisKit.acorn();
+      material = 'acorn';
       object.scale.setScalar(size);
       object.rotation.set(rng.range(1.2, 1.5), rng.next() * Math.PI * 2, 0, 'YXZ');
       yOffset = 0.12;
     } else if (kind < 0.86) {
       size = rng.range(0.3, 0.55);
       object = DebrisKit.clover();
+      material = 'clover';
       object.scale.setScalar(size * 1.6);
       object.rotation.y = rng.next() * Math.PI * 2;
       yOffset = 0.02;
     } else if (kind < 0.92) {
       size = rng.range(0.3, 0.6);
       object = DebrisKit.petal(rng);
+      material = 'petal';
       object.scale.setScalar(size);
       object.rotation.y = rng.next() * Math.PI * 2;
       yOffset = 0.02;
     } else if (kind < 0.96) {
       size = rng.range(0.4, 0.75);
       object = DebrisKit.shell();
+      material = 'shell';
       object.scale.setScalar(size * 0.7);
       object.rotation.y = rng.next() * Math.PI * 2;
       yOffset = 0.02;
     } else {
       size = rng.range(0.5, 0.8);
       object = DebrisKit.bottleCap(rng);
+      material = 'cap';
       object.scale.setScalar(size);
       object.rotation.set(0, rng.next() * Math.PI * 2, 0);
       yOffset = 0.08;
@@ -395,7 +412,7 @@ export class Collectibles {
     const pool = this.debrisPoolFor(object);
     const slot = pool.add(object.matrix);
     if (slot < 0) this.group.add(object);
-    return { object, size, active: true, pool: slot < 0 ? null : pool, slot };
+    return { object, size, material, active: true, pool: slot < 0 ? null : pool, slot };
   }
 
   private debrisPoolFor(mesh: THREE.Mesh): InstancePool {

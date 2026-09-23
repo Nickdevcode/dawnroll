@@ -1,15 +1,26 @@
-import { clamp, createRng, damp } from '../utils/math';
+import { clamp, createRng, damp, lerp, smoothstep } from '../utils/math';
 import { noise3 } from '../utils/noise';
 
 /**
- * Tempo do jardim: sol → nublando → chuva → abrindo → sol. Tudo aqui é número
- * suave (0..1) que os outros sistemas leem: céu e luz (`overcast`), riscos e som
- * de chuva (`rain`), brilho molhado das superfícies (`wetness`) e o nível das
- * poças (`puddleFill`). A água demora a encher e demora mais ainda a secar —
- * as poças continuam sendo perigo por um bom tempo depois da chuva.
+ * Tempo do jardim. Tudo aqui é número suave (0..1) que os outros sistemas
+ * leem: céu e luz (`overcast`), riscos e som de chuva (`rain`), brilho molhado
+ * das superfícies (`wetness`) e o nível das poças (`puddleFill`).
+ *
+ * Cada chuva é um evento com personalidade — uma pancada curta e fraca ou uma
+ * tempestade longa com raios — e nada muda de supetão:
+ *
+ *   sol        nuvenzinhas passando de vez em quando (a luz nunca fica parada)
+ *   nublando   o céu fecha devagar; na tempestade, trovoada ao longe
+ *   garoa      pingos esparsos que vão engrossando
+ *   chuva      "respira": trechos mais fracos e rajadas mais fortes
+ *   amainando  afina aos poucos até os últimos pingos
+ *   abrindo    as nuvens vão embora
+ *
+ * A água demora a encher e demora mais ainda a secar — as poças continuam
+ * sendo perigo por um bom tempo depois da chuva.
  */
 
-type Phase = 'clear' | 'gathering' | 'raining' | 'clearing';
+type Phase = 'clear' | 'gathering' | 'drizzle' | 'raining' | 'easing' | 'clearing';
 
 export interface WeatherState {
   /** 0 = céu limpo, 1 = tempestade fechada. */
@@ -24,8 +35,22 @@ export interface WeatherState {
   readonly flash: number;
 }
 
-const GATHER_SECONDS = 20;
-const CLEARING_SECONDS = 26;
+/** Como vai ser a próxima chuva (sorteado quando o céu começa a fechar). */
+interface RainEvent {
+  /** Intensidade no auge (a chuva "respira" em volta disso). */
+  peak: number;
+  /** Quanto o céu fecha (pancada deixa uma luz passando). */
+  cover: number;
+  /** Segundos de chuva cheia (sem contar garoa e amainando). */
+  length: number;
+  /** Tempestade tem raio e trovão; pancada não. */
+  stormy: boolean;
+}
+
+const GATHER_SECONDS = 25;
+const CLEARING_SECONDS = 28;
+/** Na garoa e no amainando, a chuva fica em volta desta fração do auge. */
+const SHOULDER = 0.5;
 
 export class Weather implements WeatherState {
   overcast = 0;
@@ -42,12 +67,16 @@ export class Weather implements WeatherState {
   private duration: number;
   private time = 0;
   private lightningTimer = 12;
+  private rumbleTimer = 8;
   private readonly rng = createRng(2718);
+  private event: RainEvent;
 
   constructor() {
     // A primeira chuva vem cedo (≈1,5 min): quem joga uma vez já vê o jardim molhar.
     this.timer = 0;
     this.duration = this.rng.range(80, 100);
+    // E ela é uma tempestade de verdade (a primeira impressão conta).
+    this.event = this.rollEvent(true);
   }
 
   /** Nome da fase (para depuração e testes). */
@@ -59,36 +88,53 @@ export class Weather implements WeatherState {
     this.time += dt;
     this.timer += dt;
     const t = clamp(this.timer / this.duration, 0, 1);
+    const e = this.event;
 
     let targetOvercast = 0;
     let targetRain = 0;
     switch (this.phase) {
       case 'clear':
-        targetOvercast = 0;
-        if (this.timer >= this.duration) this.enter('gathering', GATHER_SECONDS);
+        // Nuvenzinhas passando: sombra leve, só de vez em quando.
+        targetOvercast = 0.25 * smoothstep(0.1, 0.45, noise3(this.time * 0.03, 11.3, 2.9));
+        if (this.timer >= this.duration) {
+          this.event = this.rollEvent(false);
+          this.enter('gathering', GATHER_SECONDS);
+        }
         break;
       case 'gathering':
-        targetOvercast = t;
-        targetRain = t > 0.7 ? (t - 0.7) * 1.2 : 0;
-        if (this.timer >= this.duration) this.enter('raining', this.rng.range(70, 105));
+        targetOvercast = lerp(0.2, e.cover, smoothstep(0, 1, t));
+        if (this.timer >= this.duration) this.enter('drizzle', this.rng.range(20, 30));
+        break;
+      case 'drizzle':
+        // Primeiro uns pingos soltos, depois engrossa até o "ombro" da chuva.
+        targetOvercast = e.cover;
+        targetRain = e.peak * SHOULDER * smoothstep(0, 1, t) + 0.06 * (1 - t) * smoothstep(0, 0.1, t);
+        if (this.timer >= this.duration) this.enter('raining', e.length);
         break;
       case 'raining': {
-        // Chuva que respira: rajadas mais fortes e trechos de garoa.
-        const gust = noise3(this.time * 0.05, 3.1, 7.7) * 0.5 + 0.5;
-        targetOvercast = 1;
-        targetRain = 0.5 + gust * 0.5;
-        if (this.timer >= this.duration) this.enter('clearing', CLEARING_SECONDS);
+        // Respira: rajadas e trechos mais fracos. Entra e sai pelo ombro (sem degrau).
+        const breath = clamp(0.5 + 0.35 * noise3(this.time * 0.045, 3.1, 7.7) + 0.2 * noise3(this.time * 0.13, 5.2, 1.4), 0, 1);
+        const swell = smoothstep(0, 0.2, t) * (1 - smoothstep(0.8, 1, t));
+        targetOvercast = e.cover;
+        targetRain = e.peak * lerp(SHOULDER, 0.6 + 0.4 * breath, swell);
+        if (this.timer >= this.duration) this.enter('easing', this.rng.range(25, 35));
         break;
       }
+      case 'easing':
+        // Afina até sobrar só um pingo aqui e outro ali.
+        targetOvercast = e.cover;
+        targetRain = e.peak * SHOULDER * (1 - smoothstep(0, 0.85, t)) + 0.05 * (1 - smoothstep(0.7, 1, t));
+        if (this.timer >= this.duration) this.enter('clearing', CLEARING_SECONDS);
+        break;
       case 'clearing':
-        targetOvercast = 1 - t;
-        targetRain = Math.max(0, 0.45 - t * 1.2);
+        targetOvercast = e.cover * (1 - smoothstep(0, 1, t));
         if (this.timer >= this.duration) this.enter('clear', this.rng.range(150, 230));
         break;
     }
 
-    this.overcast = damp(this.overcast, targetOvercast, 1.2, dt);
-    this.rain = damp(this.rain, targetRain, 0.9, dt);
+    // Os alvos já andam em curva suave; o amortecimento só tira o "tremido".
+    this.overcast = damp(this.overcast, targetOvercast, 0.8, dt);
+    this.rain = damp(this.rain, targetRain, 0.6, dt);
 
     // Molhar é rápido; secar leva ~1,5 min. Encher a poça leva ~1 min de chuva forte; esvaziar, ~4 min.
     if (this.rain > 0.05) this.wetness = Math.min(1, this.wetness + this.rain * 0.09 * dt);
@@ -99,13 +145,32 @@ export class Weather implements WeatherState {
     this.updateLightning(dt);
   }
 
-  /** Força a próxima fase (atalho de teste: pula direto para a chuva). */
+  /** Força a próxima fase (atalho de teste: F8 anda o clima uma fase para frente). */
   skipAhead(): void {
     this.timer = this.duration;
   }
 
+  /** Pancada (35%): curta, fraca, sem raio. Tempestade: longa, forte, com trovão. */
+  private rollEvent(forceStorm: boolean): RainEvent {
+    const stormy = forceStorm || this.rng.next() > 0.35;
+    return stormy
+      ? { peak: this.rng.range(0.8, 1), cover: 1, length: this.rng.range(60, 100), stormy }
+      : { peak: this.rng.range(0.35, 0.55), cover: this.rng.range(0.7, 0.85), length: this.rng.range(30, 50), stormy };
+  }
+
   private updateLightning(dt: number): void {
     this.flash = Math.max(0, this.flash - dt * 3.2);
+    if (!this.event.stormy) return;
+    // Tempestade chegando (ou indo embora): trovoada abafada lá longe, clarão fraco.
+    if (this.phase === 'gathering' || this.phase === 'drizzle' || this.phase === 'easing') {
+      if (this.phase === 'gathering' && this.timer < this.duration * 0.4) return;
+      this.rumbleTimer -= dt;
+      if (this.rumbleTimer > 0) return;
+      this.rumbleTimer = this.rng.range(9, 18);
+      this.flash = Math.max(this.flash, 0.25);
+      this.onThunder?.(this.rng.range(0.9, 1));
+      return;
+    }
     if (this.phase !== 'raining' || this.rain < 0.7) return;
     this.lightningTimer -= dt;
     if (this.lightningTimer > 0) return;

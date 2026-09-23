@@ -10,7 +10,7 @@ import { ChunkParticles } from './ChunkParticles';
 import { BallTrail } from './BallTrail';
 import { AmbientMotes } from './AmbientMotes';
 import { Rain, type SurfaceProbe } from './Rain';
-import { Critters, type CollectedCritter, type CritterPuddle, type GroundFilter } from './critters/Critters';
+import { Critters, type CollectedCritter, type CritterPuddle, type CritterSounds, type GroundFilter } from './critters/Critters';
 
 /** O que os efeitos precisam saber do jogo a cada frame (tudo já interpolado). */
 export interface EffectsFrame {
@@ -47,6 +47,8 @@ export interface EffectsOptions {
   isGroundFree: GroundFilter;
   /** Onde uma gota bate (chão ou superfície da poça). */
   surface: SurfaceProbe;
+  /** Quem escuta o barulho dos bichos (o áudio do jogo). */
+  sounds?: CritterSounds;
 }
 
 const Dust = {
@@ -115,7 +117,7 @@ export class Effects {
     leafGeo.translate(0, 0, -0.5);
     this.leaves = new ChunkParticles(leafGeo, clay(0xffffff, { vertexColors: true, roughness: 0.7, sheen: 0.55, bump: 0.2, side: THREE.DoubleSide }), 48);
     this.motes = new AmbientMotes(options.motes);
-    this.critters = new Critters(options.critters, options.landingSpots, options.isGroundFree);
+    this.critters = new Critters(options.critters, options.landingSpots, options.isGroundFree, options.sounds);
     this.rain = new Rain(options.rainDrops, options.rainSplashes);
     this.surface = options.surface;
 
