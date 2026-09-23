@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { isTouchDevice } from '../core/device';
 import type { CritterSounds } from '../fx/critters/types';
+import type { CatalogId } from '../progression/catalog';
 import type { CollectEvent } from '../world/Collectibles';
 import type { PickEvent } from '../world/Pickables';
 import { clamp } from '../utils/math';
@@ -133,10 +134,15 @@ export class GameAudio {
     this.bumpCombo();
   }
 
-  /** Tatuzinho enrolado grudou na bola. */
-  critterStuck(at: Vec3Like): void {
-    this.engine.play(sfx.stick('pillbug', 0.4), { at });
+  /** Bicho grudou na bola (tatuzinho, tesourinha, lagarta...): cada um com o seu contato. */
+  critterStuck(at: Vec3Like, id: CatalogId): void {
+    this.engine.play(sfx.critterStick(id), { at });
     this.bumpCombo();
+  }
+
+  /** O poder de apertar recarregou (aviso curtinho, no canal da interface). */
+  abilityReady(): void {
+    this.engine.play(uiNotify, { bus: 'ui', key: 'ability-ready', minInterval: 1 });
   }
 
   /** Flor, cogumelo, pedra ou tronco arrancado do chão. */

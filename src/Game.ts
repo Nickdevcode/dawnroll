@@ -10,19 +10,22 @@ import { Terrain, terrainHeight, terrainNormal, dirtAmount, BURROW } from './wor
 import { Scenery } from './world/Scenery';
 import { Grass } from './world/Grass';
 import { GroundCover } from './world/GroundCover';
-import { Collectibles, FRESH_CHANCE, type StinkSource } from './world/Collectibles';
-import { Pickables } from './world/Pickables';
+import { Collectibles, FRESH_CHANCE, type DebrisMaterial, type StinkSource } from './world/Collectibles';
+import { Pickables, type PickEvent } from './world/Pickables';
+import { LooseObjects } from './world/LooseObjects';
+import type { PickableKind } from './world/scenery/context';
 import { Burrow, MIN_BURY_RADIUS } from './world/Burrow';
 import { Weather } from './world/Weather';
 import { Puddles } from './world/Puddles';
 import { sphereVolume } from './world/scenery/context';
 import { DungBall, START_RADIUS } from './entities/DungBall';
 import { Beetle } from './entities/Beetle';
-import { Effects, type EffectsFrame } from './fx/Effects';
+import { Effects, type CritterEvent, type EffectsFrame } from './fx/Effects';
 import type { SurfaceProbe } from './fx/Rain';
 import { GameAudio } from './audio/GameAudio';
 import type { AudioFrame } from './audio/frame';
 import { Hud, type HintKind } from './ui/Hud';
+import { giverName } from './ui/RoundPanel';
 import { Menu } from './ui/Menu';
 import { AchievementToast } from './ui/AchievementToast';
 import type { BootScreen } from './ui/BootScreen';
@@ -30,9 +33,22 @@ import type { ProjectedPoint } from './ui/screenMarker';
 import { t, type MessageKey } from './i18n';
 import { Progression, type MealResult } from './progression/Progression';
 import { catalogIdForDebris, catalogIdForPickable, type CatalogId } from './progression/catalog';
-import { NOSE_FRESH_CHANCE, NOSE_PROMOTE_COUNT, type PerkId } from './progression/perks';
+import { classifyHue, type Hue } from './progression/colors';
+import {
+  NOSE_PROMOTE_COUNT,
+  antFriendBatch,
+  antFriendRadius,
+  bumpShed,
+  bumpThreshold,
+  curiousGrowth,
+  noseFreshChance,
+  type PerkId,
+  type PerkOffer,
+} from './progression/perks';
 import type { RoundRequest } from './progression/requests';
+import { skin, type SkinId } from './progression/skins';
 import { quality } from './core/device';
+import { GRAVITY } from './core/Physics';
 import { clamp } from './utils/math';
 
 /** Evita "espiral da morte" quando a aba volta do segundo plano. */
@@ -53,6 +69,24 @@ const FRESH_GLINT_RANGE_NOSE = 45;
 /** A primeira vez que a toca é apresentada, ela abre sozinha depois do placar. */
 const BURROW_INTRO_DELAY = 5;
 const FRESH_GLINT_COLOR = new THREE.Color('#ffd479');
+/** Quanto tempo as dicas do Equilibrista (como usar / em cima da bola) ficam na tela. */
+const ABILITY_HINT_SECONDS = 6;
+const RIDING_HINT_SECONDS = 3;
+/** Trombada: intervalo mínimo entre duas "chuvas de tralha" (a bola quica várias vezes no mesmo lugar). */
+const BUMP_COOLDOWN = 0.6;
+/** Formigueiro amigo: de quanto em quanto tempo as formigas trazem folha. */
+const ANT_FRIEND_INTERVAL = 0.9;
+/** O que cai de cada coisa grande demais quando a bola bate forte nela (poder Trombada). */
+const BUMP_DEBRIS: Record<PickableKind, DebrisMaterial> = { flower: 'petal', mushroom: 'leaf', rock: 'pebble', log: 'twig', object: 'pebble' };
+/** Cor → família (pedidos de cor); reaproveitado a cada coleta. */
+const tmpHsl = { h: 0, s: 0, l: 0 };
+
+/** Família de cor de uma coisa pela cor predominante dela (em sRGB, como a gente vê). */
+function hueOf(color: THREE.Color | null | undefined): Hue | null {
+  if (!color) return null;
+  color.getHSL(tmpHsl, THREE.SRGBColorSpace);
+  return classifyHue(tmpHsl.h, tmpHsl.s, tmpHsl.l);
+}
 
 /** Deixa o navegador pintar um frame (o loader continua animando entre as etapas pesadas). */
 const nextFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
@@ -79,6 +113,7 @@ export class Game {
   private scenery!: Scenery;
   private collectibles!: Collectibles;
   private pickables!: Pickables;
+  private looseObjects!: LooseObjects;
   private burrow!: Burrow;
   private puddles!: Puddles;
   private ball!: DungBall;
@@ -111,6 +146,23 @@ export class Game {
   private tooSmallCm = 0;
   private burrowHintTimer = 0;
   private digSoundToggle = false;
+
+  // Poderes novos e segredos da rodada.
+  private abilityHintTimer = 0;
+  private abilityFarTimer = 0;
+  private ridingHintTimer = 0;
+  private abilityWasReady = true;
+  /** O besouro estava em cima da bola quando ela caiu na toca (conquista "Entrega de circo"). */
+  private buriedWhileRiding = false;
+  private bumpCooldown = 0;
+  /** Velocidade (no plano) da bola no passo anterior: freada brusca = trombada. */
+  private prevBallSpeed = 0;
+  private antFriendTimer = 0;
+  /** Maior raio da bola nesta rodada (segredo "Derreteu tudo"). */
+  private roundPeakRadius = START_RADIUS;
+  private currentSkin: SkinId | null = null;
+  /** O aviso de pedido dourado já saiu nesta rodada. */
+  private goldenAnnounced = false;
 
   // Qualidade adaptativa (só no "Auto", em até dois degraus)
   private perfSamples = 0;
@@ -247,7 +299,8 @@ export class Game {
     boot.step(0.6, 'loader.grass');
     await nextFrame();
 
-    const solidAt = (margin: number) => (x: number, z: number) => this.scenery.isInsideSolid(x, z, margin);
+    // Grama e enfeites não nascem dentro de pedra/tronco nem em cima da toalha de piquenique.
+    const solidAt = (margin: number) => (x: number, z: number) => this.scenery.isInsideSolid(x, z, margin) || this.scenery.isCovered(x, z, margin);
     this.grass = new Grass(quality.grassCount, solidAt(0.1));
     scene.add(this.grass.group);
     this.groundCover = new GroundCover(quality.decorDensity, solidAt(0.25));
@@ -258,6 +311,8 @@ export class Game {
     this.collectibles = new Collectibles(this.scenery);
     scene.add(this.collectibles.group);
     this.pickables = new Pickables(this.physics, this.scenery);
+    this.looseObjects = new LooseObjects(this.physics, this.scenery);
+    scene.add(this.looseObjects.group);
     this.burrow = new Burrow();
     scene.add(this.burrow.group);
     this.puddles = new Puddles();
@@ -271,6 +326,7 @@ export class Game {
 
     this.beetle = new Beetle(this.physics, this.spawn, this.ball);
     scene.add(this.beetle.model.root);
+    this.applySkin();
 
     const surface: SurfaceProbe = (x, z) => {
       const water = this.puddles.surfaceAt(x, z);
@@ -292,6 +348,9 @@ export class Game {
       sounds: this.audio.critterSounds,
     });
     scene.add(this.effects.group);
+    this.effects.onCritterEvent = (event) => this.onCritterEvent(event);
+    // O jogo abre no menu: madrugada com vaga-lumes.
+    this.effects.setMenuNight(true);
 
     this.wireEvents();
     this.wireCameraCollision();
@@ -336,6 +395,10 @@ export class Game {
         this.audio.grab(feet);
       } else if (event === 'release') {
         this.audio.release(feet);
+      } else if (event === 'mount') {
+        // Equilibrista: pulinho pra cima da bola.
+        this.audio.jump(feet);
+        this.effects.jump(feet);
       }
     };
     this.collectibles.onCollect = (event) => {
@@ -346,17 +409,11 @@ export class Game {
         this.noteCollected(event.fresh ? 'freshDung' : 'dung');
         if (event.fresh) this.effects.sparkle(event.position, FRESH_GLINT_COLOR);
       } else if (event.material) {
-        this.noteCollected(catalogIdForDebris(event.material));
+        this.noteCollected(catalogIdForDebris(event.material), event.color);
       }
     };
-    this.pickables.onPick = (event) => {
-      this.audio.pluck(event);
-      this.effects.pluck(event.ground, event.position, event.tint, event.size, event.kind === 'flower');
-      this.effects.startle(event.ground, 4 + event.size * 2);
-      this.cameraRig.shake(0.03 + Math.min(event.size, 3) * 0.03);
-      this.rumble(0.25 + Math.min(event.size, 3) * 0.15, 0.5, 140);
-      this.noteCollected(catalogIdForPickable(event.kind, event.variant));
-    };
+    this.pickables.onPick = (event) => this.onPick(event);
+    this.looseObjects.onPick = (event) => this.onPick(event);
     this.ball.onImpact = (strength) => {
       if (strength > 0.25) {
         const at = this.ball.position(this.tmpBall);
@@ -366,6 +423,7 @@ export class Game {
         this.cameraRig.shake(strength * 0.12 * Math.min(1, this.ball.radius / 1.5));
         this.rumble(strength * 0.7, strength * 0.4, 110);
       }
+      this.tryBump(strength);
     };
     this.ball.onShed = (at) => {
       this.effects.shed(at);
@@ -373,6 +431,8 @@ export class Game {
     };
 
     this.burrow.onBurialStart = (at, radius) => {
+      // Antes do passo do besouro: ele ainda está em cima da bola se entregou montado.
+      this.buriedWhileRiding = this.beetle.riding;
       this.audio.burialStart(at, radius);
       this.effects.startle(at, 6 + radius);
       this.cameraRig.shake(0.05);
@@ -387,6 +447,143 @@ export class Game {
     };
     this.burrow.onBuried = (result, at) => this.finishRound(result, at);
     this.burrow.onFinished = () => this.startNewRound();
+  }
+
+  /** Arrancou algo do chão (flor, pedra, brinquedo, bola de tênis...). */
+  private onPick(event: PickEvent): void {
+    this.audio.pluck(event);
+    this.effects.pluck(event.ground, event.position, event.tint, event.size, event.kind === 'flower');
+    this.effects.startle(event.ground, 4 + event.size * 2);
+    // Debaixo de pedra e de tronco sempre tem bicho: tesourinha e lacraia saem correndo.
+    if (event.kind === 'rock' || event.kind === 'log') this.effects.scatterFromUnder(event.ground, event.size);
+    this.cameraRig.shake(0.03 + Math.min(event.size, 3) * 0.03);
+    this.rumble(0.25 + Math.min(event.size, 3) * 0.15, 0.5, 140);
+    this.noteCollected(catalogIdForPickable(event.kind, event.variant), event.tint);
+  }
+
+  /**
+   * Poder Trombada: bateu forte em coisa grande demais pra arrancar? Cai tralha
+   * dela (pétala da flor, lasca da pedra, graveto do tronco) pra bola pegar.
+   */
+  private tryBump(strength: number): void {
+    const rank = this.progression.perkRank('bump');
+    const blocked = this.pickables.blocked;
+    if (!rank || !blocked || this.bumpCooldown > 0 || strength < bumpThreshold(rank)) return;
+    this.bumpCooldown = BUMP_COOLDOWN;
+    this.collectibles.spawnDebrisBurst(BUMP_DEBRIS[blocked.kind], blocked.point, bumpShed(rank), 1 + Math.min(blocked.size, 3) * 0.4);
+    this.effects.sparkle(blocked.point, FRESH_GLINT_COLOR);
+  }
+
+  /** Algo aconteceu na fauna: revoada, beija-flor, teia rasgada. */
+  private onCritterEvent(event: CritterEvent): void {
+    switch (event.type) {
+      case 'swarm':
+        this.hud.notify(t('event.swarm'));
+        break;
+      case 'hummingbirdSeen':
+        this.hud.notify(t('event.hummingbird'));
+        this.progression.achieve('hummingbird');
+        break;
+      case 'webTorn': {
+        // O fio de teia vem grudado na bola (vira figurinha).
+        const item = event.item;
+        if (!this.ball.isSolid) break;
+        this.ball.stick(item.object, { depth: item.size * 0.1, burySize: item.size });
+        this.ball.itemCount++;
+        this.ball.addVolume(sphereVolume(item.size * 0.3));
+        this.effects.sparkle(item.object.getWorldPosition(this.tmpFocus), item.color);
+        this.noteCollected('web', item.color);
+        this.progression.noteWebTorn();
+        break;
+      }
+    }
+  }
+
+  /** Casco escolhido na toca → besouro (só quando mudou). */
+  private applySkin(): void {
+    const id = this.progression.skin;
+    if (id === this.currentSkin) return;
+    this.currentSkin = id;
+    this.beetle.model.setSkin(skin(id));
+  }
+
+  /**
+   * Equilibrista: sobe na bola (se estiver perto e o poder carregado) ou desce
+   * dela se já estiver em cima (apertar de novo é o jeito de sair antes).
+   */
+  private tryRider(): void {
+    if (!this.progression.hasPerk('rider') || this.burrow.isBusy) return;
+    const ability = this.progression.rider;
+    if (this.beetle.riding) {
+      this.beetle.dismount();
+      ability.stop();
+      return;
+    }
+    if (!ability.ready) return;
+    if (!this.beetle.canMount()) {
+      this.abilityFarTimer = EVENT_HINT_SECONDS;
+      return;
+    }
+    if (ability.start() && this.beetle.mount()) {
+      this.abilityHintTimer = 0;
+      this.ridingHintTimer = RIDING_HINT_SECONDS;
+    }
+  }
+
+  /** Relógio do Equilibrista: acabou o tempo, desce; recarregou, avisa. */
+  private updateRider(dt: number): void {
+    const ability = this.progression.rider;
+    if (ability.update(dt) && this.beetle.riding) this.beetle.dismount();
+    // Desceu sozinho (pulou, bola caiu na toca): o poder começa a recarregar.
+    if (ability.active && !this.beetle.riding) ability.stop();
+    const ready = ability.ready;
+    if (ready && !this.abilityWasReady && this.progression.hasPerk('rider')) this.audio.abilityReady();
+    this.abilityWasReady = ready;
+  }
+
+  /**
+   * Poderes que agem a cada passo: Ladeira abaixo (a gravidade ajuda no declive),
+   * Formigueiro amigo (formiga traz folha) e a gosma da lesma (a bola desliza).
+   */
+  private applyWorldPerks(dt: number): void {
+    const ball = this.ball;
+    if (!ball.isSolid) return;
+    const p = ball.position(this.tmpBall);
+    const r = ball.radius;
+    const onGround = p.y - r - terrainHeight(p.x, p.z) < 0.25;
+
+    const assist = this.beetle.modifiers.slopeAssist;
+    if (assist > 0 && onGround) {
+      // Componente da gravidade ao longo do chão, um tanto a mais: morro abaixo a bola embala.
+      const n = terrainNormal(p.x, p.z, this.tmpMarker);
+      const k = GRAVITY * assist * ball.mass * dt;
+      ball.body.applyImpulse({ x: n.x * k, y: 0, z: n.z * k }, true);
+    }
+
+    const slime = this.effects.slimeAt(p.x, p.z);
+    if (slime > 0 && onGround) {
+      // Rastro de lesma: a bola perde o freio do chão e escorrega um pouco pra frente.
+      ball.extraDrag *= 1 - 0.6 * slime;
+      const v = ball.body.linvel();
+      const push = 0.8 * slime * ball.mass * dt;
+      ball.body.applyImpulse({ x: v.x * push, y: 0, z: v.z * push }, true);
+    }
+
+    const ants = this.progression.perkRank('antFriend');
+    if (ants) {
+      this.antFriendTimer -= dt;
+      if (this.antFriendTimer <= 0) {
+        this.antFriendTimer = ANT_FRIEND_INTERVAL;
+        for (const leaf of this.effects.takeAntLeaves(p, antFriendRadius(ants) + r, antFriendBatch(ants))) {
+          // A folha cai do lado da bola, no caminho da formiga (e gruda no próximo passo).
+          const dir = this.tmpFocus.set(leaf.x - p.x, 0, leaf.z - p.z);
+          if (dir.lengthSq() < 1e-6) dir.set(1, 0, 0);
+          dir.normalize().multiplyScalar(r + 0.25).add(p);
+          dir.y = terrainHeight(dir.x, dir.z);
+          this.collectibles.spawnDebrisBurst('leaf', dir, 1, 0.1);
+        }
+      }
+    }
   }
 
   /** A câmera consulta a física para não atravessar o cenário (só sólidos do mundo). */
@@ -406,10 +603,12 @@ export class Game {
     // Jogar/Continuar é um gesto: garante o áudio de pé e faz amanhecer.
     this.audio.unlock();
     this.audio.setPaused(false);
+    this.effects.setMenuNight(false);
     this.menu.hide();
     this.hud.setVisible(true);
     this.hud.perkPicker.setSuspended(false);
     this.started = true;
+    this.announceGolden();
     // Voltando pra uma escolha de poder, o mouse continua solto (pra clicar nas cartas).
     if (!this.hud.isTouch && !this.choosing) this.input.requestPointerLock();
     this.canvas.focus();
@@ -435,6 +634,7 @@ export class Game {
         const state = this.input.state;
         state.jumpPressed = false;
         state.resetPressed = false;
+        state.abilityPressed = false;
         for (const action of this.input.menuActions) this.hud.perkPicker.handleGamepad(action);
       }
       return;
@@ -442,6 +642,7 @@ export class Game {
     const state = this.input.state;
     state.jumpPressed = false;
     state.resetPressed = false;
+    state.abilityPressed = false;
     if (this.startDisabled) return;
     for (const action of this.input.menuActions) {
       if (action === 'start') {
@@ -469,6 +670,7 @@ export class Game {
     if (this.input.pointerLocked) document.exitPointerLock();
     this.menu.show(true);
     this.audio.setPaused(true);
+    this.effects.setMenuNight(true);
     this.hud.setVisible(false);
     // Escolhendo poder: as cartas ficam atrás do menu e não podem ser escolhidas às cegas pelo teclado.
     this.hud.perkPicker.setSuspended(true);
@@ -572,12 +774,15 @@ export class Game {
         // Eventos de "apertou" valem só para o primeiro passo do frame.
         this.input.state.jumpPressed = false;
         this.input.state.resetPressed = false;
+        this.input.state.abilityPressed = false;
       }
       this.updateRound(frameTime);
     } else if (this.choosing) {
-      // Congelado na escolha: nem o pulo nem o "trazer bola" apertados agora valem depois.
+      // Congelado na escolha: nem o pulo nem o "trazer bola" apertados agora valem depois
+      // (o direcional pra cima navega as cartas e também é o botão do poder no controle).
       this.input.state.jumpPressed = false;
       this.input.state.resetPressed = false;
+      this.input.state.abilityPressed = false;
     } else {
       // Na tela inicial a câmera gira devagar em volta do besouro: vitrine do cenário.
       this.cameraRig.applyLook(-frameTime * 60 * 0.35, 0, 0);
@@ -593,24 +798,39 @@ export class Game {
   private fixedStep(): void {
     const state = this.input.state;
 
-    if (state.resetPressed && !this.burrow.isBusy) this.recoverBall();
+    // Em cima da bola, "trazer a bola" não faz sentido (ela já está embaixo do besouro).
+    if (state.resetPressed && !this.burrow.isBusy && !this.beetle.riding) this.recoverBall();
+    if (state.abilityPressed) this.tryRider();
 
-    // Nível + poderes da rodada → besouro, ímã dos montinhos e alcance do Chifrudo.
-    const mods = this.progression.modifiers(this.ball.radius);
+    // Nível + poderes da rodada → besouro, ímã dos montinhos e alcance do Chifrudo (e o embalo da Ladeira abaixo).
+    const ballVel = this.ball.body.linvel();
+    const mods = this.progression.modifiers(this.ball.radius, Math.hypot(ballVel.x, ballVel.z));
     this.beetle.modifiers = mods;
     this.collectibles.magnet = mods.magnet;
     this.pickables.pluckReach = mods.pluckReach;
+    this.bumpCooldown = Math.max(0, this.bumpCooldown - FIXED_DT);
 
     // A toca vem antes da física: durante o enterro é ela quem conduz a bola.
     this.burrow.fixedUpdate(FIXED_DT, this.ball);
     this.applyWaterAndMud(FIXED_DT);
+    this.applyWorldPerks(FIXED_DT);
     this.beetle.fixedUpdate(FIXED_DT, state, this.cameraRig.yaw);
+    this.updateRider(FIXED_DT);
     // Sangue quente: esquenta empurrando com o analógico/teclas apontando pra frente.
     this.progression.updateHeat(FIXED_DT, this.beetle.pushing && Math.hypot(state.moveX, state.moveY) > 0.3);
     this.physics.step();
     this.ball.fixedUpdate(FIXED_DT);
     this.collectibles.fixedUpdate(FIXED_DT, this.ball, this.beetle.center);
     this.pickables.fixedUpdate(this.ball);
+    this.looseObjects.fixedUpdate(this.ball);
+    this.checkSecrets();
+    // Trombada de frente: o "impacto" da bola só vê queda/quique (vertical); bater rolando
+    // numa coisa grande demais aparece como freada brusca na horizontal.
+    const after = this.ball.body.linvel();
+    const speed = Math.hypot(after.x, after.z);
+    const drop = this.prevBallSpeed - speed;
+    if (drop > 1 && this.pickables.blocked) this.tryBump(clamp(drop / 5, 0, 1));
+    this.prevBallSpeed = speed;
 
     // Caiu para fora do mundo (não deveria, mas nunca confie em física).
     if (this.ball.isSolid && this.ball.position(this.tmpBall).y < FALL_LIMIT) this.recoverBall();
@@ -623,6 +843,19 @@ export class Game {
       this.tooSmallCm = this.pickables.blockedBySize * 4;
     }
     this.burrowHintTimer = this.burrow.tooSmall ? EVENT_HINT_SECONDS : Math.max(0, this.burrowHintTimer - FIXED_DT);
+    this.abilityHintTimer = Math.max(0, this.abilityHintTimer - FIXED_DT);
+    this.abilityFarTimer = Math.max(0, this.abilityFarTimer - FIXED_DT);
+    this.ridingHintTimer = Math.max(0, this.ridingHintTimer - FIXED_DT);
+  }
+
+  /** Conquistas secretas que acontecem no mundo: a bola derretendo até o mínimo e subir na bola sem poder. */
+  private checkSecrets(): void {
+    const r = this.ball.radius;
+    this.roundPeakRadius = Math.max(this.roundPeakRadius, r);
+    if (this.ballWater > 0.03) this.progression.noteBallWet();
+    // Derreteu tudo: a bola já foi de ~4 cm ou mais e a poça levou ela até o tamanho de nascer.
+    if (this.dissolving && this.roundPeakRadius >= 1 && r <= START_RADIUS * 1.04) this.progression.achieve('melted');
+    if (this.beetle.standingOnBall && !this.progression.hasPerk('rider')) this.progression.achieve('onTop');
   }
 
   /**
@@ -645,7 +878,8 @@ export class Game {
     if (submersion > 0.02) {
       // Perde volume pela área molhada (bola pequena derrete rápido; gigante quase nada).
       ball.removeVolume(1.35 * submersion * r * r * dt * mods.melt);
-      this.dissolving = r > START_RADIUS * 1.08 && mods.melt > 0.5;
+      // Derretendo "de verdade" (a dica aparece): a bola ainda tem o que perder e a Casca de lama não segura.
+      this.dissolving = r > START_RADIUS * 1.02 && mods.melt > 0.5;
     } else if (ball.isSolid && this.weather.wetness > 0.2 && speed > 0.3) {
       const onGround = p.y - r - terrainHeight(p.x, p.z) < 0.2;
       const dirt = dirtAmount(p.x, p.z);
@@ -700,7 +934,8 @@ export class Game {
     this.save.totalCm += result.diameterCm;
     this.save.bestCm = Math.max(this.save.bestCm, result.diameterCm);
     // O enterro salva tudo junto (recorde + despensa + catálogo).
-    const outcome = this.progression.bury(result.diameterCm, this.weather.rain > 0.3);
+    const outcome = this.progression.bury(result.diameterCm, { raining: this.weather.rain > 0.3, riding: this.buriedWhileRiding });
+    this.buriedWhileRiding = false;
     this.hud.setProgress(this.save);
     this.menu.setProgress(this.save);
     this.hud.showResult({ ...result, record, outcome });
@@ -716,6 +951,15 @@ export class Game {
   private startNewRound(): void {
     this.scenery.restoreAll();
     this.collectibles.respawnAll(this.beetle.center);
+    this.looseObjects.restoreAll();
+    // Teias voltam, bichos param de ser atraídos (o Fedor irresistível era da rodada).
+    this.effects.newRound();
+    this.effects.setAttract(0);
+    this.roundPeakRadius = START_RADIUS;
+    this.abilityHintTimer = 0;
+    this.abilityFarTimer = 0;
+    this.ridingHintTimer = 0;
+    this.antFriendTimer = 0;
 
     const facing = this.beetle.facing;
     let x = this.beetle.center.x + facing.x * 1.6;
@@ -736,6 +980,8 @@ export class Game {
     this.progression.startRound();
     this.collectibles.freshChance = FRESH_CHANCE;
     this.hud.resetRound();
+    this.goldenAnnounced = false;
+    this.announceGolden();
     this.effects.sparkle(position, new THREE.Color('#e6c46a'));
     this.audio.newBall(position);
   }
@@ -769,6 +1015,7 @@ export class Game {
     this.updateFreshPiles(dt, player);
 
     this.hud.setBall(this.ball.diameterCm, this.ball.dungCount, this.ball.itemCount);
+    this.updateAbilityHud();
     const hint = this.computeHint();
     this.hud.setHint(hint.kind, hint.value);
     this.updateBurrowMarker(player);
@@ -824,7 +1071,7 @@ export class Game {
     this.audio.update(dt, a);
   }
 
-  /** Tatuzinho enrolado que encosta na bola gruda nela (Katamari de bicho). */
+  /** Bicho que encosta na bola (tatuzinho enrolado, tesourinha, lagarta...) gruda nela (Katamari de bicho). */
   private collectCritters(): void {
     if (!this.ball.isSolid) return;
     const center = this.ball.position(this.tmpBall);
@@ -834,22 +1081,53 @@ export class Game {
     this.ball.itemCount++;
     this.ball.addVolume(sphereVolume(found.size * 0.4));
     const at = found.object.getWorldPosition(new THREE.Vector3());
-    this.audio.critterStuck(at);
+    this.audio.critterStuck(at, found.id);
     this.effects.sparkle(at, found.color);
-    this.noteCollected('pillbug');
+    this.noteCollected(found.id, found.color);
+  }
+
+  /** Botão do Equilibrista no HUD (só aparece com o poder na rodada). */
+  private updateAbilityHud(): void {
+    if (!this.progression.hasPerk('rider')) {
+      this.hud.setAbility(null);
+      return;
+    }
+    const ability = this.progression.rider;
+    this.hud.setAbility({
+      charge: ability.charge,
+      phase: ability.active ? 'active' : ability.ready ? 'ready' : 'cooldown',
+      seconds: ability.secondsLeft,
+    });
   }
 
   // --- progressão (toca, poderes, pedidos) ---------------------------------------
 
-  /** A bola engoliu algo: conta pra rodada (pedidos) e pro catálogo quando enterrar. */
-  private noteCollected(id: CatalogId): void {
-    this.announceRequests(this.progression.noteCollected(id, this.ball.diameterCm));
+  /**
+   * A bola engoliu algo: conta pra rodada (pedidos, inclusive os de cor) e pro
+   * catálogo quando enterrar. Com o poder Curioso, cada tipo novo dá um estirão.
+   */
+  private noteCollected(id: CatalogId, color?: THREE.Color | null): void {
+    const result = this.progression.noteCollected(id, this.ball.diameterCm, hueOf(color));
+    const curious = this.progression.perkRank('curious');
+    if (curious && result.newKind) {
+      this.ball.addVolume(sphereVolume(this.ball.radius) * curiousGrowth(curious));
+      this.effects.sparkle(this.ball.position(this.tmpBall).setY(this.tmpBall.y + this.ball.radius), FRESH_GLINT_COLOR);
+    }
+    this.announceRequests(result.done);
   }
 
   private announceRequests(done: readonly RoundRequest[]): void {
     if (done.length === 0) return;
-    this.hud.requestDone();
+    this.hud.requestDone(giverName(done[0]));
     this.audio.requestDone();
+  }
+
+  /** Rodada com pedido dourado: o Sol avisa (uma vez, quando o jogo está rodando). */
+  private announceGolden(): void {
+    if (this.goldenAnnounced || !this.started) return;
+    if (!this.progression.requests.some((r) => r.golden)) return;
+    this.goldenAnnounced = true;
+    this.hud.notify(t('hud.goldenRequest'));
   }
 
   /** Depois dos passos de física: pedidos de tamanho, marcos de poder e a apresentação da toca. */
@@ -868,11 +1146,12 @@ export class Game {
   }
 
   /** Marco de poder: 2 ou 3 opções abrem as cartas; 1 só vem de presente; 0 não faz nada. */
-  private offerPerks(options: readonly PerkId[], cm: number): void {
+  private offerPerks(options: readonly PerkOffer[], cm: number): void {
     if (options.length === 0) return;
     if (options.length === 1) {
-      this.grantPerk(options[0]);
-      this.hud.notify(t('perk.gained', { name: t(`perk.${options[0]}.name` as MessageKey) }));
+      const [{ id, rank }] = options;
+      this.grantPerk(id);
+      this.hud.notify(t(rank === 2 ? 'perk.gained.up' : 'perk.gained', { name: t(`perk.${id}.name` as MessageKey) }));
       return;
     }
     this.choosing = true;
@@ -892,12 +1171,27 @@ export class Game {
   }
 
   private grantPerk(perk: PerkId): void {
-    this.progression.takePerk(perk);
+    const rank = this.progression.takePerk(perk);
     this.audio.perkPick();
-    if (perk === 'nose') {
-      // O Faro já chega farejando: alguns montinhos viram fresquinhos e mais deles vão nascer.
-      this.collectibles.promoteFresh(NOSE_PROMOTE_COUNT);
-      this.collectibles.freshChance = NOSE_FRESH_CHANCE;
+    switch (perk) {
+      case 'nose':
+        // O Faro já chega farejando: alguns montinhos viram fresquinhos e mais deles vão nascer (★★: de novo).
+        this.collectibles.promoteFresh(NOSE_PROMOTE_COUNT);
+        this.collectibles.freshChance = noseFreshChance(rank);
+        break;
+      case 'rider':
+        // Poder de apertar: ensina a tecla assim que chega.
+        this.abilityHintTimer = ABILITY_HINT_SECONDS;
+        break;
+      case 'stench':
+        this.effects.setAttract(rank);
+        break;
+      case 'rainCall':
+        this.weather.callRain(rank === 2);
+        this.hud.notify(t('event.rainCall'));
+        break;
+      default:
+        break;
     }
   }
 
@@ -917,6 +1211,8 @@ export class Game {
       perks: this.progression.roundPerks,
     });
     this.hud.setPantryCount(this.progression.pantry.length);
+    // Trocou de casco na toca: o besouro veste na hora (aparece por trás do menu).
+    if (this.beetle) this.applySkin();
   }
 
   /**
@@ -962,6 +1258,9 @@ export class Game {
   private computeHint(): { kind: HintKind; value: number } {
     if (this.paused || this.choosing) return { kind: 'none', value: 0 };
     if (this.dissolving) return { kind: 'dissolving', value: 0 };
+    if (this.beetle.riding) return { kind: this.ridingHintTimer > 0 ? 'riding' : 'none', value: 0 };
+    if (this.abilityFarTimer > 0) return { kind: 'abilityFar', value: 0 };
+    if (this.abilityHintTimer > 0 && this.progression.rider.ready) return { kind: 'ability', value: 0 };
     if (this.burrowHintTimer > 0) return { kind: 'burrowTooSmall', value: MIN_BURY_RADIUS * 4 };
     if (this.tooSmallTimer > 0) return { kind: 'tooSmall', value: this.tooSmallCm };
     if (this.burrow.isBusy) return { kind: 'none', value: 0 };

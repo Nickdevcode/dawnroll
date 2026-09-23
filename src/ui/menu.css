@@ -1452,11 +1452,14 @@
     padding-top: env(safe-area-inset-top);
     padding-bottom: env(safe-area-inset-bottom);
   }
-  .tabs__tab span {
-    display: none;
-  }
-  .tabs__tab[aria-selected='true'] span {
-    display: inline;
+  /* Esconde só da vista (display: none tiraria o nome da aba do leitor de tela). */
+  .tabs__tab:not([aria-selected='true']) span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
   /* Só a aba ativa mostra o nome: ela ganha o espaço (com 4 abas, "Despensa" não cabia). */
   .tabs__tab {
@@ -1549,4 +1552,293 @@
   .sheet__footer {
     padding: var(--space-1) var(--space-5) var(--space-2);
   }
+}
+
+/* ==========================================================================
+   Catálogo: figurinha vira botão (abre a curiosidade), rara ganha estrelinha
+   ========================================================================== */
+.catalog-tile__cell {
+  display: flex;
+}
+button.catalog-tile {
+  width: 100%;
+  border: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  transition:
+    transform var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out);
+}
+button.catalog-tile:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 0 rgba(43, 42, 94, 0.1);
+}
+button.catalog-tile.is-selected {
+  background: #fff;
+  box-shadow: 0 0 0 2px var(--dawn-sun), 0 4px 0 rgba(217, 132, 36, 0.35);
+}
+.catalog-tile.is-rare {
+  position: relative;
+}
+.catalog-tile.is-rare::after {
+  content: "★";
+  position: absolute;
+  top: 5px;
+  right: 7px;
+  color: var(--dawn-sun-deep);
+  font-size: 12px;
+  line-height: 1;
+}
+.catalog-detail {
+  display: grid;
+  grid-template-columns: 56px 1fr;
+  align-items: start;
+  gap: var(--space-3);
+  margin: var(--space-3) 0 var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 2px 0 rgba(43, 42, 94, 0.08), inset 0 0 0 1.5px rgba(255, 181, 71, 0.45);
+  animation: pop-in var(--dur-med) var(--ease-out);
+}
+.catalog-detail.is-empty {
+  display: block;
+  background: rgba(75, 63, 134, 0.06);
+  box-shadow: none;
+  animation: none;
+}
+.catalog-detail__hint {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--dawn-violet);
+}
+.catalog-detail__hint svg {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+}
+.catalog-detail__icon {
+  width: 56px;
+  height: 56px;
+}
+.catalog-detail__icon svg {
+  width: 100%;
+  height: 100%;
+}
+.catalog-detail.is-unknown .catalog-detail__icon {
+  filter: grayscale(1) brightness(0.35);
+  opacity: 0.3;
+}
+.catalog-detail__text {
+  min-width: 0;
+}
+.catalog-detail__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px var(--space-2);
+}
+.catalog-detail__row strong,
+.catalog-detail__text > strong {
+  font-size: 16px;
+  font-weight: 900;
+  color: var(--color-ink);
+}
+.catalog-detail__rare {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 8px 2px 5px;
+  border-radius: var(--radius-pill);
+  background: rgba(255, 181, 71, 0.22);
+  color: #8a5a12;
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.catalog-detail__rare svg {
+  width: 13px;
+  height: 13px;
+}
+.catalog-detail__count {
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--color-ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+.catalog-detail p {
+  margin: 4px 0 0;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.45;
+  color: var(--color-ink-soft);
+}
+.catalog-detail__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-right: 2px;
+  font-weight: 900;
+  color: var(--dawn-violet);
+  vertical-align: -2px;
+}
+.catalog-detail__label svg {
+  width: 15px;
+  height: 15px;
+}
+
+/* Conquista secreta: listrada, com o "???" misterioso. */
+.ach-row.is-secret {
+  background: repeating-linear-gradient(135deg, rgba(43, 42, 94, 0.05) 0 8px, rgba(43, 42, 94, 0.02) 8px 16px);
+  box-shadow: inset 0 0 0 1.5px rgba(75, 63, 134, 0.2);
+}
+.ach-row.is-secret .ach-row__text strong {
+  color: var(--dawn-violet);
+  letter-spacing: 0.02em;
+}
+
+/* ==========================================================================
+   Cascos do besouro
+   ========================================================================== */
+.skin-list {
+  display: grid;
+  gap: var(--space-2);
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  list-style: none;
+}
+.skin-card {
+  display: grid;
+  grid-template-columns: 64px 1fr auto;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 10px 12px 10px 10px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.65);
+  box-shadow: 0 2px 0 rgba(43, 42, 94, 0.06);
+}
+.skin-card:focus-visible {
+  outline: 3px solid var(--dawn-sun-deep);
+  outline-offset: 2px;
+}
+.skin-card.is-using {
+  background: #fff;
+  box-shadow: 0 0 0 2px var(--dawn-sun), 0 4px 0 rgba(217, 132, 36, 0.3);
+}
+.skin-card__art {
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 35%, #fffaf0 0%, #f3e3c7 100%);
+  box-shadow: inset 0 -3px 0 rgba(58, 42, 34, 0.08);
+}
+.skin-card__art svg {
+  width: 50px;
+  height: 50px;
+}
+.skin-card.is-locked .skin-card__art svg {
+  filter: grayscale(1) brightness(0.4);
+  opacity: 0.35;
+}
+.skin-card__text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--color-ink-soft);
+}
+.skin-card__text strong {
+  font-size: 15px;
+  font-weight: 900;
+  color: var(--color-ink);
+}
+.skin-card.is-locked .skin-card__text {
+  opacity: 0.75;
+}
+.skin-card__use {
+  padding: 7px 16px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--dawn-indigo);
+  color: var(--dawn-cream);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 900;
+  cursor: pointer;
+  box-shadow: 0 3px 0 rgba(15, 12, 40, 0.35);
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+.skin-card__use:hover {
+  transform: translateY(-1px);
+}
+.skin-card__use:active {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 rgba(15, 12, 40, 0.35);
+}
+.skin-card__use:focus-visible {
+  outline: 3px solid var(--dawn-sun-deep);
+  outline-offset: 2px;
+}
+.skin-card__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 170px;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.3;
+  color: var(--dawn-indigo);
+  text-align: right;
+}
+.skin-card__status svg {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+}
+.skin-card__status.is-using {
+  color: #2f5a1c;
+}
+@media (max-width: 520px) {
+  .skin-card {
+    grid-template-columns: 52px 1fr;
+  }
+  .skin-card__art {
+    width: 52px;
+    height: 52px;
+  }
+  .skin-card__use,
+  .skin-card__status {
+    grid-column: 2;
+    justify-self: start;
+    text-align: left;
+  }
+}
+
+/* Toca com cinco abas: no computador também não cabe o nome de todas. Só a
+   ativa mostra o nome (as outras ficam no ícone, com o nome ainda lido pelo
+   leitor de tela e no title), igual ao celular. */
+.sheet--burrow .tabs__tab {
+  flex: 1 1 0;
+}
+.sheet--burrow .tabs__tab[aria-selected="true"] {
+  flex: 2.6 1 auto;
+}
+.sheet--burrow .tabs__tab:not([aria-selected="true"]) span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }

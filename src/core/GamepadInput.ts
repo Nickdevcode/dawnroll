@@ -8,6 +8,7 @@
  *   A / ✕               pular            RT / R2 (ou X / □)  segurar a bola
  *   LT / L2 (ou B / ○)  correr           Y / △               trazer a bola
  *   LB / RB             zoom             Start / Options     pausar
+ *   RS / R3 (ou ↑)      poder de apertar (Equilibrista)
  * No menu: direcional ou analógico navegam, A escolhe, B volta.
  */
 
@@ -15,9 +16,9 @@ export type PadStyle = 'xbox' | 'playstation';
 export type MenuAction = 'up' | 'down' | 'left' | 'right' | 'confirm' | 'back' | 'start';
 
 /** Rótulo de cada botão no estilo do controle (para dicas e ajuda). */
-export const PAD_LABELS: Record<PadStyle, Record<'a' | 'b' | 'x' | 'y' | 'lb' | 'rb' | 'lt' | 'rt' | 'start', string>> = {
-  xbox: { a: 'A', b: 'B', x: 'X', y: 'Y', lb: 'LB', rb: 'RB', lt: 'LT', rt: 'RT', start: 'Start' },
-  playstation: { a: '✕', b: '○', x: '□', y: '△', lb: 'L1', rb: 'R1', lt: 'L2', rt: 'R2', start: 'Options' },
+export const PAD_LABELS: Record<PadStyle, Record<'a' | 'b' | 'x' | 'y' | 'lb' | 'rb' | 'lt' | 'rt' | 'start' | 'ability', string>> = {
+  xbox: { a: 'A', b: 'B', x: 'X', y: 'Y', lb: 'LB', rb: 'RB', lt: 'LT', rt: 'RT', start: 'Start', ability: 'RS' },
+  playstation: { a: '✕', b: '○', x: '□', y: '△', lb: 'L1', rb: 'R1', lt: 'L2', rt: 'R2', start: 'Options', ability: 'R3' },
 };
 
 const enum Button {
@@ -32,6 +33,7 @@ const enum Button {
   Back = 8,
   Start = 9,
   L3 = 10,
+  R3 = 11,
   Up = 12,
   Down = 13,
   Left = 14,
@@ -73,6 +75,8 @@ export class GamepadInput {
   jumpPressed = false;
   recallPressed = false;
   startPressed = false;
+  /** Poder de apertar (clicar o analógico direito ou direcional pra cima). */
+  abilityPressed = false;
   /** Algo foi mexido no controle neste quadro (o jogo passa a mostrar dicas de controle). */
   active = false;
   /** Ações de menu deste quadro (bordas, com repetição ao segurar a direção). */
@@ -94,7 +98,7 @@ export class GamepadInput {
   /** Lê o controle. `dt` em segundos. */
   poll(dt: number): void {
     this.menuActions.length = 0;
-    this.jumpPressed = this.recallPressed = this.startPressed = false;
+    this.jumpPressed = this.recallPressed = this.startPressed = this.abilityPressed = false;
     this.moveX = this.moveY = this.lookX = this.lookY = this.zoom = 0;
     this.grab = this.run = this.active = false;
 
@@ -115,6 +119,7 @@ export class GamepadInput {
     this.run = down(Button.LT) || down(Button.B) || down(Button.L3);
     this.jumpPressed = edge(Button.A);
     this.recallPressed = edge(Button.Y);
+    this.abilityPressed = edge(Button.R3) || edge(Button.Up);
     this.startPressed = edge(Button.Start) || edge(Button.Back);
     this.active = mx !== 0 || my !== 0 || lx !== 0 || ly !== 0 || pressed.some(Boolean);
 

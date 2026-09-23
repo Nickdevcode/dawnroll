@@ -42,6 +42,18 @@ export const LADYBUG_HIPS: ReadonlyArray<readonly [number, number, number]> = [
   [0.085, 0.05, -0.09],
 ];
 
+/** Onde ficam as articulações de um besourinho que anda e voa (joaninha, vaquinha). */
+export interface BeetleRig {
+  /** Articulação dos élitros. */
+  readonly elytraPivot: THREE.Vector3;
+  /** Onde nascem as asas de voo (lado direito). */
+  readonly wingHinge: THREE.Vector3;
+  /** Quadris das seis patas (lado direito; o esquerdo é o mesmo com x negativo). */
+  readonly hips: ReadonlyArray<readonly [number, number, number]>;
+}
+
+export const LADYBUG_RIG: BeetleRig = { elytraPivot: LADYBUG_ELYTRA_PIVOT, wingHinge: LADYBUG_WING_HINGE, hips: LADYBUG_HIPS };
+
 export interface LadybugPalette {
   a: string;
   b: string;

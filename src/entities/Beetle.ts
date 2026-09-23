@@ -24,7 +24,24 @@ const PUSH_CONTACT_HEIGHT = 0.75;
 /** Se o besouro ficar mais longe que isso do ponto ideal, ele solta a bola. */
 const LOSE_GRIP_DISTANCE = 1.4;
 
-export type BeetleEvent = 'jump' | 'land' | 'grab' | 'release';
+/** Equilibrista: até onde (da superfície da bola) dá pra pular pra cima dela. */
+const MOUNT_REACH = 3.2;
+/** Duração do pulinho de subir e do de descer (segundos). */
+const MOUNT_SECONDS = 0.38;
+const DISMOUNT_SECONDS = 0.42;
+
+export type BeetleEvent = 'jump' | 'land' | 'grab' | 'release' | 'mount' | 'dismount';
+
+/** Pulinho animado (subir/descer da bola): sai de `from`, chega em `to` num arco. */
+interface Hop {
+  readonly from: THREE.Vector3;
+  readonly to: THREE.Vector3;
+  t: number;
+  duration: number;
+  height: number;
+  /** Subindo na bola: o destino acompanha o topo dela enquanto ela rola. */
+  mounting: boolean;
+}
 
 const UP = new THREE.Vector3(0, 1, 0);
 const tmpA = new THREE.Vector3();
@@ -60,6 +77,8 @@ export class Beetle {
   private jumpBuffer = 0;
 
   pushing = false;
+  /** Equilibrista: em cima da bola, andando nela. */
+  riding = false;
   /** Velocidade de queda no último pouso (força da poeira/tremida). */
   landingSpeed = 0;
   /** Multiplicador de velocidade do terreno (água até a canela = mais devagar). O jogo atualiza a cada passo. */
@@ -69,6 +88,11 @@ export class Beetle {
   private pushBlend = 0;
   private readonly pushDir = new THREE.Vector3(0, 0, 1);
   private pushStrain = 0;
+  /** Pulinho em andamento (subir ou descer da bola); null = controle normal. */
+  private hop: Hop | null = null;
+  /** Inclinação de equilíbrio em cima da bola (visual). */
+  private readonly balance = new THREE.Vector3();
+  private ridePhase = 0;
 
   onEvent: ((event: BeetleEvent) => void) | null = null;
 
@@ -135,6 +159,11 @@ export class Beetle {
    * ou null se estiver parado. Usada pela câmera automática do toque.
    */
   travelDirection(): THREE.Vector3 | null {
+    if (this.riding) {
+      const v = this.ball.velocity(tmpB);
+      const speed = Math.hypot(v.x, v.z);
+      return speed > 0.4 ? new THREE.Vector3(v.x / speed, 0, v.z / speed) : null;
+    }
     if (this.pushing) {
       const v = this.ball.velocity(tmpB);
       return Math.hypot(v.x, v.z) > 0.4 ? this.pushDir.clone() : null;
@@ -144,12 +173,66 @@ export class Beetle {
   }
 
   teleport(feet: THREE.Vector3): void {
+    this.riding = false;
+    this.hop = null;
     this.position.copy(feet).add(tmpA.set(0, COLLIDER_RADIUS + 0.05, 0));
     this.prevPosition.copy(this.position);
     this.velocity.set(0, 0, 0);
     this.body.setNextKinematicTranslation(this.position);
     this.body.setTranslation(this.position, true);
     this.releaseBall();
+  }
+
+  /** Perto o bastante da bola (e com ela inteira) pra pular em cima dela? */
+  canMount(): boolean {
+    if (this.riding || this.hop || !this.ball.isSolid) return false;
+    const c = this.ball.position(tmpC);
+    const surface = Math.hypot(c.x - this.position.x, c.y - this.position.y, c.z - this.position.z) - this.ball.radius - COLLIDER_RADIUS;
+    return surface < MOUNT_REACH;
+  }
+
+  /** Equilibrista: pula pra cima da bola (solta a bola se estava empurrando). */
+  mount(): boolean {
+    if (!this.canMount()) return false;
+    this.releaseBall();
+    this.riding = true;
+    this.hop = { from: this.position.clone(), to: this.rideTop(new THREE.Vector3()), t: 0, duration: MOUNT_SECONDS, height: 0.9, mounting: true };
+    this.velocity.set(0, 0, 0);
+    this.onEvent?.('mount');
+    return true;
+  }
+
+  /**
+   * Desce da bola: pulinho pra trás dela (o lado oposto ao que o besouro olha),
+   * pousando no que tiver embaixo (chão ou pedra) — conferido com um raio.
+   */
+  dismount(): void {
+    if (!this.riding) return;
+    this.riding = false;
+    const c = this.ball.position(tmpC);
+    const r = this.ball.radius;
+    const back = tmpA.set(-Math.sin(this.yaw), 0, -Math.cos(this.yaw));
+    const land = new THREE.Vector3(c.x + back.x * (r + 0.9), c.y + r + 2, c.z + back.z * (r + 0.9));
+    const ray = new RAPIER.Ray({ x: land.x, y: land.y, z: land.z }, { x: 0, y: -1, z: 0 });
+    const hit = this.physics.world.castRay(ray, r * 2 + 40, true, undefined, interactionGroups(Groups.PLAYER, Groups.WORLD), this.collider);
+    land.y = hit ? land.y - hit.timeOfImpact + COLLIDER_RADIUS + 0.05 : c.y - r + COLLIDER_RADIUS + 0.05;
+    this.hop = { from: this.position.clone(), to: land, t: 0, duration: DISMOUNT_SECONDS, height: 0.7 + r * 0.15, mounting: false };
+    this.velocity.set(0, 0, 0);
+    this.onEvent?.('dismount');
+  }
+
+  /** Ponto em cima da bola onde o besouro fica (centro do colisor). */
+  private rideTop(target: THREE.Vector3): THREE.Vector3 {
+    const c = this.ball.position(tmpC);
+    return target.set(c.x, c.y + this.ball.radius + COLLIDER_RADIUS - 0.05, c.z);
+  }
+
+  /** De pé em cima da bola SEM o poder (subiu pulando)? Pra conquista secreta. */
+  get standingOnBall(): boolean {
+    if (this.riding || this.hop || !this.grounded || !this.ball.isSolid) return false;
+    const c = this.ball.position(tmpC);
+    const r = this.ball.radius;
+    return this.position.y > c.y + r * 0.75 && Math.hypot(this.position.x - c.x, this.position.z - c.z) < r * 0.6;
   }
 
   fixedUpdate(dt: number, input: InputState, cameraYaw: number): void {
@@ -162,6 +245,18 @@ export class Beetle {
     const wish = new THREE.Vector3().addScaledVector(forward, input.moveY).addScaledVector(right, input.moveX);
     const wishAmount = Math.min(wish.length(), 1);
     if (wishAmount > 1e-3) wish.divideScalar(wish.length());
+
+    // --- Equilibrista: pulinho de subir/descer e o andar em cima da bola ---
+    if (this.hop) {
+      this.updateHop(dt);
+      return;
+    }
+    if (this.riding) {
+      // Pular (ou a bola sumir na toca) desce da bola.
+      if (input.jumpPressed || !this.ball.isSolid) this.dismount();
+      else this.updateRide(dt, wish, wishAmount, input.run);
+      return;
+    }
 
     // --- pulo com coyote time e buffer ---
     this.jumpBuffer = input.jumpPressed ? JUMP_BUFFER : Math.max(0, this.jumpBuffer - dt);
@@ -248,16 +343,80 @@ export class Beetle {
     const turn = new THREE.Quaternion().setFromAxisAngle(UP, yaw);
     root.quaternion.copy(align).multiply(turn);
 
-    const horizontalSpeed = Math.hypot(this.velocity.x, this.velocity.z);
     const ballVel = this.ball.velocity(tmpA);
+    // Em cima da bola as patas andam na velocidade da superfície dela (esteira).
+    const horizontalSpeed = this.riding ? Math.hypot(ballVel.x, ballVel.z) : Math.hypot(this.velocity.x, this.velocity.z);
     this.model.update(dt, {
       speed: horizontalSpeed,
-      grounded: this.grounded,
+      grounded: this.grounded || this.riding,
       pushBlend: this.pushBlend,
       pushSpeed: Math.hypot(ballVel.x, ballVel.z) / Math.max(this.ball.radius, 0.3),
       verticalSpeed: this.velocity.y,
       strain: this.pushStrain,
     });
+  }
+
+  /** Pulinho de subir/descer: arco animado, sem colisão (o destino da descida já foi conferido). */
+  private updateHop(dt: number): void {
+    const hop = this.hop!;
+    hop.t = Math.min(1, hop.t + dt / hop.duration);
+    // Subindo, a bola continua rolando: o alvo acompanha o topo dela.
+    if (hop.mounting) this.rideTop(hop.to);
+    const k = hop.t;
+    const eased = k * k * (3 - 2 * k);
+    this.position.lerpVectors(hop.from, hop.to, eased);
+    this.position.y += Math.sin(Math.PI * k) * hop.height;
+    this.body.setNextKinematicTranslation(this.position);
+    this.grounded = false;
+    this.pushBlend = damp(this.pushBlend, 0, 9, dt);
+    const dx = hop.to.x - hop.from.x;
+    const dz = hop.to.z - hop.from.z;
+    if (!hop.mounting && dx * dx + dz * dz > 1e-4) this.yaw = dampAngle(this.yaw, Math.atan2(dx, dz), 10, dt);
+    this.updateGroundAlignment(dt);
+    if (k < 1) return;
+    this.hop = null;
+    if (!hop.mounting) {
+      this.grounded = true;
+      this.airTime = 0;
+      this.velocity.set(0, 0, 0);
+      this.landingSpeed = 7;
+      this.onEvent?.('land');
+    }
+  }
+
+  /**
+   * Em cima da bola: o besouro anda e a bola rola embaixo dele, na direção que
+   * o jogador aponta (como um equilibrista de circo). A força segue a mesma
+   * regra do empurrar (limitada, mais fraca com bola grande), um pouco mais
+   * solta pra ser divertido.
+   */
+  private updateRide(dt: number, wish: THREE.Vector3, amount: number, run: boolean): void {
+    const ball = this.ball;
+    const r = ball.radius;
+    const ballVel = ball.velocity(tmpB);
+    const sizeFactor = 1 / (1 + 0.24 * (Math.min(r, 3) - 0.5));
+    const maxSpeed = (run ? 5 : 3.6) * sizeFactor * this.modifiers.pushSpeed;
+    const desired = tmpA.copy(wish).multiplyScalar(amount > 0.1 ? maxSpeed * amount : 0);
+    const accelLimit = (17 / (1 + 0.3 * r)) * this.modifiers.push;
+    const needed = new THREE.Vector3(desired.x - ballVel.x, 0, desired.z - ballVel.z).divideScalar(0.2);
+    const neededLen = needed.length();
+    if (neededLen > 1e-4) needed.multiplyScalar(Math.min(neededLen, accelLimit) / neededLen);
+    ball.body.applyImpulse({ x: needed.x * ball.mass * dt, y: 0, z: needed.z * ball.mass * dt }, true);
+    this.pushStrain = damp(this.pushStrain, clamp(neededLen / accelLimit, 0, 1) * (amount > 0.1 ? 0.6 : 0.2), 5, dt);
+
+    this.rideTop(this.position);
+    this.body.setNextKinematicTranslation(this.position);
+    this.velocity.set(ballVel.x, 0, ballVel.z);
+    this.grounded = true;
+    this.airTime = 0;
+    this.pushBlend = damp(this.pushBlend, 0, 9, dt);
+    if (amount > 0.05) this.yaw = dampAngle(this.yaw, Math.atan2(wish.x, wish.z), 10, dt);
+
+    // Equilíbrio: o corpo inclina contra a aceleração e balança de leve.
+    this.ridePhase += dt;
+    const wobble = Math.sin(this.ridePhase * 6) * 0.06;
+    this.balance.set(-needed.x * 0.012 + Math.cos(this.yaw) * wobble, 1, -needed.z * 0.012 - Math.sin(this.yaw) * wobble).normalize();
+    this.groundUp.lerp(this.balance, 1 - Math.exp(-8 * dt)).normalize();
   }
 
   private canGrab(): boolean {

@@ -4,9 +4,9 @@ import { isTouchDevice } from '../core/device';
 import type { SaveData } from '../core/save';
 import { formatCm, onLocaleChange, t, tn, type MessageKey } from '../i18n';
 import type { BurialOutcome } from '../progression/Progression';
-import type { PerkId } from '../progression/perks';
+import type { PerkOffer } from '../progression/perks';
 import { Icons } from './icons';
-import { GameIcons } from './gameIcons';
+import { GameIcons, PerkIcons } from './gameIcons';
 import { escapeHtml } from './html';
 import { PerkPicker } from './PerkPicker';
 import { RoundPanel, type RoundView } from './RoundPanel';
@@ -21,9 +21,22 @@ const MILESTONES: ReadonlyArray<[number, MessageKey]> = [
   [16, 'milestone.5'],
   [20, 'milestone.6'],
   [24, 'milestone.7'],
+  [30, 'milestone.8'],
 ];
 
-export type HintKind = 'none' | 'grab' | 'pushing' | 'tooSmall' | 'burrowTooSmall' | 'dissolving';
+export type HintKind = 'none' | 'grab' | 'pushing' | 'tooSmall' | 'burrowTooSmall' | 'dissolving' | 'ability' | 'abilityFar' | 'riding';
+
+/** Estado do botão do poder de apertar (Equilibrista). */
+export interface AbilityView {
+  /** 0..1: em uso esvazia, recarregando enche, pronto = 1. */
+  charge: number;
+  phase: 'ready' | 'active' | 'cooldown';
+  /** Segundos que faltam na fase (em uso ou recarregando). */
+  seconds: number;
+}
+
+/** Circunferência do anel de carga do botão (raio 21 no viewBox 48). */
+const ABILITY_RING = 2 * Math.PI * 21;
 
 /** Onde desenhar o marcador da toca (coordenadas normalizadas da câmera). */
 export interface BurrowMarkerState extends ProjectedPoint {
@@ -70,6 +83,13 @@ export class Hud {
   private readonly burrowButton: HTMLButtonElement;
   private readonly burrowBadge: HTMLElement;
   private readonly scentMarkers: HTMLElement[] = [];
+  private readonly ability: HTMLButtonElement;
+  private readonly abilityRing: SVGCircleElement;
+  private readonly abilityKey: HTMLElement;
+  private readonly abilityTime: HTMLElement;
+  /** Tecla escrita no botão do poder (null = ainda não escrita; no toque ela é vazia e some). */
+  private abilityKeyLabel: string | null = null;
+  private lastAbility = '';
   private readonly roundPanel: RoundPanel;
   readonly perkPicker: PerkPicker;
   private pantryCount = 0;
@@ -128,6 +148,18 @@ export class Hud {
     this.fps = $('[data-fps]');
     this.burrowButton = $('[data-burrow-open]');
     this.burrowBadge = $('[data-burrow-badge]');
+    this.ability = $('[data-ability]');
+    this.abilityRing = this.ability.querySelector('[data-ability-ring]') as SVGCircleElement;
+    this.abilityKey = $('[data-ability-key]');
+    this.abilityTime = $('[data-ability-time]');
+    this.abilityRing.style.strokeDasharray = ABILITY_RING.toFixed(2);
+    this.ability.addEventListener('pointerdown', (e) => {
+      // Tocar no botão não vira arrastar de câmera nem clique no canvas.
+      e.preventDefault();
+      e.stopPropagation();
+      this.input.queueAbility();
+    });
+    this.refreshAbilityKey();
     this.roundPanel = new RoundPanel($('[data-round-slot]'), this.isTouch);
     this.perkPicker = new PerkPicker(this.hud);
     const scentLayer = $('[data-scent]');
@@ -253,6 +285,17 @@ export class Hud {
       case 'dissolving':
         html = escapeHtml(t('hint.dissolving'));
         break;
+      case 'ability':
+        if (this.device === 'gamepad') html = escapeHtml(t('hint.ability.gamepad', { button: '{button}' })).replace('{button}', `<span class="keycap padcap">${escapeHtml(PAD_LABELS[this.padStyle].ability)}</span>`);
+        else if (this.device === 'touch') html = escapeHtml(t('hint.ability.touch'));
+        else html = escapeHtml(t('hint.ability.desktop', { key: '{key}' })).replace('{key}', '<span class="keycap">Q</span>');
+        break;
+      case 'abilityFar':
+        html = escapeHtml(t('hint.ability.far'));
+        break;
+      case 'riding':
+        html = escapeHtml(t('hint.riding'));
+        break;
       case 'none':
         break;
     }
@@ -272,6 +315,39 @@ export class Hud {
     this.padStyle = padStyle;
     this.currentHint = '';
     this.setHint(this.hintState.kind, this.hintState.value);
+    this.refreshAbilityKey();
+  }
+
+  /**
+   * Botão do poder de apertar (Equilibrista): ícone, anel de carga e a tecla do
+   * dispositivo em uso. `null` esconde (sem o poder na rodada).
+   */
+  setAbility(view: AbilityView | null): void {
+    if (!view) {
+      if (!this.ability.hidden) this.ability.hidden = true;
+      this.lastAbility = '';
+      return;
+    }
+    const seconds = Math.ceil(view.seconds);
+    const key = `${view.phase}|${view.charge.toFixed(2)}|${seconds}`;
+    if (key === this.lastAbility) return;
+    this.lastAbility = key;
+    this.ability.hidden = false;
+    this.ability.dataset.phase = view.phase;
+    this.abilityRing.style.strokeDashoffset = (ABILITY_RING * (1 - Math.min(Math.max(view.charge, 0), 1))).toFixed(2);
+    this.abilityTime.textContent = view.phase === 'ready' ? '' : String(seconds);
+    const state = t(view.phase === 'ready' ? 'hud.ability.ready' : view.phase === 'active' ? 'hud.ability.active' : 'hud.ability.cooldown');
+    this.ability.setAttribute('aria-label', `${t('hud.ability')}: ${state}`);
+    this.ability.title = `${t('hud.ability')} · ${state}`;
+  }
+
+  /** A tecla escrita no botão do poder acompanha o dispositivo (Q, RS/R3; no toque, nada). */
+  private refreshAbilityKey(): void {
+    const label = this.device === 'gamepad' ? PAD_LABELS[this.padStyle].ability : this.device === 'touch' ? '' : 'Q';
+    if (label === this.abilityKeyLabel) return;
+    this.abilityKeyLabel = label;
+    this.abilityKey.textContent = label;
+    this.abilityKey.hidden = label === '';
   }
 
   /** Aviso rápido no topo (ex.: controle conectado). */
@@ -322,9 +398,9 @@ export class Hud {
     this.roundPanel.setHeat(heat);
   }
 
-  /** Pedido cumprido: aviso + pulinho no cartão dos pedidos. */
-  requestDone(): void {
-    this.showToast(t('hud.requestDone'));
+  /** Pedido cumprido: quem pediu agradece + pulinho no cartão dos pedidos. */
+  requestDone(giverName?: string): void {
+    this.showToast(giverName ? t('hud.requestDone.from', { name: giverName }) : t('hud.requestDone'));
     this.roundPanel.flashRequests();
   }
 
@@ -337,7 +413,7 @@ export class Hud {
     this.burrowButton.classList.toggle('has-food', count > 0);
   }
 
-  showPerkPicker(options: readonly PerkId[], cm: number): void {
+  showPerkPicker(options: readonly PerkOffer[], cm: number): void {
     this.hint.classList.remove('is-visible');
     this.currentHint = '';
     this.perkPicker.show(options, cm, this.device, this.padStyle);
@@ -390,6 +466,7 @@ export class Hud {
     this.lastMeta = '';
     this.lastMarkerLabel = '';
     this.lastFps = -1;
+    this.lastAbility = '';
     this.currentHint = '';
     if (this.lastSave) this.setProgress(this.lastSave);
     if (this.lastResult) this.fillResult(this.lastResult);
@@ -427,6 +504,7 @@ export class Hud {
     if (outcome.stored) lines.push([GameIcons.food, escapeHtml(t('result.food', { n: outcome.food.total }))]);
     else if (meal) lines.push([GameIcons.food, escapeHtml(t('result.ate', { xp: meal.xp }))]);
     if (meal && meal.levelAfter > meal.levelBefore) lines.push([GameIcons.star, `<strong>${escapeHtml(t('burrow.levelUp', { n: meal.levelAfter }))}</strong>`]);
+    if (outcome.goldenDone) lines.push([GameIcons.star, `<strong>${escapeHtml(t('result.golden'))}</strong>`]);
     if (outcome.requestsDone > 0) lines.push([Icons.check, escapeHtml(tn('result.requests', outcome.requestsDone))]);
     if (outcome.discovered.length > 0) {
       const names = outcome.discovered.slice(0, 3).map((id) => t(`catalog.${id}` as MessageKey));
@@ -581,6 +659,15 @@ export class Hud {
           </div>
         </div>
 
+        <button class="ability" data-ability type="button" hidden>
+          <svg class="ability__ring" viewBox="0 0 48 48" aria-hidden="true">
+            <circle class="ability__track" cx="24" cy="24" r="21"/>
+            <circle class="ability__fill" data-ability-ring cx="24" cy="24" r="21"/>
+          </svg>
+          <span class="ability__icon" aria-hidden="true">${PerkIcons.rider}</span>
+          <span class="ability__time" data-ability-time aria-hidden="true"></span>
+          <span class="keycap ability__key" data-ability-key aria-hidden="true"></span>
+        </button>
         <div class="fps-chip" data-fps hidden aria-hidden="true"></div>
         <div class="hint" data-hint aria-hidden="true"></div>
         <div class="toast" data-toast aria-hidden="true"></div>

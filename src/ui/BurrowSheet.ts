@@ -1,32 +1,35 @@
 import { formatCm, formatInteger, onLocaleChange, t, type MessageKey } from '../i18n';
 import { ACHIEVEMENTS, ACHIEVEMENT_GROUPS } from '../progression/achievements';
-import { CATALOG, CATALOG_GROUPS, type CatalogEntry } from '../progression/catalog';
+import { CATALOG, CATALOG_GROUPS, catalogEntry, isCatalogId, type CatalogEntry, type CatalogId } from '../progression/catalog';
 import { PANTRY_CAPACITY, banquetMultiplier } from '../progression/food';
 import { PERKS } from '../progression/perks';
 import type { MealResult, Progression } from '../progression/Progression';
-import { CatalogIcons, GameIcons, PerkIcons } from './gameIcons';
+import { SKINS, isSkinId } from '../progression/skins';
+import { CatalogIcons, GameIcons, PerkIcons, beetleIcon } from './gameIcons';
 import { Icons } from './icons';
 import { escapeHtml } from './html';
 import { bindTabs, tabsMarkup } from './tabs';
-import { achievementDesc, achievementName } from './achievementText';
+import { achievementDesc, achievementName, isHiddenAchievement } from './achievementText';
 
-type TabName = 'pantry' | 'catalog' | 'perks' | 'achievements';
+type TabName = 'pantry' | 'catalog' | 'perks' | 'achievements' | 'skins';
 
 const TABS: ReadonlyArray<{ name: TabName; icon: string; label: MessageKey }> = [
   { name: 'pantry', icon: GameIcons.pantry, label: 'burrow.tab.pantry' },
   { name: 'catalog', icon: GameIcons.catalog, label: 'burrow.tab.catalog' },
   { name: 'perks', icon: GameIcons.sparkle, label: 'burrow.tab.perks' },
   { name: 'achievements', icon: Icons.trophy, label: 'burrow.tab.achievements' },
+  { name: 'skins', icon: GameIcons.shell, label: 'burrow.tab.skins' },
 ];
 
 /** Tamanho da bolinha desenhada na despensa (px): cresce rápido nas pequenas, pra 3 e 6 cm não parecerem iguais. */
 const ballPx = (cm: number) => Math.round(16 + 32 * Math.pow(Math.min(Math.max((cm - 3) / 17, 0), 1), 0.6));
 
 /**
- * Placa da toca (dentro do menu): nível e experiência no topo, e quatro abas —
- * Despensa (comer o que foi enterrado), Catálogo (figurinhas), Poderes (o que
- * cada nível libera) e Conquistas. Tudo lido do `Progression`; comer chama
- * `progression.eat`.
+ * Placa da toca (dentro do menu): nível e experiência no topo, e cinco abas —
+ * Despensa (comer o que foi enterrado), Catálogo (figurinhas, com uma
+ * curiosidade real de cada uma), Poderes (o que cada nível libera), Conquistas
+ * (as secretas aparecem como "???") e Cascos (a aparência do besouro).
+ * Tudo lido do `Progression`; comer chama `progression.eat`, vestir chama `setSkin`.
  */
 export class BurrowSheet {
   readonly element: HTMLElement;
@@ -43,6 +46,8 @@ export class BurrowSheet {
   private readonly panels = new Map<TabName, HTMLElement>();
   private readonly select: (name: TabName) => void;
   private intro = false;
+  /** Figurinha aberta no catálogo (mostra a curiosidade dela). */
+  private selectedCatalog: CatalogId | null = null;
 
   constructor(private readonly progression: Progression) {
     const markup = tabsMarkup('burrow-', 'sheet-burrow-title', TABS);
@@ -91,6 +96,17 @@ export class BurrowSheet {
       const value = button.dataset.eat!;
       this.eat(value === 'all' ? undefined : [Number(value)]);
     });
+    this.panels.get('catalog')!.addEventListener('click', (e) => {
+      const tile = (e.target as HTMLElement).closest<HTMLElement>('[data-catalog]');
+      const id = tile?.dataset.catalog;
+      if (id && isCatalogId(id)) this.openCatalogEntry(id);
+    });
+    this.panels.get('skins')!.addEventListener('click', (e) => {
+      const button = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-skin]');
+      const id = button?.dataset.skin;
+      if (!id || !isSkinId(id)) return;
+      if (this.progression.setSkin(id)) this.element.querySelector<HTMLElement>(`[data-skin-card="${id}"]`)?.focus({ preventScroll: true });
+    });
 
     progression.subscribe(() => this.refresh());
     onLocaleChange(() => this.refresh());
@@ -109,13 +125,14 @@ export class BurrowSheet {
     if (!this.element.hidden) this.render();
   }
 
-  /** Redesenha tudo (barato: a placa tem poucas dezenas de elementos). */
+  /** Redesenha tudo (barato: a placa tem poucas centenas de elementos). */
   private render(): void {
     this.renderLevel();
     this.renderPantry();
     this.renderCatalog();
     this.renderPerks();
     this.renderAchievements();
+    this.renderSkins();
   }
 
   private eat(indices: number[] | undefined): void {
@@ -208,6 +225,37 @@ export class BurrowSheet {
     panel.innerHTML = `${intro}${feast}<ul class="pantry">${balls}</ul>`;
   }
 
+  /** Abre a curiosidade de uma figurinha (e mantém o foco nela depois de redesenhar). */
+  private openCatalogEntry(id: CatalogId): void {
+    this.selectedCatalog = id;
+    this.renderCatalog();
+    this.panels.get('catalog')!.querySelector<HTMLElement>(`[data-catalog="${id}"]`)?.focus({ preventScroll: true });
+  }
+
+  /** Cartão de detalhe no topo do catálogo: ícone, nome, quantas, rara e a curiosidade. */
+  private catalogDetail(): string {
+    const id = this.selectedCatalog;
+    if (!id) return `<div class="catalog-detail is-empty" aria-live="polite"><span class="catalog-detail__hint">${GameIcons.fact}<span>${escapeHtml(t('burrow.catalog.pick'))}</span></span></div>`;
+    const entry = catalogEntry(id);
+    const count = this.progression.catalog[id] ?? 0;
+    if (count === 0) {
+      return /* html */ `
+        <div class="catalog-detail is-unknown" aria-live="polite">
+          <span class="catalog-detail__icon" aria-hidden="true">${CatalogIcons[entry.shape]}</span>
+          <div class="catalog-detail__text"><strong>${escapeHtml(t('burrow.catalog.unknown'))}</strong><p>${escapeHtml(t('burrow.catalog.locked'))}</p></div>
+        </div>`;
+    }
+    const rare = entry.rare ? `<span class="catalog-detail__rare">${GameIcons.star}${escapeHtml(t('burrow.catalog.rare'))}</span>` : '';
+    return /* html */ `
+      <div class="catalog-detail" aria-live="polite">
+        <span class="catalog-detail__icon" style="color:${entry.color}" aria-hidden="true">${CatalogIcons[entry.shape]}</span>
+        <div class="catalog-detail__text">
+          <div class="catalog-detail__row"><strong>${escapeHtml(t(`catalog.${id}` as MessageKey))}</strong>${rare}<span class="catalog-detail__count">${escapeHtml(t('burrow.catalog.count', { n: formatInteger(count) }))}</span></div>
+          <p><span class="catalog-detail__label">${GameIcons.fact}${escapeHtml(t('burrow.catalog.fact'))}</span> ${escapeHtml(t(`fact.${id}` as MessageKey))}</p>
+        </div>
+      </div>`;
+  }
+
   private renderCatalog(): void {
     const panel = this.panels.get('catalog')!;
     const catalog = this.progression.catalog;
@@ -217,11 +265,15 @@ export class BurrowSheet {
       const known = count > 0;
       const name = known ? t(`catalog.${entry.id}` as MessageKey) : t('burrow.catalog.unknown');
       const label = known ? `${name}: ${t('burrow.catalog.count', { n: formatInteger(count) })}` : name;
+      const selected = entry.id === this.selectedCatalog;
+      const classes = ['catalog-tile', known ? '' : 'is-unknown', known && entry.rare ? 'is-rare' : '', selected ? 'is-selected' : ''].filter(Boolean).join(' ');
       return /* html */ `
-        <li class="catalog-tile${known ? '' : ' is-unknown'}" tabindex="0" data-focusable aria-label="${escapeHtml(label)}">
-          <span class="catalog-tile__icon" style="color:${entry.color}" aria-hidden="true">${CatalogIcons[entry.shape]}</span>
-          <span class="catalog-tile__name" aria-hidden="true">${escapeHtml(name)}</span>
-          ${known ? `<span class="catalog-tile__count" aria-hidden="true">${escapeHtml(t('burrow.catalog.count', { n: formatInteger(count) }))}</span>` : ''}
+        <li class="catalog-tile__cell">
+          <button class="${classes}" type="button" data-catalog="${entry.id}" data-focusable aria-pressed="${selected}" aria-label="${escapeHtml(label)}">
+            <span class="catalog-tile__icon" style="color:${entry.color}" aria-hidden="true">${CatalogIcons[entry.shape]}</span>
+            <span class="catalog-tile__name" aria-hidden="true">${escapeHtml(name)}</span>
+            ${known ? `<span class="catalog-tile__count" aria-hidden="true">${escapeHtml(t('burrow.catalog.count', { n: formatInteger(count) }))}</span>` : ''}
+          </button>
         </li>`;
     };
     const groups = CATALOG_GROUPS.map(
@@ -235,6 +287,7 @@ export class BurrowSheet {
         <div class="catalog-progress__bar" aria-hidden="true"><span style="transform:scaleX(${(found / CATALOG.length).toFixed(3)})"></span></div>
         <p class="catalog-progress__hint">${escapeHtml(t('burrow.catalog.hint'))}</p>
       </div>
+      ${this.catalogDetail()}
       ${groups}`;
   }
 
@@ -245,13 +298,15 @@ export class BurrowSheet {
       ACHIEVEMENTS.filter((a) => a.group === group)
         .map((a) => {
           const has = this.progression.hasAchievement(a.id);
+          const hidden = isHiddenAchievement(a.id, has);
           const status = has ? t('burrow.ach.done') : t('burrow.ach.reward', { xp: a.reward });
+          const icon = has ? Icons.trophy : hidden ? GameIcons.secret : GameIcons.lock;
           return /* html */ `
-            <li class="ach-row${has ? ' is-done' : ''}" tabindex="0" data-focusable>
-              <span class="ach-row__icon" aria-hidden="true">${has ? Icons.trophy : GameIcons.lock}</span>
+            <li class="ach-row${has ? ' is-done' : ''}${hidden ? ' is-secret' : ''}" tabindex="0" data-focusable>
+              <span class="ach-row__icon" aria-hidden="true">${icon}</span>
               <span class="ach-row__text">
-                <strong>${escapeHtml(achievementName(a.id))}</strong>
-                <span>${escapeHtml(achievementDesc(a.id))}</span>
+                <strong>${escapeHtml(achievementName(a.id, hidden))}</strong>
+                <span>${escapeHtml(achievementDesc(a.id, hidden))}</span>
               </span>
               <span class="ach-row__status">${escapeHtml(status)}</span>
             </li>`;
@@ -276,7 +331,8 @@ export class BurrowSheet {
     const level = this.progression.level;
     const rows = PERKS.map((perk) => {
       const unlocked = perk.unlockLevel <= level;
-      const status = unlocked ? t('burrow.perks.unlocked') : t('burrow.perks.locked', { n: perk.unlockLevel });
+      let status = unlocked ? t('burrow.perks.unlocked') : t('burrow.perks.locked', { n: perk.unlockLevel });
+      if (unlocked && perk.active) status = t('burrow.perks.active');
       return /* html */ `
         <li class="perk-row${unlocked ? '' : ' is-locked'}" tabindex="0" data-focusable>
           <span class="perk-row__icon perk-icon--${perk.id}" aria-hidden="true">${unlocked ? PerkIcons[perk.id] : GameIcons.lock}</span>
@@ -288,5 +344,35 @@ export class BurrowSheet {
         </li>`;
     }).join('');
     panel.innerHTML = /* html */ `<p class="perk-hint">${escapeHtml(t('burrow.perks.hint'))}</p><ul class="perk-list">${rows}</ul>`;
+  }
+
+  /** Cascos: cada um com o besourinho pintado; os presos mostram a conquista que libera. */
+  private renderSkins(): void {
+    const panel = this.panels.get('skins')!;
+    const current = this.progression.skin;
+    const cards = SKINS.map((def) => {
+      const unlocked = this.progression.isSkinUnlocked(def.id);
+      const using = def.id === current;
+      const name = t(`skin.${def.id}.name` as MessageKey);
+      let action: string;
+      if (using) action = `<span class="skin-card__status is-using">${Icons.check}${escapeHtml(t('burrow.skins.using'))}</span>`;
+      else if (unlocked) action = `<button class="skin-card__use" type="button" data-skin="${def.id}">${escapeHtml(t('burrow.skins.use'))}</button>`;
+      else action = `<span class="skin-card__status">${GameIcons.lock}${escapeHtml(t('burrow.skins.locked', { name: achievementName(def.unlock!, isHiddenAchievement(def.unlock!, false)) }))}</span>`;
+      return /* html */ `
+        <li class="skin-card${using ? ' is-using' : ''}${unlocked ? '' : ' is-locked'}" tabindex="0" data-focusable data-skin-card="${def.id}">
+          <span class="skin-card__art" aria-hidden="true">${beetleIcon({ shell: def.elytra, pronotum: def.pronotum, accent: def.leg })}</span>
+          <span class="skin-card__text">
+            <strong>${escapeHtml(name)}</strong>
+            <span>${escapeHtml(t(`skin.${def.id}.desc` as MessageKey))}</span>
+          </span>
+          ${action}
+        </li>`;
+    }).join('');
+    panel.innerHTML = /* html */ `
+      <div class="catalog-progress">
+        <div class="catalog-progress__row"><strong>${escapeHtml(t('burrow.skins.progress', { n: this.progression.unlockedSkinCount, total: SKINS.length }))}</strong></div>
+        <p class="catalog-progress__hint">${escapeHtml(t('burrow.skins.hint'))}</p>
+      </div>
+      <ul class="skin-list">${cards}</ul>`;
   }
 }

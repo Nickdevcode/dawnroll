@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { clamp, damp } from '../../utils/math';
 import { clay } from '../../render/clayMaterial';
 import { BURROW, dirtAmount, terrainHeight, PLAY_RADIUS } from '../../world/Terrain';
+import { zoneOf } from '../../world/zones';
 import { InstancedPart } from './InstancedPart';
 import { critterMaterials } from './materials';
 import { mergeParts } from './models';
@@ -16,6 +17,9 @@ import type { CritterContext, Species } from './types';
  * outra, muitas carregando um pedacinho de folha; entram e saem do ninho,
  * desviam do besouro e da bola e se espalham no susto. Tudo instanciado: as
  * patinhas alternam entre duas poses (stop-motion, combina com a massinha).
+ *
+ * A primeira colônia faz a trilha até a ponta da toalha do piquenique (é lá
+ * que caem as migalhas).
  */
 
 const PATH_STEP = 0.15;
@@ -47,6 +51,10 @@ interface Ant {
   hurry: number;
   phase: number;
   scale: number;
+  /** Onde ela estava no último quadro (mundo); para largar a folha no lugar certo. */
+  readonly at: THREE.Vector3;
+  /** Apareceu no último quadro (fora do ninho e com o jogador por perto). */
+  shown: boolean;
 }
 
 interface Colony {
@@ -93,7 +101,7 @@ export class AntColonies implements Species {
     const hills: THREE.BufferGeometry[] = [];
     const baseAngle = ctx.rng.next() * Math.PI * 2;
     for (let c = 0; c < this.colonyCount; c++) {
-      const colony = this.placeColony(ctx, baseAngle + (c / this.colonyCount) * Math.PI * 2);
+      const colony = (c === 0 ? this.placePicnicColony(ctx) : null) ?? this.placeColony(ctx, baseAngle + (c / this.colonyCount) * Math.PI * 2);
       if (!colony) continue;
       const hill = anthill(c + 1);
       hill.translate(colony.nest.x, colony.nest.y - 0.08, colony.nest.z);
@@ -119,6 +127,8 @@ export class AntColonies implements Species {
           hurry: 0,
           phase: ctx.rng.next() * 10,
           scale: ctx.rng.range(0.9, 1.12),
+          at: new THREE.Vector3(),
+          shown: false,
         });
         const ant = colony.ants[colony.ants.length - 1];
         ant.carry = ant.dir < 0 && ctx.rng.next() < 0.65;
@@ -151,6 +161,31 @@ export class AntColonies implements Species {
         const fx = nx + Math.cos(fa) * fd;
         const fz = nz + Math.sin(fa) * fd;
         if (Math.hypot(fx, fz) > PLAY_RADIUS - 3) continue;
+        const path = this.buildPath(ctx, nx, nz, fx, fz);
+        if (path) return { nest: new THREE.Vector3(nx, terrainHeight(nx, nz), nz), path, ants: [], tint: ColonyTints[0] };
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Colônia do piquenique: a comida é a borda da toalha (no meio de um lado,
+   * onde o pano não cobre o chão) e o formigueiro fica uns passos para fora.
+   */
+  private placePicnicColony(ctx: CritterContext): Colony | null {
+    const zone = zoneOf('picnic');
+    if (!zone) return null;
+    for (const side of [1, -1, 3, -3]) {
+      const a = zone.facing + (side * Math.PI) / 4;
+      const fx = zone.x + Math.sin(a) * (zone.radius + 0.4);
+      const fz = zone.z + Math.cos(a) * (zone.radius + 0.4);
+      if (Math.hypot(fx, fz) > PLAY_RADIUS - 3) continue;
+      for (let attempt = 0; attempt < 24; attempt++) {
+        const spread = a + ctx.rng.range(-0.6, 0.6);
+        const d = ctx.rng.range(7, 11);
+        const nx = fx + Math.sin(spread) * d;
+        const nz = fz + Math.cos(spread) * d;
+        if (Math.hypot(nx, nz) > PLAY_RADIUS - 8 || !this.clear(ctx, nx, nz, 1.6)) continue;
         const path = this.buildPath(ctx, nx, nz, fx, fz);
         if (path) return { nest: new THREE.Vector3(nx, terrainHeight(nx, nz), nz), path, ants: [], tint: ColonyTints[0] };
       }
@@ -223,6 +258,7 @@ export class AntColonies implements Species {
         Math.hypot(colony.nest.x - w.player.x, colony.nest.z - w.player.z) < 50 ||
         Math.hypot(path.x[path.x.length - 1] - w.player.x, path.z[path.z.length - 1] - w.player.z) < 50;
       for (const ant of colony.ants) {
+        ant.shown = false;
         if (!near) {
           this.hide(ant);
           continue;
@@ -243,6 +279,8 @@ export class AntColonies implements Species {
         const z = path.z[i] + (path.z[i + 1] - path.z[i]) * k + ux * lateral;
         const y = path.y[i] + (path.y[i + 1] - path.y[i]) * k;
         vPos.set(x, y + 0.005, z);
+        ant.at.copy(vPos);
+        ant.shown = true;
         const yaw = Math.atan2(ux * ant.dir, uz * ant.dir) + Math.sin(t * 7 + ant.phase) * 0.12 - ant.offset * 0.15 * ant.dir;
         rootMatrix(mRoot, vPos, yaw, 0, 0, ant.scale);
         const moving = ant.pause <= 0;
@@ -320,6 +358,30 @@ export class AntColonies implements Species {
     this.poseA.hide(ant.slot);
     this.poseB.hide(ant.slot);
     this.leaves.hide(ant.slot);
+  }
+
+  /** Bocas dos formigueiros (mundo). Vazio até o primeiro quadro (as colônias nascem nele). */
+  get nests(): readonly THREE.Vector3[] {
+    return this.colonies.map((colony) => colony.nest);
+  }
+
+  /**
+   * Poder "Formigueiro amigo": formigas carregando folhinha dentro do raio
+   * largam a folha (e voltam para buscar outra). Devolve onde cada folha caiu
+   * (mundo), no máximo `max`.
+   */
+  takeLeaves(center: THREE.Vector3, radius: number, max: number): THREE.Vector3[] {
+    const dropped: THREE.Vector3[] = [];
+    for (const colony of this.colonies) {
+      for (const ant of colony.ants) {
+        if (dropped.length >= max) return dropped;
+        if (!ant.carry || !ant.shown || ant.at.distanceTo(center) > radius) continue;
+        ant.carry = false;
+        ant.dir = 1;
+        dropped.push(new THREE.Vector3(ant.at.x, ant.at.y + LEAF_OFFSET.y * ant.scale, ant.at.z));
+      }
+    }
+    return dropped;
   }
 
   startle(position: THREE.Vector3, radius: number, ctx: CritterContext): void {

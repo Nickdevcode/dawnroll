@@ -1,10 +1,10 @@
 import * as THREE from 'three';
-import { clamp, smoothstep } from '../../utils/math';
-import { terrainHeight, PLAY_RADIUS } from '../../world/Terrain';
+import { smoothstep } from '../../utils/math';
 import { InstancedPart } from './InstancedPart';
 import { critterMaterials } from './materials';
 import { wormSegment } from './groundModels';
-import { groundSpotNear, puddleAt } from './common';
+import { groundSpotNear } from './common';
+import { GroundTrail } from './trail';
 import type { CritterContext, Species } from './types';
 
 /**
@@ -16,9 +16,7 @@ import type { CritterContext, Species } from './types';
 
 const SEGMENTS = 22;
 const SPACING = 0.12;
-const TRAIL_STEP = 0.05;
-/** Profundidade que o "poço" desce por unidade de corpo (o que está lá dentro fica escondido). */
-const SHAFT_SLOPE = 0.9;
+const MAX_SCALE = 1.2;
 
 const BODY = new THREE.Color('#c4786a');
 const HEAD = new THREE.Color('#a95c57');
@@ -28,11 +26,8 @@ const Z_AXIS = new THREE.Vector3(0, 0, 1);
 interface Worm {
   slots: number[];
   state: 'hidden' | 'crawl' | 'dive' | 'retract';
-  hole: THREE.Vector3;
-  /** Rastro da cabeça a partir do buraco: x, z, altura do chão e profundidade (0 = na superfície). */
-  trail: number[];
-  headS: number;
-  heading: number;
+  /** Rastro da cabeça a partir do buraco. */
+  trail: GroundTrail;
   speed: number;
   scale: number;
   threshold: number;
@@ -68,12 +63,10 @@ export class Earthworms implements Species {
       this.worms.push({
         slots,
         state: 'hidden',
-        hole: new THREE.Vector3(),
-        trail: [],
-        headS: 0,
-        heading: 0,
+        // O rastro precisa cobrir o corpo inteiro (e a volta de ré pelo buraco).
+        trail: new GroundTrail(SEGMENTS * SPACING * MAX_SCALE * 1.5 + 0.5),
         speed: ctx.rng.range(0.3, 0.45),
-        scale: ctx.rng.range(0.85, 1.2),
+        scale: ctx.rng.range(0.85, MAX_SCALE),
         threshold: ctx.rng.range(0.3, 0.45),
         timer: 0,
         wait: ctx.rng.range(0, 6),
@@ -84,57 +77,12 @@ export class Earthworms implements Species {
   }
 
   private emerge(worm: Worm, ctx: CritterContext): boolean {
-    if (!groundSpotNear(ctx, 4, 16, false, worm.hole, (x, z) => Math.hypot(x - ctx.world.ballPosition.x, z - ctx.world.ballPosition.z) > ctx.world.ballRadius + 2)) return false;
-    worm.trail.length = 0;
-    worm.trail.push(worm.hole.x, worm.hole.z, worm.hole.y, 0);
-    worm.headS = 0;
-    worm.heading = ctx.rng.next() * Math.PI * 2;
+    if (!groundSpotNear(ctx, 4, 16, false, vA, (x, z) => Math.hypot(x - ctx.world.ballPosition.x, z - ctx.world.ballPosition.z) > ctx.world.ballRadius + 2)) return false;
+    worm.trail.start(vA, ctx.rng.next() * Math.PI * 2);
     worm.state = 'crawl';
     worm.timer = ctx.rng.range(8, 20);
     worm.divePlunge = 0;
     return true;
-  }
-
-  /** Ponto do corpo no comprimento `s` do rastro (s < 0 = dentro do buraco). Devolve a profundidade. */
-  private pointAt(worm: Worm, s: number, target: THREE.Vector3): number {
-    if (s <= 0) {
-      target.set(worm.hole.x, worm.hole.y + s * SHAFT_SLOPE, worm.hole.z);
-      return -s * SHAFT_SLOPE;
-    }
-    const points = worm.trail.length / 4;
-    const f = clamp(s / TRAIL_STEP, 0, points - 1.001);
-    const i = Math.floor(f);
-    const k = f - i;
-    const a = i * 4;
-    const b = Math.min(i + 1, points - 1) * 4;
-    const t = worm.trail;
-    const depth = t[a + 3] + (t[b + 3] - t[a + 3]) * k;
-    target.set(t[a] + (t[b] - t[a]) * k, t[a + 2] + (t[b + 2] - t[a + 2]) * k - depth, t[a + 1] + (t[b + 1] - t[a + 1]) * k);
-    return depth;
-  }
-
-  /** Cabeça anda `distance` para a frente, estendendo o rastro (rastejando ou cavando para baixo). */
-  private advance(worm: Worm, distance: number, ctx: CritterContext, digging: boolean): void {
-    worm.headS += distance;
-    const t = worm.trail;
-    while ((t.length / 4 - 1) * TRAIL_STEP < worm.headS) {
-      const last = t.length - 4;
-      let x = t[last];
-      let z = t[last + 1];
-      for (let attempt = 0; attempt < 6; attempt++) {
-        const nx = t[last] + Math.sin(worm.heading) * TRAIL_STEP;
-        const nz = t[last + 1] + Math.cos(worm.heading) * TRAIL_STEP;
-        if (digging || (ctx.isGroundFree(nx, nz) && !puddleAt(ctx, nx, nz, 0.2) && Math.hypot(nx, nz) < PLAY_RADIUS - 2)) {
-          x = nx;
-          z = nz;
-          break;
-        }
-        // Esbarrou em algo (pedra, poça, borda): vira e tenta de novo.
-        worm.heading += Math.PI * 0.3;
-      }
-      const depth = digging ? t[last + 3] + TRAIL_STEP * 0.75 : 0;
-      t.push(x, z, terrainHeight(x, z), depth);
-    }
   }
 
   update(dt: number, ctx: CritterContext): void {
@@ -151,8 +99,9 @@ export class Earthworms implements Species {
           }
         } else continue;
       }
+      const trail = worm.trail;
       const head = vA;
-      this.pointAt(worm, worm.headS, head);
+      trail.pointAt(trail.headS, head);
       const farAway = Math.hypot(head.x - w.player.x, head.z - w.player.z) > 38;
       const scared =
         Math.hypot(head.x - w.player.x, head.z - w.player.z) < 1.4 ||
@@ -160,20 +109,20 @@ export class Earthworms implements Species {
 
       if (worm.state === 'crawl') {
         worm.timer -= dt;
-        if (scared) worm.state = worm.headS < length * 1.3 ? 'retract' : 'dive';
+        if (scared) worm.state = trail.headS < length * 1.3 ? 'retract' : 'dive';
         else if (worm.timer <= 0 || w.wetness < worm.threshold - 0.12 || farAway) worm.state = 'dive';
         else {
           // Serpenteia: a cabeça vai e volta enquanto avança.
-          worm.heading += Math.sin(ctx.time * 0.8 + worm.seed) * 0.9 * dt;
-          this.advance(worm, worm.speed * dt, ctx, false);
+          trail.heading += Math.sin(ctx.time * 0.8 + worm.seed) * 0.9 * dt;
+          trail.advance(worm.speed * dt, ctx, false);
         }
       } else if (worm.state === 'dive') {
-        this.advance(worm, worm.speed * (scared ? 2.2 : 1) * dt, ctx, true);
+        trail.advance(worm.speed * (scared ? 2.2 : 1) * dt, ctx, true);
         worm.divePlunge += worm.speed * dt;
         if (worm.divePlunge > length + 0.6) this.bury(worm, ctx);
       } else if (worm.state === 'retract') {
-        worm.headS -= 1.1 * dt;
-        if (worm.headS < -0.3) this.bury(worm, ctx);
+        trail.headS -= 1.1 * dt;
+        if (trail.headS < -0.3) this.bury(worm, ctx);
       }
       if (worm.state !== 'hidden') this.draw(worm, ctx.time);
     }
@@ -188,9 +137,10 @@ export class Earthworms implements Species {
 
   private draw(worm: Worm, time: number): void {
     const n = SEGMENTS;
+    const trail = worm.trail;
     for (let i = 0; i < n; i++) {
-      const s = worm.headS - i * SPACING * worm.scale;
-      const depth = this.pointAt(worm, s, vA);
+      const s = trail.headS - i * SPACING * worm.scale;
+      const depth = trail.pointAt(s, vA);
       const t = i / (n - 1);
       let r = 0.088 * worm.scale * (t < 0.1 ? 0.72 + t * 2.8 : 1 - 0.38 * smoothstep(0.6, 1, t));
       if (t > 0.24 && t < 0.34) r *= 1.14;
@@ -200,11 +150,11 @@ export class Earthworms implements Species {
         this.segments.hide(worm.slots[i]);
         continue;
       }
-      this.pointAt(worm, s + 0.06, vB);
+      trail.pointAt(s + 0.06, vB);
       vTan.copy(vB);
-      this.pointAt(worm, s - 0.06, vB);
+      trail.pointAt(s - 0.06, vB);
       vTan.sub(vB);
-      if (vTan.lengthSq() < 1e-8) vTan.set(Math.sin(worm.heading), 0, Math.cos(worm.heading));
+      if (vTan.lengthSq() < 1e-8) vTan.set(Math.sin(trail.heading), 0, Math.cos(trail.heading));
       qTmp.setFromUnitVectors(Z_AXIS, vTan.normalize());
       vA.y += r * 0.85;
       mOut.compose(vA, qTmp, vScale.set(r, r * 0.92, r * 1.9));
@@ -219,8 +169,9 @@ export class Earthworms implements Species {
   startle(position: THREE.Vector3, radius: number, _ctx: CritterContext): void {
     for (const worm of this.worms) {
       if (worm.state !== 'crawl') continue;
-      this.pointAt(worm, worm.headS, vA);
-      if (vA.distanceTo(position) < radius + 2.5) worm.state = worm.headS < SEGMENTS * SPACING * worm.scale * 1.3 ? 'retract' : 'dive';
+      const trail = worm.trail;
+      trail.pointAt(trail.headS, vA);
+      if (vA.distanceTo(position) < radius + 2.5) worm.state = trail.headS < SEGMENTS * SPACING * worm.scale * 1.3 ? 'retract' : 'dive';
     }
   }
 }

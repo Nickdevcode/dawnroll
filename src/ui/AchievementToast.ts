@@ -1,4 +1,4 @@
-import { t } from '../i18n';
+import { t, type MessageKey } from '../i18n';
 import type { AchievementUnlock } from '../progression/Progression';
 import { GameIcons } from './gameIcons';
 import { Icons } from './icons';
@@ -40,7 +40,9 @@ export class AchievementToast {
       return;
     }
     this.busy = true;
-    const extra = unlock.levelAfter > unlock.levelBefore ? ` · ${escapeHtml(t('ach.levelUp', { n: unlock.levelAfter }))}` : '';
+    let extra = unlock.levelAfter > unlock.levelBefore ? ` · ${escapeHtml(t('ach.levelUp', { n: unlock.levelAfter }))}` : '';
+    // Conquista que libera casco: avisa junto (o casco novo é o prêmio de verdade).
+    for (const id of unlock.skins) extra += ` · ${escapeHtml(t('ach.skin', { name: t(`skin.${id}.name` as MessageKey) }))}`;
     this.element.innerHTML = /* html */ `
       <span class="achievement-toast__icon" aria-hidden="true">${Icons.trophy}</span>
       <span class="achievement-toast__text">

@@ -40,6 +40,16 @@ export class GroundWalker {
     return true;
   }
 
+  /** Põe o bicho num ponto exato do chão (pousou ou saiu dali), olhando para `yaw`. */
+  placeAt(point: THREE.Vector3, yaw: number, pause = 0.3): void {
+    this.position.set(point.x, terrainHeight(point.x, point.z), point.z);
+    this.home.copy(this.position);
+    this.target.copy(this.position);
+    this.yaw = yaw;
+    this.pause = pause;
+    this.groundUp.copy(terrainNormal(point.x, point.z, tmpNormal));
+  }
+
   /** Um passo de passeio. `speed` 0 = parado (pensando). */
   step(dt: number, ctx: CritterContext, speed: number, turnRate = 3): void {
     const pos = this.position;

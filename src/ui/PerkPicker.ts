@@ -1,7 +1,7 @@
 import type { InputDevice } from '../core/Input';
 import { PAD_LABELS, type MenuAction, type PadStyle } from '../core/GamepadInput';
 import { formatCm, onLocaleChange, t, type MessageKey } from '../i18n';
-import type { PerkId } from '../progression/perks';
+import type { PerkId, PerkOffer } from '../progression/perks';
 import { PerkIcons } from './gameIcons';
 import { escapeHtml } from './html';
 
@@ -20,7 +20,7 @@ export class PerkPicker {
   private readonly subtitle: HTMLElement;
   private readonly cards: HTMLElement;
   private readonly hint: HTMLElement;
-  private options: PerkId[] = [];
+  private options: PerkOffer[] = [];
   private cm = 0;
   private device: InputDevice = 'keyboard';
   private padStyle: PadStyle = 'xbox';
@@ -69,7 +69,7 @@ export class PerkPicker {
     return !this.element.hidden;
   }
 
-  show(options: readonly PerkId[], cm: number, device: InputDevice, padStyle: PadStyle): void {
+  show(options: readonly PerkOffer[], cm: number, device: InputDevice, padStyle: PadStyle): void {
     this.options = [...options];
     this.cm = cm;
     this.device = device;
@@ -115,14 +115,18 @@ export class PerkPicker {
     this.title.textContent = t('perk.pick.title');
     this.subtitle.textContent = t('perk.pick.subtitle');
     this.cards.innerHTML = this.options
-      .map((id, i) => {
+      .map(({ id, rank }, i) => {
+        // ★★: o mesmo poder de novo, na versão mais forte (a carta explica o que muda).
+        const upgrade = rank === 2;
         const name = t(`perk.${id}.name` as MessageKey);
-        const desc = t(`perk.${id}.desc` as MessageKey);
+        const desc = t(`perk.${id}.${upgrade ? 'up' : 'desc'}` as MessageKey);
+        const label = upgrade ? `${name} ★★. ${desc}` : `${name}. ${desc}`;
         return /* html */ `
-          <button class="perk-card" type="button" data-perk="${id}" data-index="${i}" aria-label="${escapeHtml(`${name}. ${desc}`)}">
+          <button class="perk-card${upgrade ? ' is-upgrade' : ''}" type="button" data-perk="${id}" data-index="${i}" aria-label="${escapeHtml(label)}">
             <span class="perk-card__key" aria-hidden="true">${i + 1}</span>
+            ${upgrade ? `<span class="perk-card__badge" aria-hidden="true">${escapeHtml(t('perk.pick.upgrade'))}</span>` : ''}
             <span class="perk-card__icon perk-icon--${id}" aria-hidden="true">${PerkIcons[id]}</span>
-            <span class="perk-card__name">${escapeHtml(name)}</span>
+            <span class="perk-card__name">${escapeHtml(name)}${upgrade ? ' <span class="perk-card__stars">★★</span>' : ''}</span>
             <span class="perk-card__desc">${escapeHtml(desc)}</span>
           </button>`;
       })
@@ -141,10 +145,10 @@ export class PerkPicker {
   private choose(index: number): void {
     // Um clique/tecla que já vinha acontecendo quando a escolha abriu não vale.
     if (!this.visible || this.suspended || performance.now() - this.openedAt < 250) return;
-    const perk = this.options[index];
-    if (!perk) return;
+    const offer = this.options[index];
+    if (!offer) return;
     this.hide();
-    this.onChoose?.(perk);
+    this.onChoose?.(offer.id);
   }
 
   private readonly onKeyDown = (e: KeyboardEvent): void => {

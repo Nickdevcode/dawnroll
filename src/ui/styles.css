@@ -741,6 +741,13 @@ body {
 .perk-icon--nose { --perk: #d9679a; }
 .perk-icon--sneaky { --perk: #2f9e98; }
 .perk-icon--horned { --perk: #4b3f86; }
+.perk-icon--rider { --perk: #3d8bd9; }
+.perk-icon--downhill { --perk: #5fa94a; }
+.perk-icon--bump { --perk: #9b59d0; }
+.perk-icon--curious { --perk: #d9a92e; }
+.perk-icon--antFriend { --perk: #2e7d5b; }
+.perk-icon--stench { --perk: #8f9d34; }
+.perk-icon--rainCall { --perk: #5a7fa8; }
 
 .round-panel {
   display: flex;
@@ -1446,4 +1453,219 @@ body {
     width: 36px;
     height: 36px;
   }
+}
+
+/* ==========================================================================
+   Poder de apertar (Equilibrista): botão redondo com anel de carga
+   ========================================================================== */
+.ability {
+  --perk: #3d8bd9;
+  position: absolute;
+  z-index: 2;
+  right: max(var(--space-5), env(safe-area-inset-right));
+  bottom: max(var(--space-5), calc(env(safe-area-inset-bottom) + var(--space-3)));
+  display: grid;
+  place-items: center;
+  width: 68px;
+  height: 68px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--perk);
+  color: #fff;
+  cursor: pointer;
+  pointer-events: auto;
+  touch-action: none;
+  box-shadow: 0 4px 0 rgba(58, 42, 34, 0.28), 0 12px 24px rgba(58, 42, 34, 0.22), inset 0 2px 0 rgba(255, 255, 255, 0.35);
+  animation: pop-in var(--dur-slow) var(--ease-spring);
+  transition:
+    transform var(--dur-fast) var(--ease-out),
+    filter var(--dur-med) var(--ease-out),
+    background-color var(--dur-med) var(--ease-out);
+}
+.ability[hidden] {
+  display: none;
+}
+.ability:focus-visible {
+  outline: 3px solid var(--color-accent);
+  outline-offset: 4px;
+}
+.ability:active {
+  transform: translateY(2px) scale(0.96);
+}
+.ability__ring {
+  position: absolute;
+  inset: -5px;
+  width: calc(100% + 10px);
+  height: calc(100% + 10px);
+  transform: rotate(-90deg);
+  pointer-events: none;
+}
+.ability__track,
+.ability__fill {
+  fill: none;
+  stroke-width: 4;
+}
+.ability__track {
+  stroke: rgba(255, 246, 232, 0.45);
+}
+.ability__fill {
+  stroke: var(--color-cream);
+  stroke-linecap: round;
+  transition: stroke-dashoffset 120ms linear;
+}
+.ability__icon {
+  display: grid;
+  place-items: center;
+}
+.ability__icon svg {
+  width: 34px;
+  height: 34px;
+}
+.ability__time {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 900;
+  color: #fff;
+  text-shadow: 0 2px 0 rgba(15, 12, 40, 0.45);
+  font-variant-numeric: tabular-nums;
+}
+.ability__time:empty {
+  display: none;
+}
+.ability__key {
+  position: absolute;
+  right: -6px;
+  bottom: -6px;
+  min-width: 24px;
+}
+.ability__key[hidden] {
+  display: none;
+}
+/* Recarregando: apagadinho, o número conta o tempo. */
+.ability[data-phase="cooldown"] {
+  background: #7d8ea3;
+  filter: saturate(0.4);
+  cursor: default;
+}
+.ability[data-phase="cooldown"] .ability__icon {
+  opacity: 0.35;
+}
+/* Em uso: o anel esvazia e o botão pulsa (o poder está correndo). */
+.ability[data-phase="active"] {
+  animation: ability-pulse 1s var(--ease-out) infinite;
+}
+.ability[data-phase="active"] .ability__icon {
+  opacity: 0.35;
+}
+.ability[data-phase="active"] .ability__fill {
+  stroke: #ffd27a;
+}
+/* No toque ele fica à esquerda da coluna de botões (o polegar direito alcança). */
+.is-touch .ability {
+  right: calc(max(var(--space-5), env(safe-area-inset-right)) + 76px + var(--space-4));
+  bottom: max(var(--space-5), env(safe-area-inset-bottom));
+  width: 72px;
+  height: 72px;
+}
+@keyframes ability-pulse {
+  0%,
+  100% {
+    box-shadow: 0 4px 0 rgba(58, 42, 34, 0.28), 0 0 0 0 rgba(61, 139, 217, 0.55), inset 0 2px 0 rgba(255, 255, 255, 0.35);
+  }
+  60% {
+    box-shadow: 0 4px 0 rgba(58, 42, 34, 0.28), 0 0 0 12px rgba(61, 139, 217, 0), inset 0 2px 0 rgba(255, 255, 255, 0.35);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ability[data-phase="active"] {
+    animation: none;
+  }
+}
+
+/* ==========================================================================
+   Pedidos com cara: o bichinho que pediu, o pedido dourado do Sol e o desafio que falhou
+   ========================================================================== */
+.request__giver {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  margin-right: -2px;
+}
+.request__giver svg {
+  width: 100%;
+  height: 100%;
+}
+.request.is-done .request__giver {
+  opacity: 0.55;
+}
+.request.is-golden {
+  margin: 2px calc(-1 * var(--space-2));
+  padding: 3px var(--space-2);
+  border-radius: var(--radius-sm);
+  background: linear-gradient(90deg, rgba(255, 214, 107, 0.55), rgba(255, 181, 71, 0.25));
+  box-shadow: inset 0 0 0 1.5px rgba(217, 132, 36, 0.45);
+}
+.request.is-golden .request__count {
+  color: #8a5a12;
+}
+.requests.has-golden {
+  box-shadow: var(--shadow-clay-pressed), var(--inner-highlight), 0 0 0 2px rgba(255, 196, 98, 0.8), 0 0 18px rgba(255, 181, 71, 0.45);
+}
+.request.is-failed {
+  color: var(--color-ink-soft);
+}
+.request.is-failed .request__text {
+  text-decoration: line-through;
+  text-decoration-color: rgba(200, 70, 50, 0.6);
+}
+.request__count.is-failed {
+  color: #b8452f;
+}
+
+/* ★★ no HUD e nas cartas */
+.round-perk {
+  position: relative;
+}
+.round-perk__stars {
+  position: absolute;
+  right: -6px;
+  bottom: -5px;
+  padding: 0 3px;
+  border-radius: var(--radius-pill);
+  background: #ffd27a;
+  color: #6b3f06;
+  font-size: 8px;
+  font-weight: 900;
+  line-height: 13px;
+  letter-spacing: -0.02em;
+  box-shadow: 0 1px 0 rgba(58, 42, 34, 0.3);
+}
+.round-perk.is-upgraded {
+  box-shadow: 0 3px 0 rgba(58, 42, 34, 0.25), inset 0 2px 0 rgba(255, 255, 255, 0.35), 0 0 0 2px #ffd27a;
+}
+.perk-card.is-upgrade {
+  background: linear-gradient(180deg, #fff6d9 0%, #ffe2a6 100%);
+}
+.perk-card__badge {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  padding: 3px 9px;
+  border-radius: var(--radius-pill);
+  background: linear-gradient(180deg, #ffd27a, #f39a2e);
+  color: #4a2a04;
+  font-size: 12px;
+  font-weight: 900;
+  box-shadow: 0 2px 0 rgba(217, 132, 36, 0.8);
+}
+.perk-card__stars {
+  color: #d9842b;
+  font-size: 0.8em;
 }

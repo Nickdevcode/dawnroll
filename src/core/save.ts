@@ -1,7 +1,8 @@
 import { isAchievementId, type AchievementId } from '../progression/achievements';
 import { isCatalogId, type CatalogId } from '../progression/catalog';
 import { PANTRY_CAPACITY } from '../progression/food';
-import { PERKS, type PerkId } from '../progression/perks';
+import { isPerkId, type PerkId } from '../progression/perks';
+import { DEFAULT_SKIN, isSkinId, type SkinId } from '../progression/skins';
 
 /**
  * Progresso salvo no próprio navegador (localStorage): recorde, bolas
@@ -9,9 +10,17 @@ import { PERKS, type PerkId } from '../progression/perks';
  * leitura — dado corrompido ou editado à mão vira zero, nunca quebra o jogo.
  * Em aba anônima/bloqueada, só não salva.
  *
- * Os campos da toca entraram depois do recorde: save antigo (sem eles) abre
- * normal, com toca vazia e nível 1.
+ * Os campos da toca entraram depois do recorde, e o casco e os contadores
+ * depois deles: save antigo (sem esses campos) abre normal, com o que faltar zerado.
  */
+
+/** Contadores que atravessam as rodadas (conquistas de "N vezes"). */
+export interface SaveStats {
+  /** Pedidos cumpridos no total. */
+  requestsDone: number;
+  /** Teias de aranha rasgadas no total. */
+  websTorn: number;
+}
 
 /** Bola guardada na despensa, esperando ser comida. */
 export interface PantryBall {
@@ -40,6 +49,9 @@ export interface SaveData {
   achievements: AchievementId[];
   /** Poderes que já foram escolhidos alguma vez (conquista "todos os poderes"). */
   perksUsed: PerkId[];
+  /** Casco do besouro em uso (só aparência). */
+  skin: SkinId;
+  stats: SaveStats;
 }
 
 const KEY = 'dawnroll:progresso:v1';
@@ -47,7 +59,19 @@ const KEY = 'dawnroll:progresso:v1';
 const LEGACY_KEY = 'rola-bosta:progresso:v1';
 
 export function emptySave(): SaveData {
-  return { bestCm: 0, buried: 0, totalCm: 0, xp: 0, pantry: [], catalog: {}, seenBurrow: false, achievements: [], perksUsed: [] };
+  return {
+    bestCm: 0,
+    buried: 0,
+    totalCm: 0,
+    xp: 0,
+    pantry: [],
+    catalog: {},
+    seenBurrow: false,
+    achievements: [],
+    perksUsed: [],
+    skin: DEFAULT_SKIN,
+    stats: { requestsDone: 0, websTorn: 0 },
+  };
 }
 
 /** Número finito, não negativo e dentro de um teto sensato. */
@@ -85,8 +109,13 @@ function readIds<T extends string>(value: unknown, isValid: (id: string) => id i
   return [...ids];
 }
 
-const PERK_IDS = new Set<string>(PERKS.map((perk) => perk.id));
-const isPerkId = (id: string): id is PerkId => PERK_IDS.has(id);
+function readStats(value: unknown): SaveStats {
+  const data = value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
+  return {
+    requestsDone: Math.floor(sane(data.requestsDone, 1e7)),
+    websTorn: Math.floor(sane(data.websTorn, 1e7)),
+  };
+}
 
 export function loadSave(): SaveData {
   try {
@@ -112,6 +141,8 @@ export function loadSave(): SaveData {
       seenBurrow: data.seenBurrow === true,
       achievements: readIds(data.achievements, isAchievementId),
       perksUsed: readIds(data.perksUsed, isPerkId),
+      skin: typeof data.skin === 'string' && isSkinId(data.skin) ? data.skin : DEFAULT_SKIN,
+      stats: readStats(data.stats),
     };
   } catch {
     return emptySave();

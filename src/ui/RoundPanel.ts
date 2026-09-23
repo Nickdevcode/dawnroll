@@ -1,7 +1,7 @@
 import { formatCm, onLocaleChange, t, tn, type MessageKey, type PluralKey } from '../i18n';
-import type { PerkId } from '../progression/perks';
+import type { RoundPerk } from '../progression/Progression';
 import type { RoundRequest } from '../progression/requests';
-import { GameIcons, PerkIcons } from './gameIcons';
+import { GameIcons, GiverIcons, PerkIcons } from './gameIcons';
 import { Icons } from './icons';
 import { escapeHtml } from './html';
 
@@ -13,18 +13,31 @@ export interface RoundView {
   /** 0..1 até o próximo nível. */
   levelProgress: number;
   requests: readonly RoundRequest[];
-  perks: readonly PerkId[];
+  perks: readonly RoundPerk[];
 }
 
 /** Texto de um pedido (com o número/tamanho dentro). */
 export function requestText(request: RoundRequest): string {
   if (request.kind === 'size') return t('req.size', { cm: formatCm(request.amount) });
+  if (request.kind === 'challenge') return t(request.label as MessageKey);
   return tn(request.label as PluralKey, request.amount);
+}
+
+/** Nome de quem fez o pedido ("Formiga-rainha", "O Sol"...). */
+export function giverName(request: RoundRequest): string {
+  return t(`giver.${request.giver}` as MessageKey);
+}
+
+/** Nome do poder com as estrelinhas do ★★. */
+export function perkLabel(perk: RoundPerk): string {
+  const name = t(`perk.${perk.id}.name` as MessageKey);
+  return perk.rank === 2 ? `${name} ★★` : name;
 }
 
 /**
  * Pedaço do HUD embaixo do cartão da bola: nível (com a barrinha de XP), os
- * pedidos da rodada e os poderes escolhidos. Só DOM; recebe o estado pronto.
+ * pedidos da rodada (cada um com o bichinho que pediu) e os poderes escolhidos.
+ * Só DOM; recebe o estado pronto.
  */
 export class RoundPanel {
   readonly element: HTMLElement;
@@ -90,37 +103,53 @@ export class RoundPanel {
     this.levelFill.style.transform = `scaleX(${Math.min(Math.max(view.levelProgress, 0), 1).toFixed(3)})`;
     this.requestsTitle.textContent = t('hud.requests');
     this.requestsTally.textContent = `${view.requests.filter((r) => r.done).length}/${view.requests.length}`;
+    this.requests.classList.toggle('has-golden', view.requests.some((r) => r.golden && !r.done));
 
     // Só refaz a lista quando algo mudou (o HUD atualiza todo quadro).
-    const requestsKey = view.requests.map((r) => `${r.label}|${r.amount}|${r.progress}|${r.done}`).join(';');
+    const requestsKey = view.requests.map((r) => `${r.label}|${r.giver}|${r.amount}|${r.progress}|${r.done}|${r.failed}`).join(';');
     if (requestsKey !== this.lastRequests) {
       this.lastRequests = requestsKey;
-      this.requestList.innerHTML = view.requests
-        .map((request) => {
-          const count = request.kind === 'size' ? '' : `<span class="request__count">${request.progress}/${request.amount}</span>`;
-          return /* html */ `
-            <li class="request${request.done ? ' is-done' : ''}">
-              <span class="request__check" aria-hidden="true">${request.done ? Icons.check : ''}</span>
-              <span class="request__text">${escapeHtml(requestText(request))}</span>
-              ${request.done ? '' : count}
-            </li>`;
-        })
-        .join('');
+      this.requestList.innerHTML = view.requests.map((request) => this.requestItem(request)).join('');
     }
 
-    const perksKey = view.perks.join(',');
+    const perksKey = view.perks.map((p) => `${p.id}${p.rank}`).join(',');
     if (perksKey !== this.lastPerks) {
       this.lastPerks = perksKey;
       this.perkRow.hidden = view.perks.length === 0;
       this.perkRow.setAttribute('aria-label', t('hud.perks'));
       this.perkRow.innerHTML = view.perks
-        .map((id) => {
-          const name = escapeHtml(t(`perk.${id}.name` as MessageKey));
-          return `<li class="round-perk perk-icon--${id}" title="${name}"><span class="sr-only">${name}</span>${PerkIcons[id]}</li>`;
+        .map((perk) => {
+          const name = escapeHtml(perkLabel(perk));
+          const stars = perk.rank === 2 ? `<span class="round-perk__stars" aria-hidden="true">★★</span>` : '';
+          return `<li class="round-perk perk-icon--${perk.id}${perk.rank === 2 ? ' is-upgraded' : ''}" title="${name}"><span class="sr-only">${name}</span>${PerkIcons[perk.id]}${stars}</li>`;
         })
         .join('');
       this.applyHeat();
     }
+  }
+
+  /** Um pedido: o bichinho que pediu, o texto e a contagem (ou o estado do desafio). */
+  private requestItem(request: RoundRequest): string {
+    const text = requestText(request);
+    const who = giverName(request);
+    let status = '';
+    if (request.kind === 'challenge') {
+      status = request.failed
+        ? `<span class="request__count is-failed">${escapeHtml(t('hud.request.failed'))}</span>`
+        : request.done
+          ? ''
+          : `<span class="request__count">${escapeHtml(t('hud.request.atBurial'))}</span>`;
+    } else if (!request.done && request.kind !== 'size') {
+      status = `<span class="request__count">${request.progress}/${request.amount}</span>`;
+    }
+    const classes = ['request', request.done ? 'is-done' : '', request.failed ? 'is-failed' : '', request.golden ? 'is-golden' : ''].filter(Boolean).join(' ');
+    return /* html */ `
+      <li class="${classes}" title="${escapeHtml(t('hud.request.from', { name: who, text }))}">
+        <span class="request__giver giver--${request.giver}" aria-hidden="true">${GiverIcons[request.giver]}</span>
+        <span class="request__check" aria-hidden="true">${request.done ? Icons.check : ''}</span>
+        <span class="request__text"><span class="sr-only">${escapeHtml(who)}: </span>${escapeHtml(text)}</span>
+        ${status}
+      </li>`;
   }
 
   /** Calor do Sangue quente (0..1): a figurinha dele acende. */

@@ -3,7 +3,7 @@ import type { Physics } from '../core/Physics';
 import { clay } from '../render/clayMaterial';
 import { bakeObject } from '../render/StaticBatch';
 import type { DungBall, StickOptions } from '../entities/DungBall';
-import type { PickableKind } from './scenery/context';
+import type { PickableFinish, PickableKind } from './scenery/context';
 import type { PickableRecord, Scenery } from './Scenery';
 
 /**
@@ -25,6 +25,16 @@ export interface PickEvent {
   variant: string | undefined;
 }
 
+/** O arrancável grande demais que a bola está encostando agora (ver `Pickables.blocked`). */
+export interface BlockedContact {
+  kind: PickableKind;
+  variant: string | undefined;
+  /** Ponto da superfície do objeto do lado da bola (de onde cai a tralha na trombada). */
+  point: THREE.Vector3;
+  /** Raio de bola que o objeto pede. */
+  size: number;
+}
+
 /** Folga para "encostou" pela cápsula (colisor ainda não tocou, mas vai). */
 const TOUCH_MARGIN = 0.14;
 /** Folga para avisar "bola pequena demais" (quase encostando). */
@@ -39,14 +49,30 @@ const StickStyles: Record<PickableKind, { depth: number; lean: [number, number];
   rock: { depth: 0.24, lean: [0, Math.PI], lieTangent: false },
   // Tronco também tem a origem no meio, com o comprimento no Y local: deita tangente.
   log: { depth: 0.05, lean: [0, 0.25], lieTangent: true },
+  // Objeto (brinquedo, fruta, ferramenta): origem no pé, afunda um pouco e tomba de lado.
+  object: { depth: 0.12, lean: [0.6, 1.4], lieTangent: false },
 };
 
-const Materials: Record<PickableKind, () => THREE.Material> = {
+const Materials: Record<Exclude<PickableKind, 'object'>, () => THREE.Material> = {
   flower: () => clay(0xffffff, { vertexColors: true, roughness: 0.66, sheen: 0.7, bump: 0.16, mottle: 0.07, mottleScale: 1.8, side: THREE.DoubleSide }),
   mushroom: () => clay(0xffffff, { vertexColors: true, roughness: 0.62, sheen: 0.6, bump: 0.2, clearcoat: 0.2, mottle: 0.08, mottleScale: 1.4, side: THREE.DoubleSide }),
   rock: () => clay(0xffffff, { vertexColors: true, roughness: 0.82, sheen: 0.35, bump: 0.55, mottle: 0.14, mottleScale: 0.7 }),
   log: () => clay(0xffffff, { vertexColors: true, roughness: 0.86, sheen: 0.3, bump: 0.6, mottle: 0.14, mottleScale: 0.6, side: THREE.DoubleSide }),
 };
+
+/**
+ * Objeto de gente escolhe o acabamento pelo que ele é: plástico e resina
+ * brilham, barro e pano são foscos, fruta e borracha ficam aveludadas. Os mesmos
+ * perfis do lote estático, para ele não mudar de cara ao grudar.
+ */
+const FinishMaterials: Record<PickableFinish, () => THREE.Material> = {
+  glossy: () => clay(0xffffff, { vertexColors: true, roughness: 0.5, sheen: 0.55, bump: 0.18, clearcoat: 0.35, mottle: 0.08, mottleScale: 1.2, side: THREE.DoubleSide }),
+  matte: () => clay(0xffffff, { vertexColors: true, roughness: 0.78, sheen: 0.45, bump: 0.4, mottle: 0.1, mottleScale: 0.9, side: THREE.DoubleSide }),
+  soft: () => clay(0xffffff, { vertexColors: true, roughness: 0.7, sheen: 0.65, bump: 0.22, mottle: 0.08, mottleScale: 1.6, side: THREE.DoubleSide }),
+};
+
+const materialFor = (record: PickableRecord): THREE.Material =>
+  record.kind === 'object' ? FinishMaterials[record.finish ?? 'glossy']() : Materials[record.kind]();
 
 const tmpCenter = new THREE.Vector3();
 const tmpClosest = new THREE.Vector3();
@@ -67,11 +93,20 @@ export class Pickables {
    * agora; 0 = nada grande demais encostado. Lido pelo HUD (dica).
    */
   blockedBySize = 0;
+  /**
+   * O arrancável grande demais que a bola está encostando agora (o maior, se
+   * forem vários), ou null. Atualizado a cada passo fixo; o objeto é reaproveitado
+   * de um passo para o outro (copie o ponto se precisar guardar).
+   */
+  blocked: BlockedContact | null = null;
   /** Poder Chifrudo: arranca objeto até `raio da bola × pluckReach` (1 = só o que cabe). */
   pluckReach = 1;
 
   /** Geometria assada de cada arrancável (feita na primeira vez que ele é pego). */
   private readonly baked = new Map<number, THREE.BufferGeometry>();
+  private readonly blockedContact: BlockedContact = { kind: 'rock', variant: undefined, point: new THREE.Vector3(), size: 0 };
+  /** Tamanho do maior objeto barrando neste passo (0 = nenhum ainda). */
+  private blockedSize = 0;
 
   constructor(
     private readonly physics: Physics,
@@ -81,6 +116,8 @@ export class Pickables {
   /** Passo fixo: encostou e cabe = arranca; encostou e não cabe = avisa. */
   fixedUpdate(ball: DungBall, random: () => number = Math.random): void {
     this.blockedBySize = 0;
+    this.blocked = null;
+    this.blockedSize = 0;
     if (!ball.isSolid) return;
     const center = ball.position(tmpCenter);
     const r = ball.radius;
@@ -95,8 +132,24 @@ export class Pickables {
       const touching = gap < TOUCH_MARGIN || this.isTouching(ball, record);
       if (!touching) continue;
       if (r * this.pluckReach >= record.size) this.absorb(record, ball, center, random);
-      else this.blockedBySize = Math.max(this.blockedBySize, record.size / this.pluckReach);
+      else {
+        this.blockedBySize = Math.max(this.blockedBySize, record.size / this.pluckReach);
+        if (record.size > this.blockedSize) this.markBlocked(record, center);
+      }
     }
+  }
+
+  /** Guarda o maior objeto barrando a bola: tipo, espécie e o ponto da superfície dele do lado da bola. */
+  private markBlocked(record: PickableRecord, center: THREE.Vector3): void {
+    const contact = this.blockedContact;
+    closestOnSegment(center, record.probeA, record.probeB, contact.point);
+    const toBall = tmpSeg.subVectors(center, contact.point);
+    if (toBall.lengthSq() > 1e-8) contact.point.addScaledVector(toBall.normalize(), record.probeRadius);
+    contact.kind = record.kind;
+    contact.variant = record.variant;
+    contact.size = record.size;
+    this.blockedSize = record.size;
+    this.blocked = contact;
   }
 
   /** O colisor da bola está em contato (de verdade) com algum colisor do objeto? */
@@ -119,7 +172,7 @@ export class Pickables {
       geometry = bakeObject(record.root);
       this.baked.set(record.id, geometry);
     }
-    const mesh = new THREE.Mesh(geometry, Materials[record.kind]());
+    const mesh = new THREE.Mesh(geometry, materialFor(record));
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     record.root.updateMatrixWorld(true);

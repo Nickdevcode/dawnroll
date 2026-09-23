@@ -29,6 +29,14 @@ export function mergeParts(parts: THREE.BufferGeometry[]): THREE.BufferGeometry 
   return merged;
 }
 
+/**
+ * Funde CÓPIAS de peças que já existem, cada uma numa pose (matriz): o bicho
+ * "parado" numa geometria só, para virar malha comum quando gruda na bola.
+ */
+export function bakePose(parts: ReadonlyArray<readonly [THREE.BufferGeometry, THREE.Matrix4]>): THREE.BufferGeometry {
+  return mergeParts(parts.map(([geometry, matrix]) => geometry.clone().applyMatrix4(matrix)));
+}
+
 /** Espelha em X (lado esquerdo), desvirando os triângulos para a face continuar para fora. */
 export function mirrorX(source: THREE.BufferGeometry): THREE.BufferGeometry {
   const g = source.clone();

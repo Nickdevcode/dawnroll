@@ -150,6 +150,38 @@ export class Weather implements WeatherState {
     this.timer = this.duration;
   }
 
+  /**
+   * Poder "Cheiro de chuva": chama a chuva AGORA, sem quebrar a regra de nada
+   * mudar de supetão — o céu fecha rápido, mas ainda passa por nublando e garoa.
+   * Se já estiver chovendo, a chuva dura mais; se estiver indo embora, volta.
+   * `long` (★★) sorteia tempestade e chuva mais comprida.
+   */
+  callRain(long = false): void {
+    const extra = long ? 30 : 15;
+    switch (this.phase) {
+      case 'clear':
+        this.event = long ? this.rollEvent(true) : { peak: this.rng.range(0.55, 0.75), cover: this.rng.range(0.8, 0.9), length: this.rng.range(40, 60), stormy: false };
+        this.enter('gathering', 9);
+        break;
+      case 'gathering':
+        this.duration = Math.min(this.duration, this.timer + 6);
+        this.event.length += extra;
+        break;
+      case 'drizzle':
+        this.event.length += extra;
+        break;
+      case 'raining':
+        this.duration += extra;
+        break;
+      case 'easing':
+      case 'clearing':
+        // Voltando: garoa curta e a chuva de novo, com o mesmo evento esticado.
+        this.event.length = Math.max(30, this.event.length * 0.5) + extra;
+        this.enter('drizzle', 8);
+        break;
+    }
+  }
+
   /** Pancada (35%): curta, fraca, sem raio. Tempestade: longa, forte, com trovão. */
   private rollEvent(forceStorm: boolean): RainEvent {
     const stormy = forceStorm || this.rng.next() > 0.35;

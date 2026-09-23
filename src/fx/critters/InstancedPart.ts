@@ -28,6 +28,8 @@ export class InstancedPart {
   private readonly capacity: number;
   private allocated = 0;
   private shown = 0;
+  /** Alguma matriz mudou desde o último envio para a GPU. */
+  private dirty = true;
   private readonly palette: [THREE.InstancedBufferAttribute, THREE.InstancedBufferAttribute, THREE.InstancedBufferAttribute] | null = null;
 
   constructor(geometry: THREE.BufferGeometry, material: THREE.Material, capacity: number, options: InstancedPartOptions) {
@@ -70,10 +72,20 @@ export class InstancedPart {
   set(slot: number, matrix: THREE.Matrix4): void {
     this.mesh.setMatrixAt(slot, matrix);
     this.shown++;
+    this.dirty = true;
+  }
+
+  /**
+   * Instância parada (teia, orvalho): a matriz escrita antes continua valendo,
+   * só conta como visível neste frame — sem reenviar nada para a GPU.
+   */
+  keep(): void {
+    this.shown++;
   }
 
   hide(slot: number): void {
     this.mesh.setMatrixAt(slot, HIDDEN);
+    this.dirty = true;
   }
 
   setColor(slot: number, color: THREE.Color): void {
@@ -91,9 +103,10 @@ export class InstancedPart {
     }
   }
 
-  /** Fim do frame: sobe as matrizes e desliga o draw call se nenhuma instância apareceu. */
+  /** Fim do frame: sobe as matrizes (se mudaram) e desliga o draw call se nenhuma instância apareceu. */
   flush(): void {
-    this.mesh.instanceMatrix.needsUpdate = true;
+    if (this.dirty) this.mesh.instanceMatrix.needsUpdate = true;
+    this.dirty = false;
     this.mesh.visible = this.shown > 0;
     this.shown = 0;
   }

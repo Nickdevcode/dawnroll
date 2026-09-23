@@ -10,7 +10,19 @@ import { ChunkParticles } from './ChunkParticles';
 import { BallTrail } from './BallTrail';
 import { AmbientMotes } from './AmbientMotes';
 import { Rain, type SurfaceProbe } from './Rain';
-import { Critters, type CollectedCritter, type CritterPuddle, type CritterSounds, type GroundFilter } from './critters/Critters';
+import { Fireflies } from './Fireflies';
+import {
+  Critters,
+  type AttractLevel,
+  type CollectedCritter,
+  type CritterDebug,
+  type CritterEvent,
+  type CritterPuddle,
+  type CritterSounds,
+  type GroundFilter,
+} from './critters/Critters';
+
+export type { AttractLevel, CollectedCritter, CritterDebug, CritterEvent } from './critters/Critters';
 
 /** O que os efeitos precisam saber do jogo a cada frame (tudo já interpolado). */
 export interface EffectsFrame {
@@ -79,6 +91,12 @@ const tmpColor = new THREE.Color();
  */
 export class Effects {
   readonly group = new THREE.Group();
+  /**
+   * Acontecimentos da fauna para o jogo: revoada começou, beija-flor à vista
+   * (uma vez por visita) e teia rasgada pela bola (com o chumaço de teia em
+   * `item`, pronto para `ball.stick`).
+   */
+  onCritterEvent: ((event: CritterEvent) => void) | null = null;
   private readonly dust = new SoftParticles(1600);
   private readonly glow = new SoftParticles(420, true);
   private readonly chunks: ChunkParticles;
@@ -88,6 +106,7 @@ export class Effects {
   private readonly trail = new BallTrail();
   private readonly motes: AmbientMotes;
   private readonly critters: Critters;
+  private readonly fireflies: Fireflies;
   private readonly rain: Rain;
   private readonly surface: SurfaceProbe;
   private readonly rng = createRng(909);
@@ -118,6 +137,10 @@ export class Effects {
     this.leaves = new ChunkParticles(leafGeo, clay(0xffffff, { vertexColors: true, roughness: 0.7, sheen: 0.55, bump: 0.2, side: THREE.DoubleSide }), 48);
     this.motes = new AmbientMotes(options.motes);
     this.critters = new Critters(options.critters, options.landingSpots, options.isGroundFree, options.sounds);
+    this.critters.onEvent = (event) => this.onCritterEvent?.(event);
+    // ~40 vaga-lumes no PC; menos no celular (o orçamento de bichos é menor).
+    this.fireflies = new Fireflies(Math.min(40, Math.round(options.critters * 1.25)));
+    this.fireflies.setActive(true);
     this.rain = new Rain(options.rainDrops, options.rainSplashes);
     this.surface = options.surface;
 
@@ -130,6 +153,7 @@ export class Effects {
       this.dust.points,
       this.glow.points,
       this.motes.points,
+      this.fireflies.points,
       this.critters.group,
       this.rain.group,
     );
@@ -140,9 +164,49 @@ export class Effects {
     this.critters.startle(position, radius);
   }
 
-  /** Katamari de bicho: tatuzinho enrolado encostando na bola vira item grudável. */
+  /**
+   * Katamari de bicho: bicho que gruda (tatuzinho enrolado, tesourinha, lacraia,
+   * bicho-pau, lagarta, lesma, vaquinha, tanajura pousada) encostando numa bola
+   * grande o bastante vira item grudável (com a figurinha em `id`). Um por chamada.
+   */
   collectCritter(ballCenter: THREE.Vector3, ballRadius: number): CollectedCritter | null {
     return this.critters.collect(ballCenter, ballRadius);
+  }
+
+  /** A bola arrancou uma pedra ou um tronco: tesourinhas e lacraias saem correndo de baixo. */
+  scatterFromUnder(ground: THREE.Vector3, size: number): void {
+    this.critters.scatterFrom(ground, size);
+  }
+
+  /** 0..1: quanto rastro fresco de lesma há em (x, z) — o chão ali escorrega. */
+  slimeAt(x: number, z: number): number {
+    return this.critters.slimeAt(x, z);
+  }
+
+  /** Poder "Fedor irresistível": 0 = normal; 1 e 2 = bichos que grudam vêm até a bola (2: de mais longe e mais rápido). */
+  setAttract(level: AttractLevel): void {
+    this.critters.setAttract(level);
+  }
+
+  /** Poder "Formigueiro amigo": formigas no raio largam a folhinha; devolve onde cada folha caiu (mundo). */
+  takeAntLeaves(center: THREE.Vector3, radius: number, max: number): THREE.Vector3[] {
+    return this.critters.takeAntLeaves(center, radius, max);
+  }
+
+  /** Madrugada do menu: vaga-lumes acendem e as visitas de dia (beija-flor, revoada) esperam. */
+  setMenuNight(on: boolean): void {
+    this.fireflies.setActive(on);
+    this.critters.setMenu(on);
+  }
+
+  /** Rodada nova: teias refeitas (com as aranhas) e rastro de gosma limpo. */
+  newRound(): void {
+    this.critters.newRound();
+  }
+
+  /** Só para testes: força agora beija-flor, revoada ou bichos saindo de baixo de uma pedra imaginária. */
+  debugTrigger(kind: CritterDebug): boolean {
+    return this.critters.debug(kind);
   }
 
   /**
@@ -391,6 +455,7 @@ export class Effects {
     this.trail.update(dt);
     // Na chuva o pólen some (gruda molhado nas folhas).
     this.motes.update(f.time, f.camera.position, f.pixelScale, 1 - Math.min(1, f.rain * 1.6));
+    this.fireflies.update(dt, f.time, f.camera, f.pixelScale);
     this.rain.update(dt, f.time, f.camera, f.player, f.rain, this.surface);
     this.critters.update(dt, {
       player: f.player,

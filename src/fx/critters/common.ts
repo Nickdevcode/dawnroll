@@ -173,3 +173,52 @@ export function shoveFromBall(ctx: CritterContext, position: THREE.Vector3, body
 export function dampVector(current: THREE.Vector3, target: THREE.Vector3, rate: number, dt: number): THREE.Vector3 {
   return current.lerp(target, 1 - Math.exp(-rate * dt));
 }
+
+// ---------------------------------------------------------------------------
+// Katamari de bicho
+
+/** Alcance (unidades) do poder "Fedor irresistível" em cada nível. */
+const ATTRACT_REACH = [0, 10, 16] as const;
+/** Quanto mais rápido o bicho anda quando vai atrás do fedor. */
+const ATTRACT_HURRY = [0, 1.25, 1.8] as const;
+
+/**
+ * Poder "Fedor irresistível": bicho de chão que gruda, dentro do alcance, vai
+ * ATÉ a bola em vez de fugir. Devolve o multiplicador de velocidade (0 = não
+ * está atraído) e escreve em `toward` a direção no plano até a bola.
+ */
+export function attraction(ctx: CritterContext, x: number, z: number, toward: THREE.Vector3): number {
+  const level = ctx.attract;
+  if (level === 0) return 0;
+  const ball = ctx.world.ballPosition;
+  const dx = ball.x - x;
+  const dz = ball.z - z;
+  const d = Math.hypot(dx, dz);
+  if (d > ATTRACT_REACH[level] || d < 1e-4) return 0;
+  toward.set(dx / d, 0, dz / d);
+  return ATTRACT_HURRY[level];
+}
+
+/**
+ * Regra geral do Katamari de bicho: a bola precisa ser bem maior que o bicho
+ * (raio ≥ 1,6× o tamanho efetivo) e estar encostando nele (`reach` = meia
+ * espessura do bicho em volta do ponto testado).
+ */
+export function ballTakes(center: THREE.Vector3, radius: number, size: number, x: number, y: number, z: number, reach: number): boolean {
+  if (radius < size * 1.6) return false;
+  const dx = x - center.x;
+  const dy = y - center.y;
+  const dz = z - center.z;
+  const r = radius + reach;
+  return dx * dx + dy * dy + dz * dz <= r * r;
+}
+
+/** Malha de mundo para grudar na bola, na mesma pose (matriz) em que o bicho estava. */
+export function collectedMesh(geometry: THREE.BufferGeometry, material: THREE.Material, matrix: THREE.Matrix4): THREE.Mesh {
+  const mesh = new THREE.Mesh(geometry, material);
+  matrix.decompose(mesh.position, mesh.quaternion, mesh.scale);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  mesh.updateMatrixWorld(true);
+  return mesh;
+}

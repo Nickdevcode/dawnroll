@@ -18,6 +18,8 @@ export interface InputState {
   /** true desde que o pulo foi apertado até o próximo passo de física consumir. */
   jumpPressed: boolean;
   resetPressed: boolean;
+  /** Poder de apertar (Equilibrista): mesmo esquema "pegajoso" do pulo. */
+  abilityPressed: boolean;
 }
 
 const MOVE_KEYS: Record<string, [number, number]> = {
@@ -39,6 +41,7 @@ export class Input {
     grab: false,
     jumpPressed: false,
     resetPressed: false,
+    abilityPressed: false,
   };
 
   /** Delta de câmera acumulado desde o último `consumeLook` (pixels). */
@@ -57,6 +60,7 @@ export class Input {
   private mouseGrab = false;
   private jumpQueued = false;
   private resetQueued = false;
+  private abilityQueued = false;
 
   // Toque
   private touchMove = { x: 0, y: 0 };
@@ -124,12 +128,15 @@ export class Input {
     this.zoomDelta += pad.zoom;
     if (pad.jumpPressed) this.jumpQueued = true;
     if (pad.recallPressed) this.resetQueued = true;
+    if (pad.abilityPressed) this.abilityQueued = true;
     this.pausePressed = pad.startPressed;
     // "Pegajoso" até um passo de física consumir: em telas de 144 Hz há frames sem passo fixo.
     s.jumpPressed = s.jumpPressed || this.jumpQueued;
     s.resetPressed = s.resetPressed || this.resetQueued;
+    s.abilityPressed = s.abilityPressed || this.abilityQueued;
     this.jumpQueued = false;
     this.resetQueued = false;
+    this.abilityQueued = false;
   }
 
   consumeLook(): { x: number; y: number; zoom: number } {
@@ -163,6 +170,9 @@ export class Input {
   queueReset(): void {
     this.resetQueued = true;
   }
+  queueAbility(): void {
+    this.abilityQueued = true;
+  }
 
   private onKeyDown = (e: KeyboardEvent): void => {
     this.device = 'keyboard';
@@ -172,6 +182,7 @@ export class Input {
       e.preventDefault();
     }
     if (e.code === 'KeyR') this.resetQueued = true;
+    if (e.code === 'KeyQ') this.abilityQueued = true;
     if (e.code in MOVE_KEYS || e.code === 'Space') e.preventDefault();
     this.keys.add(e.code);
   };
@@ -189,6 +200,8 @@ export class Input {
   private onMouseDown = (e: MouseEvent): void => {
     if (!this.pointerLocked) return;
     if (e.button === 0) this.mouseGrab = true;
+    // Botão direito: poder de apertar (o menu de contexto já é bloqueado no canvas).
+    if (e.button === 2) this.abilityQueued = true;
   };
 
   private onMouseUp = (e: MouseEvent): void => {

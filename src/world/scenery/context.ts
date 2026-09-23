@@ -3,7 +3,10 @@ import type { RAPIER } from '../../core/Physics';
 import type { AddObjectOptions, StaticBatch } from '../../render/StaticBatch';
 import type { Rng } from '../../utils/math';
 
-export type PickableKind = 'flower' | 'mushroom' | 'rock' | 'log';
+export type PickableKind = 'flower' | 'mushroom' | 'rock' | 'log' | 'object';
+
+/** Acabamento do objeto quando ele vira malha de verdade grudada na bola. */
+export type PickableFinish = 'matte' | 'glossy' | 'soft';
 
 /**
  * Algo do cenário que a bola arranca do chão quando fica grande o bastante
@@ -31,8 +34,26 @@ export interface PickableSpec {
   volume: number;
   /** Maior dimensão do objeto (para caber na bola quando gruda). */
   extent: number;
-  /** Espécie (flor e cogumelo): vira figurinha própria no catálogo da toca. */
+  /** Espécie (flor, cogumelo e objeto): vira figurinha própria no catálogo da toca (objeto: o id da figurinha). */
   variant?: string;
+  /** Acabamento ao grudar (só objeto; os outros tipos têm o deles). */
+  finish?: PickableFinish;
+}
+
+/**
+ * Área do chão coberta por algo chato (toalha, chinelo, luva, terra derramada):
+ * a grama e a cobertura do chão não nascem ali (senão atravessam o pano). Não é
+ * "sólido": bicho anda por cima e montinho/detrito pode cair em cima.
+ */
+export interface CoverArea {
+  x: number;
+  z: number;
+  /** Giro do retângulo: o eixo do comprimento aponta para (sin yaw, cos yaw). */
+  yaw: number;
+  halfWidth: number;
+  halfLength: number;
+  /** Quanto a superfície fica acima do terreno num ponto (pano ondulado); sem isso, 0. */
+  lift?: (x: number, z: number) => number;
 }
 
 /**
@@ -54,6 +75,8 @@ export interface SceneryContext {
   addLandingSpot(position: THREE.Vector3): THREE.Vector3;
   /** Assa o objeto no lote como "arrancável" e registra o que some junto com ele. */
   addPickable(spec: PickableSpec): void;
+  /** Chão coberto por algo chato (grama não atravessa; ver `CoverArea`). */
+  addCover(area: CoverArea): void;
 }
 
 /** Volume de uma esfera — atalho para o "quanto engorda" dos arrancáveis. */

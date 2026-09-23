@@ -291,6 +291,7 @@ export class Menu {
       ? /* html */ `<ul class="touch-list">
           <li data-t="touch.move"></li><li data-t="touch.look"></li><li data-t="touch.grab"></li>
           <li data-t="touch.jump"></li><li data-t="touch.recall"></li><li data-t="touch.burrow"></li>
+          <li data-t="touch.ability"></li>
         </ul>`
       : /* html */ `<dl class="keys">
           ${row(keys('W', 'A', 'S', 'D'), 'controls.move')}
@@ -300,6 +301,7 @@ export class Menu {
           ${row(keys('Shift'), 'controls.run')}
           ${row(keys('R'), 'controls.recall')}
           ${row(keys('T'), 'controls.burrow')}
+          ${row(keys('Q'), 'controls.ability')}
           ${row(keyT('key.wheel'), 'controls.zoom')}
           ${row(keys('Esc'), 'controls.pause')}
         </dl>`;
@@ -314,6 +316,7 @@ export class Menu {
           <ol class="steps">
             <li data-t="help.step1"></li><li data-t="help.step2"></li><li data-t="help.step3"></li>
           </ol>
+          <p class="help__weather" data-t="help.zones"></p>
           <p class="help__weather" data-t="help.weather"></p>
           <h3 class="sheet__heading" data-t="help.burrow"></h3>
           <ul class="help-list">
@@ -330,6 +333,7 @@ export class Menu {
               ${row(pad('a'), 'controls.jump')}
               ${row(`${pad('lt')}${pad('b')}`, 'controls.run')}
               ${row(pad('y'), 'controls.recall')}
+              ${row(pad('ability'), 'controls.ability')}
               ${row(`${pad('lb')}${pad('rb')}`, 'controls.zoom')}
               ${row(pad('start'), 'controls.pause')}
             </dl>

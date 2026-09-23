@@ -3,7 +3,8 @@ import { rand, vary } from '../dsp';
 import { bubble, burst, chain, filter, glide, noise, osc, perc, swell, tone, tremolo, type Recipe, type Voice } from './kit';
 
 /**
- * Natureza: trovão, pássaros, grilos, coruja, sapo, gafanhoto e água pingando.
+ * Natureza: trovão, pássaros, grilos, coruja, sapo, gafanhoto, água pingando,
+ * beija-flor, teia rasgando e o coro de cigarras.
  * Os bichos são sintetizados pelo jeito que o som deles nasce (bolha que sobe
  * de tom, seno com glissando para o canto, pulsos filtrados para o coaxar),
  * não por imitação de gravação.
@@ -213,3 +214,88 @@ export const puddlePlop: Recipe = (v) => {
   bubble(v, rand(600, 1400), rand(0.03, 0.06));
   return burst(v, { freq: 3000, q: 1, gain: 0.15, decay: 0.02 });
 };
+
+// ---------------------------------------------------------------------------
+// Fauna nova: beija-flor, teia, cigarras
+
+/** Piadinha do beija-flor: dois ou três "tsip" agudíssimos, rápidos e descendo. */
+export const hummingbirdChirp: Recipe = (v) => {
+  const count = 2 + Math.floor(Math.random() * 2);
+  const base = rand(6200, 7400);
+  let t = 0;
+  for (let i = 0; i < count; i++) {
+    const duration = rand(0.035, 0.06);
+    chirp(v, base * rand(0.95, 1.08), base * 0.72, duration, 0.07, t);
+    t += duration + rand(0.05, 0.09);
+  }
+  return t + 0.05;
+};
+
+/**
+ * Teia rasgando: estalinhos de seda arrebentando (grãos agudos bem juntos) e
+ * um "fiu" macio de fio passando — curto e delicado, nada de papel rasgando.
+ */
+export const webTear = (size: number): Recipe => (v) => {
+  const k = clamp(size, 0.5, 1.6);
+  burst(v, { noise: 'crackle', type: 'highpass', freq: 6500, q: 0.7, gain: 0.5, attack: 0.002, decay: 0.09 + k * 0.03, rate: 2.2 });
+  burst(v, { type: 'bandpass', freq: 5200, to: 2600, q: 2.5, gain: 0.12, attack: 0.01, decay: 0.16 + k * 0.05, delay: 0.015 });
+  return tone(v, { freq: rand(3800, 4600), to: rand(2400, 3000), gain: 0.012, decay: 0.05, delay: 0.01 });
+};
+
+/** Um som contínuo pronto para ligar: `output` é a saída; os parâmetros mexem no timbre ao vivo. */
+export interface LoopVoice {
+  readonly output: GainNode;
+  /** Frequências que "respiram" (o motor mexe nelas a cada quadro). */
+  readonly pitch: AudioParam[];
+}
+
+/**
+ * Zumbido do beija-flor pairando: as asas batem ~50 vezes por segundo, então o
+ * som é um "hum" grave com harmônicos (serrote filtrado) mais o sopro do ar
+ * pulsando no mesmo ritmo (ruído rosa modulado). Serve em qualquer contexto
+ * (inclusive offline, para medir).
+ */
+export function hummingbirdHum(ctx: BaseAudioContext, pink: AudioBuffer): LoopVoice {
+  const output = new GainNode(ctx, { gain: 1 });
+  const beat = 48;
+  const wing = new OscillatorNode(ctx, { type: 'sawtooth', frequency: beat });
+  wing.connect(new BiquadFilterNode(ctx, { type: 'lowpass', frequency: 460, Q: 0.9 })).connect(new GainNode(ctx, { gain: 0.55 })).connect(output);
+  // Sopro: ruído passando por uma banda média, com o volume batendo junto com a asa.
+  const air = new AudioBufferSourceNode(ctx, { buffer: pink, loop: true });
+  const pulse = new GainNode(ctx, { gain: 0.35 });
+  const lfo = new OscillatorNode(ctx, { frequency: beat });
+  lfo.connect(new GainNode(ctx, { gain: 0.65 })).connect(pulse.gain);
+  air.connect(new BiquadFilterNode(ctx, { type: 'bandpass', frequency: 320, Q: 0.7 })).connect(pulse).connect(new GainNode(ctx, { gain: 1.3 })).connect(output);
+  wing.start();
+  lfo.start();
+  air.start(0, Math.random() * pink.duration);
+  return { output, pitch: [wing.frequency, lfo.frequency] };
+}
+
+/**
+ * Uma cigarra: o chiado agudo e "rasgado" que o tímbalo faz (ruído numa banda
+ * estreita + um apito na mesma altura), picotado ~110 vezes por segundo — é o
+ * picotado que dá a aspereza de cigarra. A altura sobe um pouco quando ela
+ * engrossa o canto (o motor mexe em `pitch`).
+ */
+export function cicadaVoice(ctx: BaseAudioContext, white: AudioBuffer, frequency: number): LoopVoice {
+  const output = new GainNode(ctx, { gain: 1 });
+  const band = new BiquadFilterNode(ctx, { type: 'bandpass', frequency, Q: 5 });
+  const hiss = new AudioBufferSourceNode(ctx, { buffer: white, loop: true });
+  hiss.connect(band);
+  const whine = new OscillatorNode(ctx, { type: 'sine', frequency });
+  const whineLevel = new GainNode(ctx, { gain: 0.05 });
+  whine.connect(whineLevel);
+  // Picotado do tímbalo.
+  const chop = new GainNode(ctx, { gain: 0.45 });
+  const pulses = new OscillatorNode(ctx, { type: 'square', frequency: rand(100, 124) });
+  pulses.connect(new GainNode(ctx, { gain: 0.45 })).connect(chop.gain);
+  band.connect(chop);
+  whineLevel.connect(chop);
+  // Longe, nas árvores do fundo: sem o brilho de cima.
+  chop.connect(new BiquadFilterNode(ctx, { type: 'lowpass', frequency: 7500, Q: 0.5 })).connect(output);
+  hiss.start(0, Math.random() * white.duration);
+  whine.start();
+  pulses.start();
+  return { output, pitch: [band.frequency, whine.frequency] };
+}

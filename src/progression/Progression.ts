@@ -1,29 +1,44 @@
 import type { PantryBall, SaveData } from '../core/save';
+import { Ability } from './ability';
 import {
   BURY_GOALS,
-  CATALOG_GOAL,
+  CATALOG_GOALS,
+  EDGE_CM,
   FEAST_GOAL,
   FRESH_GOAL,
   LEVEL_GOALS,
+  PURIST_CM,
+  RAINBOW_GOAL,
+  REQUESTS_GOAL,
   SIZE_MILESTONES,
+  TOYS_GOAL,
+  WEB_GOAL,
+  ZOO_GOAL,
   achievement,
   type AchievementId,
 } from './achievements';
-import { CATALOG, type CatalogId } from './catalog';
+import { CATALOG, CRITTER_IDS, FLOWER_IDS, PICNIC_IDS, TOY_IDS, type CatalogId } from './catalog';
+import { RAINBOW_HUES, type Hue } from './colors';
 import { PANTRY_CAPACITY, RoundLedger, banquetMultiplier, foodFor, type FoodBreakdown } from './food';
 import { levelBonuses, levelInfo, perksUnlockedAt, unlockedPerks, type LevelInfo } from './leveling';
 import {
   HEAT_DECAY_PER_SECOND,
-  HEAT_RISE_SECONDS,
+  MAX_PERK_RANK,
   PERK_MILESTONES_CM,
   PERKS,
   computeModifiers,
   drawPerkOffer,
+  heatRiseSeconds,
   neutralModifiers,
+  riderCooldown,
+  riderDuration,
   type Modifiers,
   type PerkId,
+  type PerkOffer,
+  type PerkRank,
 } from './perks';
-import { drawRequests, updateRequest, type RoundRequest } from './requests';
+import { drawRequests, failDryChallenge, resolveChallenges, updateRequest, type RoundRequest } from './requests';
+import { SKINS, skin, skinsUnlockedBy, type SkinId } from './skins';
 
 /** O que aconteceu ao comer da despensa. */
 export interface MealResult {
@@ -46,6 +61,8 @@ export interface AchievementUnlock {
   levelAfter: number;
   /** Poderes liberados pelos níveis que a recompensa deu. */
   unlocked: PerkId[];
+  /** Cascos que essa conquista liberou. */
+  skins: SkinId[];
 }
 
 /** Subida de nível causada por um ganho de XP. */
@@ -59,6 +76,8 @@ interface XpGain {
 export interface BurialOutcome {
   food: FoodBreakdown;
   requestsDone: number;
+  /** Algum pedido dourado (do Sol) foi cumprido nesta bola. */
+  goldenDone: boolean;
   /** Figurinhas que entraram no catálogo agora. */
   discovered: CatalogId[];
   /** Guardada na despensa? (se ela estava cheia, o besouro comeu na hora) */
@@ -69,26 +88,55 @@ export interface BurialOutcome {
   introduceBurrow: boolean;
 }
 
+/** O que o enterro precisa saber além do tamanho. */
+export interface BurialContext {
+  /** Estava chovendo. */
+  raining: boolean;
+  /** O besouro estava em cima da bola (Equilibrista) quando ela caiu na toca. */
+  riding: boolean;
+}
+
+/** Poder escolhido na rodada, com o nível atual dele (★★ = 2). */
+export interface RoundPerk {
+  id: PerkId;
+  rank: PerkRank;
+}
+
+/** O que a bola pegou agora rendeu. */
+export interface CollectResult {
+  /** Pedidos que acabaram de ser cumpridos. */
+  done: RoundRequest[];
+  /** Primeira coisa desse tipo na bola desta rodada (poder Curioso). */
+  newKind: boolean;
+}
+
 /**
  * Progressão entre rodadas e dentro delas: nível e experiência, despensa,
- * catálogo, poderes da rodada (1 de 3 nos marcos de tamanho) e pedidos.
+ * catálogo, poderes da rodada (1 de 3 nos marcos de tamanho, ★★ se repetir),
+ * o poder de apertar (Equilibrista), pedidos, conquistas e cascos.
  *
  * Não sabe de Three.js nem de DOM: o `Game` avisa o que a bola pegou e pergunta
- * os multiplicadores do passo; a interface lê o estado e chama `eat`.
+ * os multiplicadores do passo; a interface lê o estado e chama `eat`/`setSkin`.
  */
 export class Progression {
   readonly ledger = new RoundLedger();
-  /** Poderes escolhidos nesta rodada, na ordem em que vieram. */
-  readonly roundPerks: PerkId[] = [];
+  /** Poderes escolhidos nesta rodada, na ordem em que vieram (o ★★ atualiza o nível no lugar). */
+  readonly roundPerks: RoundPerk[] = [];
+  /** Equilibrista: relógio do uso e da recarga. */
+  readonly rider = new Ability();
   requests: RoundRequest[] = [];
   /** Calor do Sangue quente (0..1). */
   heat = 0;
   /** Conquista feita durante o jogo (o HUD mostra o aviso e toca o som). */
   onAchievement: ((unlock: AchievementUnlock) => void) | null = null;
 
-  private readonly perkSet = new Set<PerkId>();
+  private readonly ranks = new Map<PerkId, PerkRank>();
   private readonly mods: Modifiers = neutralModifiers();
   private nextMilestone = 0;
+  /** Escolhas de poder feitas na rodada (o ★★ conta como uma escolha). */
+  private picks = 0;
+  /** A bola encostou em água de poça nesta rodada (desafio "sem molhar"). */
+  private roundWet = false;
   private info: LevelInfo;
   private readonly listeners = new Set<() => void>();
 
@@ -133,7 +181,12 @@ export class Progression {
   }
 
   hasPerk(id: PerkId): boolean {
-    return this.perkSet.has(id);
+    return this.ranks.has(id);
+  }
+
+  /** Nível do poder na rodada (0 = não tem). */
+  perkRank(id: PerkId): PerkRank | 0 {
+    return this.ranks.get(id) ?? 0;
   }
 
   hasAchievement(id: AchievementId): boolean {
@@ -142,6 +195,19 @@ export class Progression {
 
   get achievementCount(): number {
     return this.save.achievements.length;
+  }
+
+  get skin(): SkinId {
+    return this.save.skin;
+  }
+
+  isSkinUnlocked(id: SkinId): boolean {
+    const unlock = skin(id).unlock;
+    return !unlock || this.hasAchievement(unlock);
+  }
+
+  get unlockedSkinCount(): number {
+    return SKINS.filter((s) => this.isSkinUnlocked(s.id)).length;
   }
 
   /** Avisa quem mostra o estado (HUD, painel da toca) quando algo mudou. */
@@ -156,20 +222,26 @@ export class Progression {
   startRound(): void {
     this.ledger.reset();
     this.roundPerks.length = 0;
-    this.perkSet.clear();
+    this.ranks.clear();
+    this.rider.reset();
     this.heat = 0;
+    this.picks = 0;
+    this.roundWet = false;
     this.nextMilestone = 0;
     this.requests = drawRequests(this.info.level, this.random);
     this.emit();
   }
 
   /**
-   * A bola engoliu algo (montinho, detrito, flor, tatuzinho...). Devolve os
-   * pedidos que acabaram de ser cumpridos.
+   * A bola engoliu algo (montinho, detrito, flor, bicho...). `hue` é a família
+   * de cor da coisa (pedidos de cor). Devolve os pedidos que acabaram de ser
+   * cumpridos e se é o primeiro desse tipo na bola.
    */
-  noteCollected(id: CatalogId, ballCm: number, amount = 1): RoundRequest[] {
+  noteCollected(id: CatalogId, ballCm: number, hue: Hue | null = null, amount = 1): CollectResult {
+    const newKind = id !== 'dung' && this.ledger.count(id) === 0;
     this.ledger.add(id, amount);
-    return this.refreshRequests(ballCm);
+    if (hue) this.ledger.addHue(hue, amount);
+    return { done: this.refreshRequests(ballCm), newKind };
   }
 
   /** Tamanho da bola mudou (pedidos de tamanho e marcos que viram conquista). */
@@ -178,53 +250,83 @@ export class Progression {
     return this.refreshRequests(ballCm);
   }
 
+  /** A bola encostou na água da poça (o desafio "sem molhar" falha). */
+  noteBallWet(): void {
+    if (this.roundWet) return;
+    this.roundWet = true;
+    if (failDryChallenge(this.requests)) this.emit();
+  }
+
+  /** Teia rasgada (contador da conquista). */
+  noteWebTorn(): void {
+    this.save.stats.websTorn = Math.min(1e7, this.save.stats.websTorn + 1);
+    this.persist();
+    if (this.save.stats.websTorn >= WEB_GOAL) this.unlock('web10');
+  }
+
+  /** Feito que acontece no mundo (viu o beija-flor, subiu na bola pulando...). */
+  achieve(id: AchievementId): void {
+    this.unlock(id);
+  }
+
   /**
-   * Passou de um marco de poder? Devolve as opções (vazio = marco passou mas
+   * Passou de um marco de poder? Devolve as cartas (vazio = marco passou mas
    * não sobrou poder pra oferecer), ou null se nenhum marco novo.
    */
-  checkPerkMilestone(ballCm: number): PerkId[] | null {
+  checkPerkMilestone(ballCm: number): PerkOffer[] | null {
     if (this.nextMilestone >= PERK_MILESTONES_CM.length || ballCm < PERK_MILESTONES_CM[this.nextMilestone]) return null;
     // Crescimento enorme de uma vez (tronco engolido) pode pular marcos: um de cada vez.
     this.nextMilestone++;
-    const pool = this.availablePerks.filter((id) => !this.perkSet.has(id));
-    return drawPerkOffer(pool, this.random);
+    return drawPerkOffer(this.availablePerks, this.ranks, this.random);
   }
 
-  takePerk(id: PerkId): void {
-    if (this.perkSet.has(id)) return;
-    this.perkSet.add(id);
-    this.roundPerks.push(id);
+  /** Pega o poder (ou sobe pra ★★ se já tinha). Devolve o nível que ele ficou. */
+  takePerk(id: PerkId): PerkRank {
+    const current = this.ranks.get(id) ?? 0;
+    if (current >= MAX_PERK_RANK) return MAX_PERK_RANK;
+    const rank = (current + 1) as PerkRank;
+    this.ranks.set(id, rank);
+    this.picks++;
+    const entry = this.roundPerks.find((p) => p.id === id);
+    if (entry) entry.rank = rank;
+    else this.roundPerks.push({ id, rank });
+    if (id === 'rider') this.rider.configure(riderDuration(rank), riderCooldown(rank));
+    if (rank === 2) this.unlock('doubleStar');
     if (!this.save.perksUsed.includes(id)) {
       this.save.perksUsed.push(id);
       this.persist();
     }
     if (this.save.perksUsed.length >= PERKS.length) this.unlock('allPerks');
     this.emit();
+    return rank;
   }
 
   /** Sangue quente: esquenta empurrando com vontade, esfria parado. */
   updateHeat(dt: number, pushingHard: boolean): void {
-    if (!this.perkSet.has('hotBlood')) {
+    const rank = this.ranks.get('hotBlood');
+    if (!rank) {
       this.heat = 0;
       return;
     }
-    this.heat = pushingHard ? Math.min(1, this.heat + dt / HEAT_RISE_SECONDS) : Math.max(0, this.heat - dt * HEAT_DECAY_PER_SECOND);
+    this.heat = pushingHard ? Math.min(1, this.heat + dt / heatRiseSeconds(rank)) : Math.max(0, this.heat - dt * HEAT_DECAY_PER_SECOND);
   }
 
   /** Multiplicadores do passo (o objeto é reaproveitado: não guarde a referência entre passos). */
-  modifiers(ballRadius: number): Modifiers {
-    return computeModifiers(this.bonuses, this.perkSet, this.heat, ballRadius, this.mods);
+  modifiers(ballRadius: number, ballSpeed = 0): Modifiers {
+    return computeModifiers(this.bonuses, this.ranks, this.heat, ballRadius, ballSpeed, this.mods);
   }
 
   // --- enterro e toca ------------------------------------------------------------
 
   /**
-   * Bola enterrada: vira comida na despensa, figurinhas no catálogo, pedidos
-   * pagam e as conquistas de enterro são conferidas. `raining`: estava chovendo.
-   * Quem chama já contou a bola em `save.buried`.
+   * Bola enterrada: resolve os desafios, vira comida na despensa, figurinhas no
+   * catálogo, pedidos pagam e as conquistas de enterro são conferidas. Quem
+   * chama já contou a bola em `save.buried`.
    */
-  bury(diameterCm: number, raining = false): BurialOutcome {
-    const reward = this.requests.reduce((sum, request) => sum + (request.done ? request.reward : 0), 0);
+  bury(diameterCm: number, context: BurialContext): BurialOutcome {
+    resolveChallenges(this.requests, { wet: this.roundWet, raining: context.raining });
+    const done = this.requests.filter((r) => r.done);
+    const reward = done.reduce((sum, request) => sum + request.reward, 0);
     const food = foodFor(diameterCm, this.ledger, reward);
     const discovered: CatalogId[] = [];
     for (const [id, n] of this.ledger.entries()) {
@@ -243,14 +345,19 @@ export class Progression {
       stored = false;
       meal = this.feed([food.total]);
     }
-    const requestsDone = this.requests.filter((r) => r.done).length;
-    if (requestsDone > 0 && requestsDone === this.requests.length) this.unlock('allRequests');
-    if (raining) this.unlock('rainBury');
-    if (this.roundPerks.length >= PERK_MILESTONES_CM.length) this.unlock('fullPower');
+    this.save.stats.requestsDone = Math.min(1e7, this.save.stats.requestsDone + done.length);
+    const goldenDone = done.some((r) => r.golden);
+
+    if (done.length > 0 && done.length === this.requests.length) this.unlock('allRequests');
+    if (goldenDone) this.unlock('golden');
+    if (context.raining) this.unlock('rainBury');
+    if (context.riding) this.unlock('riderBury');
+    if (this.picks >= PERK_MILESTONES_CM.length) this.unlock('fullPower');
+    this.checkBallContents(diameterCm);
     this.checkProgressGoals(false);
     this.persist();
     this.emit();
-    return { food, requestsDone, discovered, stored, meal, introduceBurrow };
+    return { food, requestsDone: done.length, goldenDone, discovered, stored, meal, introduceBurrow };
   }
 
   /**
@@ -269,6 +376,15 @@ export class Progression {
     this.persist();
     this.emit();
     return meal;
+  }
+
+  /** Troca o casco (só os liberados). */
+  setSkin(id: SkinId): boolean {
+    if (!this.isSkinUnlocked(id) || this.save.skin === id) return false;
+    this.save.skin = id;
+    this.persist();
+    this.emit();
+    return true;
   }
 
   /** O painel da toca já foi apresentado. */
@@ -309,17 +425,39 @@ export class Progression {
     const gain = this.grantXp(reward, silent);
     this.persist();
     this.emit();
-    if (!silent) this.onAchievement?.({ id, reward, ...gain });
+    if (!silent) this.onAchievement?.({ id, reward, ...gain, skins: skinsUnlockedBy(id) });
   }
 
-  /** Conquistas que dependem só do que está no save (enterros, catálogo). */
+  /** Conquistas do que foi dentro DESTA bola (buquê, zoológico, arco-íris...). */
+  private checkBallContents(diameterCm: number): void {
+    const ledger = this.ledger;
+    if (ledger.distinct(FLOWER_IDS) >= FLOWER_IDS.length) this.unlock('bouquet');
+    if (ledger.distinct(CRITTER_IDS) >= ZOO_GOAL) this.unlock('zoo');
+    if (ledger.huesAmong(RAINBOW_HUES) >= RAINBOW_GOAL) this.unlock('rainbow');
+    if (ledger.distinct(PICNIC_IDS) >= PICNIC_IDS.length) this.unlock('picnic');
+    if (ledger.distinct(TOY_IDS) >= TOYS_GOAL) this.unlock('toys');
+    if (diameterCm >= PURIST_CM && ledger.items === 0) this.unlock('purist');
+    if (diameterCm < EDGE_CM) this.unlock('edge');
+  }
+
+  /** Conquistas que dependem só do que está no save (enterros, catálogo, contadores). */
   private checkProgressGoals(silent: boolean): void {
-    for (const [id, goal] of BURY_GOALS) if (this.save.buried >= goal) this.unlock(id, silent);
+    const save = this.save;
+    const has = (id: CatalogId) => (save.catalog[id] ?? 0) > 0;
+    for (const [id, goal] of BURY_GOALS) if (save.buried >= goal) this.unlock(id, silent);
     const found = this.discoveredCount;
-    if (found >= CATALOG_GOAL) this.unlock('catalog10', silent);
+    for (const [id, goal] of CATALOG_GOALS) if (found >= goal) this.unlock(id, silent);
     if (found >= CATALOG.length) this.unlock('catalogAll', silent);
-    if ((this.save.catalog.log ?? 0) > 0) this.unlock('log', silent);
-    if ((this.save.catalog.freshDung ?? 0) >= FRESH_GOAL) this.unlock('fresh10', silent);
+    if (has('log')) this.unlock('log', silent);
+    if ((save.catalog.freshDung ?? 0) >= FRESH_GOAL) this.unlock('fresh10', silent);
+    if (has('gnome')) this.unlock('gnome', silent);
+    if (has('flipflop')) this.unlock('flipflop', silent);
+    if (has('fourLeaf')) this.unlock('fourLeaf', silent);
+    if (has('stickInsect')) this.unlock('stickInsect', silent);
+    if (has('flyingAnt')) this.unlock('swarm', silent);
+    if (has('earwig') || has('centipede')) this.unlock('underRock', silent);
+    if (save.stats.websTorn >= WEB_GOAL) this.unlock('web10', silent);
+    if (save.stats.requestsDone >= REQUESTS_GOAL) this.unlock('requests50', silent);
   }
 
   /** Save de antes das conquistas: o que já foi feito conta (sem aviso na tela). */

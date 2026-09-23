@@ -1,5 +1,6 @@
 import type { PickableKind } from '../../world/scenery/context';
 import type { DebrisMaterial } from '../../world/Collectibles';
+import type { CatalogId } from '../../progression/catalog';
 import { clamp } from '../../utils/math';
 import { rand, vary } from '../dsp';
 import { bubble, burst, chain, filter, glide, louder, noise, osc, perc, swell, tone, tremolo, type Recipe, type Voice } from './kit';
@@ -48,8 +49,9 @@ export const stick = (material: DebrisMaterial, size: number): Recipe => (voice)
       return 0.12;
     case 'leaf':
     case 'petal':
-    case 'clover': {
-      const soft = material === 'petal' ? 0.6 : material === 'clover' ? 0.8 : 1;
+    case 'clover':
+    case 'fourLeaf': {
+      const soft = material === 'petal' ? 0.6 : material === 'leaf' ? 1 : 0.8;
       burst(v, { noise: 'crackle', freq: 4200, q: 0.8, gain: 0.5 * soft, attack: 0.01, decay: 0.12, rate: 1.6 });
       return burst(v, { freq: 6000, q: 1.5, gain: 0.35 * soft, attack: 0.008, decay: 0.08 });
     }
@@ -74,10 +76,64 @@ export const stick = (material: DebrisMaterial, size: number): Recipe => (voice)
       burst(v, { freq: 3400, q: 2, gain: 0.4, decay: 0.008 });
       return 0.3;
     case 'cap':
-      // Tampinha de metal: "tiiing" brilhante, com batimento entre dois parciais quase iguais.
-      [2960, 2972, 5110, 7870, 10950].forEach((f, i) => tone(v, { freq: f * p, gain: [0.05, 0.04, 0.045, 0.03, 0.018][i], attack: 0.001, decay: [0.55, 0.5, 0.35, 0.22, 0.15][i] }));
-      burst(v, { type: 'highpass', freq: 4000, gain: 0.35, decay: 0.006 });
-      return 0.6;
+    case 'coin':
+    case 'clip': {
+      // Metal: "tiiing" brilhante, com batimento entre dois parciais quase iguais. A moeda
+      // (disco grosso) soa mais grave e demora mais; o clipe (arame fino), agudo e curtinho.
+      const pitch = material === 'coin' ? 0.7 : material === 'clip' ? 1.3 : 1;
+      const ring = material === 'coin' ? 1.25 : material === 'clip' ? 0.45 : 1;
+      const level = material === 'clip' ? 0.75 : 1;
+      [2960, 2972, 5110, 7870, 10950].forEach((f, i) =>
+        tone(v, { freq: f * p * pitch, gain: [0.05, 0.04, 0.045, 0.03, 0.018][i] * level, attack: 0.001, decay: [0.55, 0.5, 0.35, 0.22, 0.15][i] * ring }),
+      );
+      burst(v, { type: 'highpass', freq: 4000 * pitch, gain: 0.35 * level, decay: 0.006 });
+      return 0.6 * ring;
+    }
+    case 'marble':
+      // Vidro: "clink" puro e curto, com um quiquezinho logo depois.
+      [0, 0.065].forEach((d, k) =>
+        [3900, 6150, 9800].forEach((f, i) => tone(v, { freq: f * p, gain: [0.07, 0.04, 0.02][i] * (k ? 0.45 : 1), attack: 0.001, decay: [0.12, 0.08, 0.05][i], delay: d })),
+      );
+      burst(v, { type: 'highpass', freq: 5000, gain: 0.25, decay: 0.004 });
+      return 0.25;
+    case 'brick':
+    case 'die':
+      // Plástico duro: "clack" seco; o dado ainda dá uma quicadinha.
+      burst(v, { freq: 2100 * p, q: 2.5, gain: 1.1, decay: 0.018 });
+      tone(v, { freq: 950 * p, gain: 0.08, decay: 0.03 });
+      if (material === 'die') {
+        burst(v, { freq: 2500 * p, q: 2.5, gain: 0.5, decay: 0.014, delay: 0.05 });
+        tone(v, { freq: 1100 * p, gain: 0.035, decay: 0.02, delay: 0.05 });
+      }
+      return 0.1;
+    case 'button':
+      // Botão: "tic" de plástico pequeno, mais agudo que a pecinha de montar.
+      burst(v, { freq: 3100 * p, q: 3, gain: 0.8, decay: 0.012 });
+      tone(v, { freq: 1500 * p, gain: 0.06, decay: 0.02 });
+      return 0.08;
+    case 'jellybean':
+    case 'grape':
+      // Macio e úmido: a uva ainda "estoura" uma bolhinha de suco.
+      tone(v, { freq: 520 * p, to: 180 * p, gain: 0.16, decay: 0.06 });
+      burst(v, { noise: 'pink', freq: 1100, q: 1.8, gain: 1.2, decay: 0.06 });
+      if (material === 'grape') bubble(v, 420 * p, 0.06, 0.012);
+      return 0.12;
+    case 'sugarCube':
+      // Crocante: grãos de açúcar esfarelando.
+      burst(v, { noise: 'crackle', freq: 2600, q: 0.9, gain: 0.75, attack: 0.003, decay: 0.09, rate: 1.8 });
+      burst(v, { freq: 4200, q: 1.5, gain: 0.35, decay: 0.03 });
+      return 0.12;
+    case 'popcorn':
+      // Crocante leve e oco.
+      burst(v, { noise: 'crackle', freq: 3400, q: 1, gain: 0.45, attack: 0.003, decay: 0.06, rate: 2.2 });
+      tone(v, { freq: 700 * p, to: 500 * p, gain: 0.05, decay: 0.03 });
+      return 0.09;
+    case 'cicadaShell':
+      // Casquinha seca: estalinho de papel.
+      burst(v, { noise: 'crackle', type: 'highpass', freq: 3000, gain: 0.45, attack: 0.004, decay: 0.07, rate: 2 });
+      burst(v, { freq: 5200, q: 2, gain: 0.25, decay: 0.02, delay: 0.015 });
+      [0, 0.025].forEach((d) => tone(v, { freq: vary(2400, 0.1), gain: 0.03, decay: 0.01, delay: d }));
+      return 0.1;
     case 'pillbug':
       // Tatuzinho enrolado: tique-tique de casquinha rolando.
       [0, 0.032, 0.058].forEach((d, i) => tone(v, { freq: vary(3000, 0.1), gain: 0.05 - i * 0.012, decay: 0.012, delay: d }));
@@ -124,6 +180,53 @@ export const pluck = (kind: PickableKind, size: number): Recipe => (v) => {
       tone(v, { freq: 85 * p, to: 38, gain: 0.5, decay: 0.45, delay: 0.14 });
       return 0.8;
     }
+    case 'object':
+      // Coisa de gente (brinquedo, vaso, ferramenta): "toc" oco de plástico/cerâmica
+      // que engrossa com o tamanho, e o baque no chão logo depois.
+      tone(v, { freq: (900 - s * 520) * p, to: (620 - s * 360) * p, gain: 0.22, decay: 0.07 + s * 0.08 });
+      tone(v, { freq: (1830 - s * 900) * p, gain: 0.07, decay: 0.05 + s * 0.04 });
+      burst(v, { freq: (2400 - s * 900) * p, q: 3, gain: 0.8, decay: 0.02 });
+      tone(v, { freq: (140 - s * 70) * p, to: 45, gain: 0.3 + s * 0.2, decay: 0.2 + s * 0.2, delay: 0.03 });
+      return 0.5 + s * 0.2;
+  }
+};
+
+/**
+ * Bicho grudando na bola: por baixo, o mesmo "tuc" do item afundando; por cima,
+ * o corpo de cada um — quitina faz tiquezinhos (a lacraia, muitos), lagarta e
+ * lesma fazem "squelch", o bicho-pau estala como graveto. O tatuzinho (e quem
+ * não tiver som próprio) é o tique-tique de casquinha rolando.
+ */
+export const critterStick = (id: CatalogId): Recipe => (voice) => {
+  const v = louder(voice, 1.8);
+  const p = vary(1, 0.06);
+  switch (id) {
+    case 'caterpillar':
+    case 'slug':
+      tone(v, { freq: 230 * p, to: 120 * p, gain: 0.12, decay: 0.05 });
+      burst(v, { noise: 'pink', freq: 900 * p, to: 420 * p, q: 2.2, gain: 1.3, attack: 0.008, decay: 0.12 });
+      bubble(v, 380 * p, 0.06, 0.03);
+      if (id === 'slug') bubble(v, 290 * p, 0.05, 0.07);
+      return 0.16;
+    case 'stickInsect':
+      tone(v, { freq: 230 * p, to: 120 * p, gain: 0.12, decay: 0.05 });
+      burst(v, { type: 'highpass', freq: 2200, gain: 0.6, decay: 0.01 });
+      tone(v, { freq: 1250 * p, gain: 0.09, decay: 0.035 });
+      tone(v, { type: 'triangle', freq: 780 * p, gain: 0.05, decay: 0.05, lowpass: 2500 });
+      return 0.1;
+    case 'earwig':
+    case 'centipede':
+    case 'leafBeetle':
+    case 'flyingAnt': {
+      tone(v, { freq: 230 * p, to: 120 * p, gain: 0.12, decay: 0.05 });
+      const pitch = id === 'centipede' ? 3000 : id === 'earwig' ? 3400 : id === 'leafBeetle' ? 3800 : 4200;
+      const ticks = id === 'centipede' ? 5 : 2;
+      for (let i = 0; i < ticks; i++) tone(v, { freq: vary(pitch, 0.1), gain: 0.045 - i * 0.006, decay: 0.012, delay: i * 0.022 });
+      burst(v, { freq: pitch * 1.4, q: 2, gain: 0.3, decay: 0.01 });
+      return 0.06 + ticks * 0.022;
+    }
+    default:
+      return stick('pillbug', 0.4)(voice);
   }
 };
 

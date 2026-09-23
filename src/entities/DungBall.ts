@@ -8,7 +8,11 @@ import { noise3 } from '../utils/noise';
 import { quality } from '../core/device';
 
 export const START_RADIUS = 0.5;
-export const MAX_RADIUS = 6;
+/** Teto da bola: 30 cm (o marco "Sol nascente"). Só dá pra chegar varrendo quase o jardim todo. */
+export const MAX_RADIUS = 7.5;
+/** A partir daqui (perto do teto) a bola começa a brilhar dourada, como um solzinho. */
+const SUN_GLOW_FROM = 7.1;
+const SUN_COLOR = new THREE.Color('#ffae42');
 const DENSITY = 1.6;
 /** Tempo do "voo" de um item do chão até assentar na bola. */
 const ATTACH_SECONDS = 0.28;
@@ -90,6 +94,8 @@ export class DungBall {
   private spawnPop = 1;
   /** A toca assumiu a bola (física congelada, sem colisão). */
   private burying = false;
+  /** Relógio do brilho de sol (pulsa devagar). */
+  private glowTime = 0;
 
   /** Freio extra do terreno (água, lama) — o jogo atualiza a cada passo fixo. */
   extraDrag = 0;
@@ -145,7 +151,8 @@ export class DungBall {
 
   /** Diâmetro em centímetros na escala do mundo (1 unidade ≈ 2 cm). */
   get diameterCm(): number {
-    return this._radius * 2 * 2;
+    // Arredonda o resto do ponto flutuante (7,4999999 u tem que dar 30 cm, não 29,99…).
+    return Math.round(this._radius * 2 * 2 * 1000) / 1000;
   }
 
   /** Participa da física (falso enquanto a toca está engolindo a bola). */
@@ -236,6 +243,9 @@ export class DungBall {
     const targetRadius = radiusOf(this.targetVolume);
     if (Math.abs(targetRadius - this._radius) > 1e-4) {
       this._radius = damp(this._radius, targetRadius, 5, dt);
+      // A suavização nunca chega exatamente no alvo: perto dele, encaixa. Sem isso a bola no
+      // teto ficava em 29,9996 cm e o marco/conquista de 30 cm (e antes o de 24) nunca disparava.
+      if (Math.abs(targetRadius - this._radius) < 5e-4) this._radius = targetRadius;
       if (Math.abs(this._radius - this.colliderRadius) > 0.004) {
         this.collider.setRadius(this._radius);
         this.colliderRadius = this._radius;
@@ -339,6 +349,7 @@ export class DungBall {
       pop = Math.max(easeOutBack(this.spawnPop), 0.001);
     }
     this.root.scale.set(sxz * pop, sy * pop, sxz * pop);
+    this.updateSunGlow(dt);
     // O centro desce junto para a base continuar encostada no chão.
     this.root.position.y += this.squash * this._radius - (1 - pop) * this._radius;
 
@@ -354,6 +365,28 @@ export class DungBall {
       o.quaternion.slerpQuaternions(item.fromQuaternion, item.toQuaternion, e);
       o.scale.lerpVectors(item.fromScale, item.toScale, e);
     }
+  }
+
+  /**
+   * Chegando nos 30 cm a bola vira o "solzinho" do nome (o Khepri rola o sol):
+   * a massinha acende dourada por dentro, pulsando devagar. A emissão sai de
+   * zero, então o material não muda de programa (só uniforms).
+   */
+  private updateSunGlow(dt: number): void {
+    const material = this.core.material as THREE.MeshPhysicalMaterial;
+    const glow = smoothstep(SUN_GLOW_FROM, MAX_RADIUS, this._radius);
+    if (glow <= 0) {
+      if (material.emissiveIntensity !== 0) material.emissiveIntensity = 0;
+      return;
+    }
+    this.glowTime += dt;
+    material.emissive.copy(SUN_COLOR);
+    material.emissiveIntensity = glow * (0.32 + Math.sin(this.glowTime * 1.7) * 0.08);
+  }
+
+  /** 0..1: o quanto a bola já virou sol (o jogo usa pra festa e som). */
+  get sunlit(): number {
+    return smoothstep(SUN_GLOW_FROM, MAX_RADIUS, this._radius);
   }
 
   private applyVisualRadius(): void {

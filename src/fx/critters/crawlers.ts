@@ -3,16 +3,10 @@ import { clamp, damp, dampAngle, smoothstep } from '../../utils/math';
 import { terrainHeight, terrainNormal, PLAY_RADIUS } from '../../world/Terrain';
 import { InstancedPart } from './InstancedPart';
 import { critterMaterials } from './materials';
-import { mirrorX, snailShellPalette } from './models';
+import { bakePose, mirrorX, snailShellPalette } from './models';
 import {
-  ladybugBody,
-  ladybugElytron,
   ladybugLeg,
   ladybugWing,
-  LadybugPalettes,
-  LADYBUG_ELYTRA_PIVOT,
-  LADYBUG_HIPS,
-  LADYBUG_WING_HINGE,
   pillBugBall,
   pillBugWalk,
   PILLBUG_BALL_RADIUS,
@@ -20,16 +14,19 @@ import {
   snailStalk,
   SnailPalettes,
   SNAIL_STALK_BASE,
+  type BeetleRig,
+  type LadybugPalette,
 } from './groundModels';
-import { UP, inView, pickSpotNear, puddleAt, shoveFromBall, spotAlive, threatAt } from './common';
+import { UP, attraction, ballTakes, collectedMesh, inView, pickSpotNear, puddleAt, shoveFromBall, spotAlive, threatAt } from './common';
 import { jointMatrix } from './flyers';
 import { GroundWalker } from './walker';
+import type { CatalogId } from '../../progression/catalog';
 import type { CollectedCritter, CritterContext, Species } from './types';
 
 /**
- * Bichos de chão que andam: joaninhas (que também voam de flor em flor),
- * caracóis (que gostam de chuva) e tatuzinhos (que viram bolinha — e a bola
- * pode pegar).
+ * Bichos de chão que andam: joaninhas e vaquinhas (que também voam de flor em
+ * flor), caracóis (que gostam de chuva) e tatuzinhos (que viram bolinha — e a
+ * bola pode pegar).
  */
 
 const mRoot = new THREE.Matrix4();
@@ -39,15 +36,47 @@ const vAway = new THREE.Vector3();
 const vHip = new THREE.Vector3();
 
 // ---------------------------------------------------------------------------
-// Joaninhas
+// Besourinhos: joaninhas e vaquinhas
 
-type LadybugState = 'walk' | 'takeoff' | 'fly' | 'land' | 'perch';
+type BeetleState = 'walk' | 'takeoff' | 'fly' | 'land' | 'perch';
 
-interface Ladybug {
+/** Uma espécie de besourinho que passeia no chão e voa de flor em flor. */
+export interface BeetleSpec {
+  count: number;
+  rig: BeetleRig;
+  body: THREE.BufferGeometry;
+  /** Élitro direito (o esquerdo é o espelho). */
+  elytron: THREE.BufferGeometry;
+  /** Cores por indivíduo (élitro em pesos de paleta, A = fundo, B = pintas). Sem isso, as cores vêm assadas. */
+  palettes?: readonly LadybugPalette[];
+  /** Perigo mais perto que isso (unidades): levanta voo. */
+  wary: number;
+  /** Segundos entre uma vontade de voar e a próxima. */
+  urge: readonly [number, number];
+  walkSpeed: number;
+  scale: readonly [number, number];
+  /** Gruda na bola se for pega no chão (a joaninha não: ela sempre escapa voando). */
+  collect?: { id: CatalogId; size: number; color: string };
+}
+
+interface BeetleKind {
+  spec: BeetleSpec;
+  body: InstancedPart;
+  elytraR: InstancedPart;
+  elytraL: InstancedPart;
+  /** Pose parada com as cores assadas (para grudar na bola); nasce na primeira vez. */
+  stuck: THREE.BufferGeometry | null;
+}
+
+interface Beetle {
+  kind: BeetleKind;
+  /** Vaga nas peças da espécie (corpo, élitros). */
   slot: number;
+  /** Vaga nas peças compartilhadas (asas). */
+  wingSlot: number;
   legSlots: number[];
   walker: GroundWalker;
-  state: LadybugState;
+  state: BeetleState;
   scale: number;
   gait: number;
   /** 0 = élitros fechados, 1 = abertos (voando). */
@@ -63,68 +92,89 @@ interface Ladybug {
   flightTime: number;
   arc: number;
   placed: boolean;
+  /** Pego pela bola: some por um tempo e reaparece longe, fora da vista. */
+  gone: number;
 }
 
 /**
- * Joaninhas: passeiam no chão com as seis patinhas em tripé; de vez em quando
- * (ou quando algo chega perto) abrem os élitros, desdobram as asas e voam num
- * arco até uma flor ou outro canto do chão.
+ * Besourinhos de jardim: passeiam no chão com as seis patinhas em tripé; de
+ * vez em quando (ou quando algo chega perto) abrem os élitros, desdobram as
+ * asas e voam num arco até uma flor ou outro canto do chão.
+ *
+ * - Joaninha: arisca, voa com qualquer coisa chegando — nunca gruda.
+ * - Vaquinha (Diabrotica, verde de pintas amarelas): mais sossegada, só levanta
+ *   voo com o perigo em cima; dá para pegar andando no chão.
+ *
+ * As asas de voo e as patas são as mesmas peças para as duas espécies (menos draw calls).
  */
-export class Ladybugs implements Species {
-  private readonly body: InstancedPart;
-  private readonly elytraR: InstancedPart;
-  private readonly elytraL: InstancedPart;
+export class SmallBeetles implements Species {
+  private readonly kinds: BeetleKind[] = [];
   private readonly wingR: InstancedPart;
   private readonly wingL: InstancedPart;
   private readonly legs: InstancedPart;
-  private readonly bugs: Ladybug[] = [];
+  private readonly bugs: Beetle[] = [];
 
-  constructor(count: number, ctx: CritterContext, parent: THREE.Group) {
+  constructor(specs: readonly BeetleSpec[], ctx: CritterContext, parent: THREE.Group) {
     const mats = critterMaterials();
-    const elytron = ladybugElytron();
+    const total = specs.reduce((sum, spec) => sum + spec.count, 0);
     const wing = ladybugWing();
-    this.body = new InstancedPart(ladybugBody(), mats.glossy, count, { name: 'ladybug-body' });
-    this.elytraR = new InstancedPart(elytron, mats.paletteGloss, count, { name: 'ladybug-elytron-r', palette: true });
-    this.elytraL = new InstancedPart(mirrorX(elytron), mats.paletteGloss, count, { name: 'ladybug-elytron-l', palette: true });
-    this.wingR = new InstancedPart(wing, mats.glass, count, { name: 'ladybug-wing-r', castShadow: false, skipAO: true });
-    this.wingL = new InstancedPart(mirrorX(wing), mats.glass, count, { name: 'ladybug-wing-l', castShadow: false, skipAO: true });
-    this.legs = new InstancedPart(ladybugLeg(), mats.body, count * 6, { name: 'ladybug-legs', skipAO: true });
-    parent.add(this.body.mesh, this.elytraR.mesh, this.elytraL.mesh, this.wingR.mesh, this.wingL.mesh, this.legs.mesh);
-    for (let i = 0; i < count; i++) {
-      const slot = this.body.allocate();
-      this.elytraR.allocate();
-      this.elytraL.allocate();
-      this.wingR.allocate();
-      this.wingL.allocate();
-      const palette = LadybugPalettes[i % LadybugPalettes.length];
-      const a = new THREE.Color(palette.a);
-      const b = new THREE.Color(palette.b);
-      this.elytraR.setPalette(slot, a, b, a);
-      this.elytraL.setPalette(slot, a, b, a);
-      this.bugs.push({
-        slot,
-        legSlots: Array.from({ length: 6 }, () => this.legs.allocate()),
-        walker: new GroundWalker(3),
-        state: 'walk',
-        scale: ctx.rng.range(1.05, 1.3),
-        gait: ctx.rng.next() * 10,
-        open: 0,
-        urge: ctx.rng.range(10, 35),
-        spot: null,
-        check: 0,
-        timer: 0,
-        from: new THREE.Vector3(),
-        to: new THREE.Vector3(),
-        flightT: 0,
-        flightTime: 1,
-        arc: 1,
-        placed: false,
-      });
+    this.wingR = new InstancedPart(wing, mats.glass, total, { name: 'beetle-wing-r', castShadow: false, skipAO: true });
+    this.wingL = new InstancedPart(mirrorX(wing), mats.glass, total, { name: 'beetle-wing-l', castShadow: false, skipAO: true });
+    this.legs = new InstancedPart(ladybugLeg(), mats.body, total * 6, { name: 'beetle-legs', skipAO: true });
+    parent.add(this.wingR.mesh, this.wingL.mesh, this.legs.mesh);
+    for (const spec of specs) {
+      const palette = !!spec.palettes;
+      const elytraMaterial = palette ? mats.paletteGloss : mats.glossy;
+      const name = spec.collect?.id ?? 'ladybug';
+      const kind: BeetleKind = {
+        spec,
+        body: new InstancedPart(spec.body, mats.glossy, spec.count, { name: `${name}-body` }),
+        elytraR: new InstancedPart(spec.elytron, elytraMaterial, spec.count, { name: `${name}-elytron-r`, palette }),
+        elytraL: new InstancedPart(mirrorX(spec.elytron), elytraMaterial, spec.count, { name: `${name}-elytron-l`, palette }),
+        stuck: null,
+      };
+      parent.add(kind.body.mesh, kind.elytraR.mesh, kind.elytraL.mesh);
+      this.kinds.push(kind);
+      for (let i = 0; i < spec.count; i++) {
+        const slot = kind.body.allocate();
+        kind.elytraR.allocate();
+        kind.elytraL.allocate();
+        if (spec.palettes) {
+          const p = spec.palettes[i % spec.palettes.length];
+          const a = new THREE.Color(p.a);
+          const b = new THREE.Color(p.b);
+          kind.elytraR.setPalette(slot, a, b, a);
+          kind.elytraL.setPalette(slot, a, b, a);
+        }
+        this.bugs.push({
+          kind,
+          slot,
+          wingSlot: this.wingR.allocate(),
+          legSlots: Array.from({ length: 6 }, () => this.legs.allocate()),
+          walker: new GroundWalker(3),
+          state: 'walk',
+          scale: ctx.rng.range(spec.scale[0], spec.scale[1]),
+          gait: ctx.rng.next() * 10,
+          open: 0,
+          urge: ctx.rng.range(spec.urge[0] * 0.6, spec.urge[1] * 0.9),
+          spot: null,
+          check: 0,
+          timer: 0,
+          from: new THREE.Vector3(),
+          to: new THREE.Vector3(),
+          flightT: 0,
+          flightTime: 1,
+          arc: 1,
+          placed: false,
+          gone: 0,
+        });
+        this.wingL.allocate();
+      }
     }
   }
 
   /** Decide para onde voar: uma flor (ponto de pouso) ou outro canto do chão. */
-  private takeOff(bug: Ladybug, ctx: CritterContext): void {
+  private takeOff(bug: Beetle, ctx: CritterContext): void {
     if (bug.state !== 'walk' && bug.state !== 'perch') return;
     const w = bug.walker;
     bug.state = 'takeoff';
@@ -151,6 +201,15 @@ export class Ladybugs implements Species {
   update(dt: number, ctx: CritterContext): void {
     for (const bug of this.bugs) {
       const w = bug.walker;
+      const spec = bug.kind.spec;
+      if (bug.gone > 0) {
+        bug.gone -= dt;
+        this.hide(bug);
+        if (bug.gone > 0) continue;
+        bug.placed = false;
+        bug.state = 'walk';
+        bug.open = 0;
+      }
       if (!bug.placed || (bug.state === 'walk' && Math.hypot(w.position.x - ctx.world.player.x, w.position.z - ctx.world.player.z) > 40)) {
         bug.placed = w.relocate(ctx, bug.placed ? 18 : 5, bug.placed ? 30 : 24, true);
         if (!bug.placed) {
@@ -166,13 +225,21 @@ export class Ladybugs implements Species {
       switch (bug.state) {
         case 'walk': {
           bug.urge -= dt;
+          // Fedor irresistível: a vaquinha vai andando até a bola (e nem pensa em voar).
+          const hurry = spec.collect ? attraction(ctx, w.position.x, w.position.z, vAway) : 0;
+          if (hurry > 0) {
+            w.flee(vAway, 1);
+            w.step(dt, ctx, spec.walkSpeed * hurry * 1.4, 6);
+            shoveFromBall(ctx, w.position, 0.15, 0.15);
+            break;
+          }
           const danger = threatAt(ctx, w.position.x, w.position.y, w.position.z, vAway);
-          if (danger < 1.2 || bug.urge <= 0) {
-            bug.urge = ctx.rng.range(15, 40);
+          if (danger < spec.wary || bug.urge <= 0) {
+            bug.urge = ctx.rng.range(spec.urge[0], spec.urge[1]);
             this.takeOff(bug, ctx);
             break;
           }
-          w.step(dt, ctx, 0.55 * (1 - ctx.world.rain * 0.5));
+          w.step(dt, ctx, spec.walkSpeed * (1 - ctx.world.rain * 0.5));
           if (shoveFromBall(ctx, w.position, 0.2, 0.2)) this.takeOff(bug, ctx);
           break;
         }
@@ -195,7 +262,7 @@ export class Ladybugs implements Species {
           w.position.y += Math.sin(Math.PI * k) * bug.arc;
           w.yaw = dampAngle(w.yaw, Math.atan2(bug.to.x - bug.from.x, bug.to.z - bug.from.z), 8, dt);
           pitch = -0.55;
-          flap = Math.sin(t * 70 + bug.slot) * 0.65;
+          flap = Math.sin(t * 70 + bug.wingSlot) * 0.65;
           legsTucked = true;
           up = UP;
           if (k >= 1) {
@@ -224,7 +291,7 @@ export class Ladybugs implements Species {
           up = UP;
           bug.timer -= dt;
           bug.check -= dt;
-          w.yaw += Math.sin(t * 0.7 + bug.slot) * dt * 0.6;
+          w.yaw += Math.sin(t * 0.7 + bug.wingSlot) * dt * 0.6;
           if (bug.check <= 0) {
             bug.check = 0.3;
             if (bug.spot && !spotAlive(ctx, bug.spot)) bug.timer = 0;
@@ -235,34 +302,38 @@ export class Ladybugs implements Species {
       if (bug.state === 'walk') bug.gait += w.moved * 26;
       this.draw(bug, pitch, flap, legsTucked, up, t);
     }
-    this.body.flush();
-    this.elytraR.flush();
-    this.elytraL.flush();
+    for (const kind of this.kinds) {
+      kind.body.flush();
+      kind.elytraR.flush();
+      kind.elytraL.flush();
+    }
     this.wingR.flush();
     this.wingL.flush();
     this.legs.flush();
   }
 
-  private draw(bug: Ladybug, pitch: number, flap: number, tucked: boolean, up: THREE.Vector3, t: number): void {
+  private draw(bug: Beetle, pitch: number, flap: number, tucked: boolean, up: THREE.Vector3, t: number): void {
+    const kind = bug.kind;
+    const rig = kind.spec.rig;
     bug.walker.matrix(mRoot, bug.scale, 0, pitch, up);
-    this.body.set(bug.slot, mRoot);
+    kind.body.set(bug.slot, mRoot);
     const o = bug.open;
-    this.elytraR.set(bug.slot, jointMatrix(mRoot, LADYBUG_ELYTRA_PIVOT, 0.35 * o, -0.3 * o, 0.95 * o, mOut));
-    this.elytraL.set(bug.slot, jointMatrix(mRoot, LADYBUG_ELYTRA_PIVOT, 0.35 * o, 0.3 * o, -0.95 * o, mOut));
+    kind.elytraR.set(bug.slot, jointMatrix(mRoot, rig.elytraPivot, 0.35 * o, -0.3 * o, 0.95 * o, mOut));
+    kind.elytraL.set(bug.slot, jointMatrix(mRoot, rig.elytraPivot, 0.35 * o, 0.3 * o, -0.95 * o, mOut));
     const unfold = smoothstep(0.55, 1, o);
     if (unfold > 0.01) {
       const fold = (1 - unfold) * 1.2;
-      this.wingR.set(bug.slot, jointMatrix(mRoot, LADYBUG_WING_HINGE, 0, fold, flap, mOut, unfold, 1, unfold));
-      vHip.set(-LADYBUG_WING_HINGE.x, LADYBUG_WING_HINGE.y, LADYBUG_WING_HINGE.z);
-      this.wingL.set(bug.slot, jointMatrix(mRoot, vHip, 0, -fold, -flap, mOut, unfold, 1, unfold));
+      this.wingR.set(bug.wingSlot, jointMatrix(mRoot, rig.wingHinge, 0, fold, flap, mOut, unfold, 1, unfold));
+      vHip.set(-rig.wingHinge.x, rig.wingHinge.y, rig.wingHinge.z);
+      this.wingL.set(bug.wingSlot, jointMatrix(mRoot, vHip, 0, -fold, -flap, mOut, unfold, 1, unfold));
     } else {
-      this.wingR.hide(bug.slot);
-      this.wingL.hide(bug.slot);
+      this.wingR.hide(bug.wingSlot);
+      this.wingL.hide(bug.wingSlot);
     }
     const walking = bug.state === 'walk' && bug.walker.moved > 0;
     for (let i = 0; i < 6; i++) {
       const side = i < 3 ? 1 : -1;
-      const hip = LADYBUG_HIPS[i % 3];
+      const hip = rig.hips[i % 3];
       vHip.set(hip[0] * side, hip[1], hip[2]);
       const group = (i % 3 + (side > 0 ? 0 : 1)) % 2;
       const phase = bug.gait + group * Math.PI;
@@ -276,19 +347,59 @@ export class Ladybugs implements Species {
     }
   }
 
-  private hide(bug: Ladybug): void {
-    this.body.hide(bug.slot);
-    this.elytraR.hide(bug.slot);
-    this.elytraL.hide(bug.slot);
-    this.wingR.hide(bug.slot);
-    this.wingL.hide(bug.slot);
+  private hide(bug: Beetle): void {
+    bug.kind.body.hide(bug.slot);
+    bug.kind.elytraR.hide(bug.slot);
+    bug.kind.elytraL.hide(bug.slot);
+    this.wingR.hide(bug.wingSlot);
+    this.wingL.hide(bug.wingSlot);
     for (const s of bug.legSlots) this.legs.hide(s);
   }
 
   startle(position: THREE.Vector3, radius: number, ctx: CritterContext): void {
     for (const bug of this.bugs) {
-      if (bug.walker.position.distanceTo(position) < radius + 1.5) this.takeOff(bug, ctx);
+      if (bug.gone > 0 || bug.walker.position.distanceTo(position) > radius + bug.kind.spec.wary + 0.3) continue;
+      // Atraída pelo fedor, a vaquinha nem liga para o susto.
+      if (bug.state === 'walk' && bug.kind.spec.collect && attraction(ctx, bug.walker.position.x, bug.walker.position.z, vAway) > 0) continue;
+      this.takeOff(bug, ctx);
     }
+  }
+
+  /** Vaquinha no chão (andando, ou ainda abrindo as asas) encostando numa bola grande o bastante. */
+  collect(center: THREE.Vector3, radius: number): CollectedCritter | null {
+    for (const bug of this.bugs) {
+      const catchable = bug.kind.spec.collect;
+      if (!catchable || bug.gone > 0 || !bug.placed) continue;
+      const grounded = bug.state === 'walk' || (bug.state === 'takeoff' && bug.open < 0.8) || (bug.state === 'land' && !bug.spot);
+      if (!grounded) continue;
+      const p = bug.walker.position;
+      if (!ballTakes(center, radius, catchable.size, p.x, p.y + 0.08, p.z, 0.14 * bug.scale)) continue;
+      bug.walker.matrix(mRoot, bug.scale);
+      bug.gone = 30;
+      this.hide(bug);
+      return { id: catchable.id, object: collectedMesh(this.stuckPose(bug.kind), critterMaterials().glossy, mRoot), size: catchable.size, color: new THREE.Color(catchable.color) };
+    }
+    return null;
+  }
+
+  /** O besourinho parado (élitros fechados, patinhas no lugar) numa geometria só, com as cores assadas. */
+  private stuckPose(kind: BeetleKind): THREE.BufferGeometry {
+    if (kind.stuck) return kind.stuck;
+    const { rig, body, elytron } = kind.spec;
+    const identity = new THREE.Matrix4();
+    const at = (offset: THREE.Vector3, ry = 0) => jointMatrix(identity, offset, 0, ry, 0, new THREE.Matrix4());
+    const leg = this.legs.mesh.geometry;
+    const parts: Array<readonly [THREE.BufferGeometry, THREE.Matrix4]> = [
+      [body, identity],
+      [elytron, at(rig.elytraPivot)],
+      [kind.elytraL.mesh.geometry, at(rig.elytraPivot)],
+    ];
+    for (const hip of rig.hips) {
+      parts.push([leg, at(new THREE.Vector3(hip[0], hip[1], hip[2]))]);
+      parts.push([leg, at(new THREE.Vector3(-hip[0], hip[1], hip[2]), Math.PI)]);
+    }
+    kind.stuck = bakePose(parts);
+    return kind.stuck;
   }
 }
 
@@ -508,10 +619,17 @@ export class PillBugs implements Species {
         }
       }
       const danger = threatAt(ctx, w.position.x, w.position.y, w.position.z, vAway);
+      // Fedor irresistível: em vez de enrolar de medo, vem andando até a bola (e enrola quando ela encosta).
+      const hurry = attraction(ctx, w.position.x, w.position.z, vHip);
       switch (bug.state) {
         case 'walk':
-          if (danger < 1.4) this.curlUp(bug, ctx);
-          w.step(dt, ctx, 0.32, 4);
+          if (hurry > 0) {
+            w.flee(vHip, 1);
+            w.step(dt, ctx, 0.45 * hurry, 6);
+          } else {
+            if (danger < 1.4) this.curlUp(bug, ctx);
+            w.step(dt, ctx, 0.32, 4);
+          }
           bug.gait += w.moved * 45;
           if (shoveFromBall(ctx, w.position, 0.15, 0.2)) this.curlUp(bug, ctx);
           break;
@@ -522,7 +640,7 @@ export class PillBugs implements Species {
         case 'rolled':
           this.roll(bug, dt, ctx);
           bug.timer -= dt;
-          if (danger < 2) bug.timer = Math.max(bug.timer, 2.5);
+          if (danger < 2 && hurry === 0) bug.timer = Math.max(bug.timer, 2.5);
           if (bug.timer <= 0) bug.state = 'uncurl';
           break;
         case 'uncurl':
@@ -644,7 +762,7 @@ export class PillBugs implements Species {
       bug.state = 'gone';
       bug.timer = 25;
       this.hide(bug);
-      return { object: mesh, size: clamp(r * 2.6, 0.3, 0.45), color: new THREE.Color('#7d8594').multiply(bug.tint) };
+      return { id: 'pillbug', object: mesh, size: clamp(r * 2.6, 0.3, 0.45), color: new THREE.Color('#7d8594').multiply(bug.tint) };
     }
     return null;
   }
