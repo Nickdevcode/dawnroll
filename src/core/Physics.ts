@@ -16,6 +16,11 @@ export const Groups = {
   WORLD: 1 << 0,
   BALL: 1 << 1,
   PLAYER: 1 << 2,
+  /**
+   * Só a câmera enxerga: volume "macio" (pétala, folha, caule fino) que a bola e o
+   * besouro atravessam, mas onde a lente não pode entrar.
+   */
+  CAMERA: 1 << 3,
 } as const;
 
 export const interactionGroups = (membership: number, filter: number): number => ((membership & 0xffff) << 16) | (filter & 0xffff);

@@ -5,6 +5,40 @@ import { terrainHeight } from '../world/Terrain';
 const MIN_PITCH = -0.15;
 const MAX_PITCH = 1.2;
 const MOUSE_SENSITIVITY = 0.0028;
+/** Raio da "lente" nas consultas de colisão: maior que o plano de corte perto (nada raspa na tela). */
+export const CAMERA_PROBE_RADIUS = 0.3;
+/** Folga entre a lente e o obstáculo. */
+const OBSTACLE_MARGIN = 0.12;
+/**
+ * Nunca mais perto do foco que isso. Encurralada de verdade (besouro espremido
+ * entre coisas, sem espaço nem subindo), é melhor ficar colada nas costas do
+ * besouro do que com a lente dentro de um cogumelo.
+ */
+const MIN_DISTANCE = 0.45;
+/** Espremida mais que isso, a câmera tenta subir por cima do obstáculo. */
+const COMFORT_DISTANCE = 1.8;
+/** Degraus de "subir por cima" (rad somados ao ângulo vertical) e o teto disso. */
+const LIFT_STEPS = [0.25, 0.5, 0.75, 1];
+const MAX_LIFTED_PITCH = 1.45;
+
+/**
+ * O que a câmera consulta no mundo. Tudo com uma esfera do tamanho da lente
+ * (`CAMERA_PROBE_RADIUS`) varrida a partir do foco.
+ */
+export interface CameraCollision {
+  /** Distância até o primeiro sólido (pedra, tronco, objeto, chão) na direção `dir`, ou null se livre. */
+  cast(origin: THREE.Vector3, dir: THREE.Vector3, maxDistance: number): number | null;
+  /** O mesmo, só contra volumes macios (pétala, folha, caule): a lente não para dentro deles. */
+  castSoft(origin: THREE.Vector3, dir: THREE.Vector3, maxDistance: number): number | null;
+  /** A lente em `point` estaria dentro de um volume macio? */
+  insideSoft(point: THREE.Vector3): boolean;
+}
+
+/** A bola de bosta como obstáculo da câmera (esfera). */
+export interface CameraBall {
+  readonly center: THREE.Vector3;
+  radius: number;
+}
 
 /**
  * Câmera em órbita atrás do jogador, com mouse livre (pointer lock).
@@ -25,12 +59,15 @@ export class ThirdPersonCamera {
   private shakeTime = 0;
   /** Distância livre até o primeiro obstáculo atrás do foco (suavizada). */
   private clearance = 100;
+  /** Quanto a câmera subiu (rad) para passar por cima de um obstáculo colado nas costas do besouro. */
+  private occlusionLift = 0;
+  private readonly offset = new THREE.Vector3();
+  private readonly probe = new THREE.Vector3();
 
-  /**
-   * Consulta de obstáculo (pedra, cogumelo, tronco): distância do `origin` até o
-   * primeiro sólido na direção `dir`, ou null se o caminho estiver livre.
-   */
-  obstruction: ((origin: THREE.Vector3, dir: THREE.Vector3, maxDistance: number) => number | null) | null = null;
+  /** Consultas de obstáculo no mundo (sem isso a câmera atravessa tudo). */
+  collision: CameraCollision | null = null;
+  /** A bola de bosta (null enquanto ela está sendo enterrada: não é obstáculo). */
+  ball: CameraBall | null = null;
 
   constructor(private readonly camera: THREE.PerspectiveCamera) {}
 
@@ -96,16 +133,38 @@ export class ThirdPersonCamera {
 
     // Empurrando, a câmera sobe um pouco sozinha para enxergar a bola por cima do besouro.
     this.pushLift = damp(this.pushLift, pushing ? 1 : 0, 3, dt);
-    const pitch = Math.max(this.pitch, 0.55 * this.pushLift + this.pitch * (1 - this.pushLift));
-    const cosPitch = Math.cos(pitch);
-    const offset = new THREE.Vector3(Math.sin(this.yaw) * cosPitch, Math.sin(pitch), Math.cos(this.yaw) * cosPitch);
+    const basePitch = Math.max(this.pitch, 0.55 * this.pushLift + this.pitch * (1 - this.pushLift));
+
+    // Obstáculo colado nas costas (pedra, vaso, a própria bola): em vez de enfiar a lente
+    // no besouro, a câmera sobe por cima (sobe rápido, desce devagar).
+    const comfort = Math.min(COMFORT_DISTANCE, this.distance);
+    let targetLift = 0;
+    if (this.collision && this.allowedDistance(basePitch) < comfort) {
+      for (const lift of LIFT_STEPS) {
+        if (basePitch + lift > MAX_LIFTED_PITCH) break;
+        targetLift = lift;
+        if (this.allowedDistance(basePitch + lift) >= comfort) break;
+      }
+    }
+    this.occlusionLift = damp(this.occlusionLift, targetLift, targetLift > this.occlusionLift ? 6 : 1.2, dt);
+    const offset = this.direction(basePitch + this.occlusionLift).clone();
 
     // Sólido entre o foco e a câmera: encurta a distância (entra rápido, sai devagar)
-    // para a lente nunca parar dentro de uma pedra.
-    const hit = this.obstruction?.(this.focus, offset, this.distance + 0.5) ?? null;
-    const free = hit === null ? this.distance + 2 : Math.max(hit - 0.45, 1.6);
+    // para a lente nunca parar dentro de uma pedra, de um brinquedo ou da bola.
+    const free = this.allowedDistance(basePitch + this.occlusionLift);
     this.clearance = free < this.clearance ? free : damp(Math.min(this.clearance, this.distance + 2), free, 2.5, dt);
-    const position = new THREE.Vector3().copy(this.focus).addScaledVector(offset, Math.min(this.distance, this.clearance));
+    let distance = Math.min(this.distance, this.clearance);
+
+    // Folhagem (pétala, folha, caule) não empurra a câmera só por passar na frente,
+    // mas a lente nunca termina DENTRO dela: aí encosta antes.
+    if (this.collision) {
+      const soft = this.collision.castSoft(this.focus, offset, distance);
+      if (soft !== null && this.collision.insideSoft(this.probe.copy(this.focus).addScaledVector(offset, distance))) {
+        distance = Math.max(soft - OBSTACLE_MARGIN, MIN_DISTANCE);
+        this.clearance = Math.min(this.clearance, distance);
+      }
+    }
+    const position = new THREE.Vector3().copy(this.focus).addScaledVector(offset, distance);
 
     // Não deixa a câmera entrar no chão.
     const ground = terrainHeight(position.x, position.z) + 0.45;
@@ -123,5 +182,42 @@ export class ThirdPersonCamera {
       this.camera.rotation.z += Math.sin(this.shakeTime * 53 + 2.1) * s * 0.06;
       this.shakeAmount = damp(this.shakeAmount, 0, 9, dt);
     }
+  }
+
+  /** Direção do foco para a câmera num ângulo vertical. */
+  private direction(pitch: number): THREE.Vector3 {
+    const cosPitch = Math.cos(pitch);
+    return this.offset.set(Math.sin(this.yaw) * cosPitch, Math.sin(pitch), Math.cos(this.yaw) * cosPitch);
+  }
+
+  /** Até onde a câmera pode recuar do foco nesse ângulo vertical sem entrar em sólido nem na bola. */
+  private allowedDistance(pitch: number): number {
+    const dir = this.direction(pitch);
+    let allowed = this.distance + 2;
+    const hit = this.collision?.cast(this.focus, dir, this.distance + 0.5) ?? null;
+    if (hit !== null) allowed = Math.min(allowed, hit - OBSTACLE_MARGIN);
+    const ball = this.ballEntry(dir);
+    if (ball !== null) allowed = Math.min(allowed, ball - OBSTACLE_MARGIN);
+    return Math.max(allowed, MIN_DISTANCE);
+  }
+
+  /**
+   * Distância em que a lente, saindo do foco na direção `dir`, encosta na bola
+   * (esfera com os itens grudados por fora), ou null. Foco dentro da bola (a
+   * gigante sendo empurrada): a câmera sai por trás, a bola não barra.
+   */
+  private ballEntry(dir: THREE.Vector3): number | null {
+    const ball = this.ball;
+    if (!ball) return null;
+    const r = ball.radius * 1.08 + CAMERA_PROBE_RADIUS;
+    const mx = this.focus.x - ball.center.x;
+    const my = this.focus.y - ball.center.y;
+    const mz = this.focus.z - ball.center.z;
+    const b = mx * dir.x + my * dir.y + mz * dir.z;
+    const c = mx * mx + my * my + mz * mz - r * r;
+    if (c <= 0 || b > 0) return null;
+    const disc = b * b - c;
+    if (disc < 0) return null;
+    return -b - Math.sqrt(disc);
   }
 }

@@ -583,5 +583,5 @@ export const en: Messages = {
   'skin.moon.desc': 'Night-silver, for whoever answers the Sun’s request.',
   'skin.khepri.name': 'Khepri',
   'skin.khepri.desc': 'Golden like the sun the scarab god rolls across the sky.',
-  'help.zones': 'Look for the three corners: the picnic, the toy corner and the gardener’s corner, where the gnome lives.',
+  'help.zones': 'Look for the three corners: the picnic, the toy corner and the gardener’s corner. Every round the garden rearranges itself.',
 };

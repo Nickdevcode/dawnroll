@@ -5,6 +5,7 @@ import { createRng } from '../utils/math';
 import { dirtAmount, terrainHeight } from '../world/Terrain';
 import { leafGeometry } from '../world/scenery/shapes';
 import type { StinkSource } from '../world/Collectibles';
+import type { ZoneSite } from '../world/zones';
 import { SoftParticles } from './SoftParticles';
 import { ChunkParticles } from './ChunkParticles';
 import { BallTrail } from './BallTrail';
@@ -57,6 +58,10 @@ export interface EffectsOptions {
   rainSplashes: number;
   landingSpots: THREE.Vector3[];
   isGroundFree: GroundFilter;
+  /** O cantinho do piquenique do jardim atual (as formigas fazem trilha até a toalha). */
+  picnic: ZoneSite | undefined;
+  /** Semente dos bichos do jardim atual (cada jardim tem os seus). */
+  critterSeed: number;
   /** Onde uma gota bate (chão ou superfície da poça). */
   surface: SurfaceProbe;
   /** Quem escuta o barulho dos bichos (o áudio do jogo). */
@@ -105,7 +110,12 @@ export class Effects {
   private readonly leaves: ChunkParticles;
   private readonly trail = new BallTrail();
   private readonly motes: AmbientMotes;
-  private readonly critters: Critters;
+  private critters: Critters;
+  private readonly critterCount: number;
+  private readonly critterSounds: CritterSounds | undefined;
+  /** Estado dos bichos que passa de um jardim para o outro. */
+  private menuNight = true;
+  private attract: AttractLevel = 0;
   private readonly fireflies: Fireflies;
   private readonly rain: Rain;
   private readonly surface: SurfaceProbe;
@@ -136,7 +146,9 @@ export class Effects {
     leafGeo.translate(0, 0, -0.5);
     this.leaves = new ChunkParticles(leafGeo, clay(0xffffff, { vertexColors: true, roughness: 0.7, sheen: 0.55, bump: 0.2, side: THREE.DoubleSide }), 48);
     this.motes = new AmbientMotes(options.motes);
-    this.critters = new Critters(options.critters, options.landingSpots, options.isGroundFree, options.sounds);
+    this.critterCount = options.critters;
+    this.critterSounds = options.sounds;
+    this.critters = this.createCritters(options.landingSpots, options.isGroundFree, options.picnic, options.critterSeed);
     this.critters.onEvent = (event) => this.onCritterEvent?.(event);
     // ~40 vaga-lumes no PC; menos no celular (o orçamento de bichos é menor).
     this.fireflies = new Fireflies(Math.min(40, Math.round(options.critters * 1.25)));
@@ -185,7 +197,29 @@ export class Effects {
 
   /** Poder "Fedor irresistível": 0 = normal; 1 e 2 = bichos que grudam vêm até a bola (2: de mais longe e mais rápido). */
   setAttract(level: AttractLevel): void {
+    this.attract = level;
     this.critters.setAttract(level);
+  }
+
+  /**
+   * Bichos de um jardim novo (ainda fora da cena): pousam nas flores dele, fazem
+   * teia entre elas, trilha de formiga até a toalha dele. Entram com `swapCritters`.
+   */
+  createCritters(landingSpots: THREE.Vector3[], isGroundFree: GroundFilter, picnic: ZoneSite | undefined, seed: number): Critters {
+    return new Critters(this.critterCount, landingSpots, isGroundFree, picnic, this.critterSounds, seed);
+  }
+
+  /** Troca os bichos pelos do jardim novo; devolve os antigos (já fora da cena) para serem descartados. */
+  swapCritters(next: Critters): Critters {
+    const old = this.critters;
+    old.onEvent = null;
+    this.group.remove(old.group);
+    next.onEvent = (event) => this.onCritterEvent?.(event);
+    next.setMenu(this.menuNight);
+    next.setAttract(this.attract);
+    this.critters = next;
+    this.group.add(next.group);
+    return old;
   }
 
   /** Poder "Formigueiro amigo": formigas no raio largam a folhinha; devolve onde cada folha caiu (mundo). */
@@ -195,6 +229,7 @@ export class Effects {
 
   /** Madrugada do menu: vaga-lumes acendem e as visitas de dia (beija-flor, revoada) esperam. */
   setMenuNight(on: boolean): void {
+    this.menuNight = on;
     this.fireflies.setActive(on);
     this.critters.setMenu(on);
   }

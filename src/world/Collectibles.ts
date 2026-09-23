@@ -10,7 +10,7 @@ import { leafGeometry, latheGeometry, smoothProfile } from './scenery/shapes';
 import { terrainHeight, PLAY_RADIUS } from './Terrain';
 import type { Scenery } from './Scenery';
 import type { DungBall } from '../entities/DungBall';
-import { zoneOf, type ZoneKind } from './zones';
+import type { ZoneKind } from './zones';
 import {
   brickGeometry,
   buttonGeometry,
@@ -413,11 +413,22 @@ export class Collectibles {
     this.flyWingPool.hide(fly.wingSlots[1]);
   }
 
-  /** Rodada nova: todo montinho que foi comido volta para o jardim de uma vez (e a tralha extra some). */
-  respawnAll(player: THREE.Vector3): void {
-    for (const pile of this.piles) {
-      if (pile.state !== 'idle') this.respawnPile(pile, player);
+  /**
+   * Jardim novo (outra rodada, outro sorteio): cada montinho e cada detrito vai
+   * para um lugar livre do jardim novo — os lugares antigos podem ter virado
+   * pedra, toalha ou cantinho. A tralha extra dos poderes some.
+   */
+  relayout(player: THREE.Vector3): void {
+    for (const pile of this.piles) this.placePile(pile, this.randomFreeSpot(6, PLAY_RADIUS - 2, 0.6, player, 8));
+    for (let i = 0; i < this.debris.length; i++) {
+      const item = this.debris[i];
+      if (item.active) this.discard(item);
+      this.debris[i] = this.spawnDebris(player);
     }
+    this.clearExtras();
+  }
+
+  private clearExtras(): void {
     for (let i = 0; i < this.extras.length; i++) {
       const extra = this.extras[i];
       if (extra) this.discard(extra);
@@ -587,7 +598,7 @@ export class Collectibles {
 
   /** Ponto livre dentro de um cantinho (em cima da toalha vale; dentro de objeto, não). */
   private zoneSpot(kind: ZoneKind, size: number, avoid?: THREE.Vector3): THREE.Vector2 | null {
-    const zone = zoneOf(kind);
+    const zone = this.scenery.zoneOf(kind);
     if (!zone) return null;
     for (let i = 0; i < 30; i++) {
       const a = this.rng.next() * Math.PI * 2;

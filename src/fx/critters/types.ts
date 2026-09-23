@@ -1,6 +1,7 @@
 import type * as THREE from 'three';
 import type { Rng } from '../../utils/math';
 import type { CatalogId } from '../../progression/catalog';
+import type { ZoneSite } from '../../world/zones';
 
 /** Onde o bicho pode andar no chão (fora de pedras, troncos...). */
 export type GroundFilter = (x: number, z: number) => boolean;
@@ -76,6 +77,8 @@ export interface CritterContext {
   /** Pontos de pouso VIVOS (entradas somem quando a flor é arrancada e voltam na rodada nova). */
   readonly spots: THREE.Vector3[];
   readonly isGroundFree: GroundFilter;
+  /** O cantinho do piquenique deste jardim (as formigas fazem trilha até a toalha), se houver. */
+  readonly picnic: ZoneSite | undefined;
   world: CritterWorld;
   /** Relógio próprio dos bichos (segundos). */
   time: number;

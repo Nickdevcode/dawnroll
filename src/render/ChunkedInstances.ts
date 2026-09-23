@@ -89,6 +89,16 @@ export class ChunkedInstances {
     }
   }
 
+  /**
+   * Libera as instâncias (matrizes e cores na GPU). A geometria e o material são
+   * de quem criou (e costumam continuar em uso por outro plantio).
+   */
+  dispose(): void {
+    this.group.removeFromParent();
+    for (const chunk of this.chunks) chunk.mesh.dispose();
+    this.chunks.length = 0;
+  }
+
   /** Fração desenhada (qualidade adaptativa). */
   setDensity(density: number): void {
     this.density = THREE.MathUtils.clamp(density, 0.05, 1);

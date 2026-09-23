@@ -113,6 +113,15 @@ export class Pickables {
     private readonly scenery: Scenery,
   ) {}
 
+  /**
+   * Jardim novo: as geometrias assadas eram dos objetos do jardim antigo (os ids
+   * recomeçam do zero no novo). Chamar depois que a bola nova nasceu limpa.
+   */
+  reset(): void {
+    for (const geometry of this.baked.values()) geometry.dispose();
+    this.baked.clear();
+  }
+
   /** Passo fixo: encostou e cabe = arranca; encostou e não cabe = avisa. */
   fixedUpdate(ball: DungBall, random: () => number = Math.random): void {
     this.blockedBySize = 0;

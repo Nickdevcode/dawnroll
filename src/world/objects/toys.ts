@@ -9,12 +9,13 @@ import { latheGeometry, smoothProfile } from '../scenery/shapes';
 import type { SceneryContext } from '../scenery/context';
 import type { ZoneSite } from '../zones';
 import { addObject, attachCollider, restOnGround, settle, toWorld, zoneFrame, type ModelPart } from './common';
+import { Footprints, type LostItem } from './compose';
 import { polarOutline, slab, warp } from './forms';
 
 /**
- * Cantinho dos brinquedos: um pelotão de soldadinhos verdes (um caído),
- * carrinhos (um capotado), patinhos de borracha (um na beira da poça) e o lugar
- * das bolas de tênis (que são soltas, com física: ver `LooseObjects`).
+ * Cantinho dos brinquedos: soldadinhos verdes (alguns caídos), carrinhos (de pé,
+ * capotados, de lado), patinhos de borracha (um na beira da poça) e o lugar das
+ * bolas de tênis (que são soltas, com física: ver `LooseObjects`).
  */
 
 const UP = new THREE.Vector3(0, 1, 0);
@@ -403,10 +404,19 @@ export function buildDuck(ctx: SceneryContext, x: number, z: number, yaw: number
 
 // --- A cena ---------------------------------------------------------------------
 
-/** Onde as bolas de tênis (soltas, com física) começam cada rodada. */
-export function tennisBallSpots(zone: ZoneSite): THREE.Vector2[] {
-  const frame = zoneFrame(zone);
-  return [frame.point(6.0, 3.2), frame.point(-3.4, -6.8)];
+/** Quantos de cada brinquedo o cantinho tem (somando os que ficam perdidos pelo jardim). */
+const SOLDIERS = 6;
+const CARS = 3;
+const TENNIS_BALLS = 2;
+/** Chance de um brinquedo ter ficado esquecido longe do cantinho (vai para `lost`). */
+const FORGOTTEN_CHANCE = 0.6;
+/** Carrinho no chão: meio-comprimento e meia-largura (ocupa uma cápsula). */
+const CAR_FOOTPRINT = { halfLength: CAR_LENGTH / 2, radius: 1.1 };
+
+/** Pose sorteada de um carrinho largado (a maioria em pé). */
+function randomCarPose(rng: SceneryContext['rng']): CarPose {
+  const roll = rng.next();
+  return roll < 0.6 ? 'upright' : roll < 0.85 ? 'upsideDown' : 'onSide';
 }
 
 /**
@@ -427,44 +437,87 @@ function puddleForDuck(zone: ZoneSite): THREE.Vector2 | null {
   return best;
 }
 
-export function buildToyCorner(ctx: SceneryContext, zone: ZoneSite): void {
+/**
+ * Monta o cantinho, sorteado a cada jardim e com folga entre as coisas (bagunça
+ * de criança largada, não vitrine): soldadinhos em grupinhos de 1 a 3 (alguns
+ * caídos), carrinhos em poses soltas, um patinho no cantinho e outro na beira
+ * da poça mais perto. Às vezes um brinquedo ficou esquecido longe daqui (entra
+ * em `lost`). Devolve onde as bolas de tênis (soltas, com física) começam.
+ * Um passo (`yield`) por objeto.
+ */
+export function* buildToyCorner(ctx: SceneryContext, zone: ZoneSite, lost: LostItem[]): Generator<void, THREE.Vector2[]> {
   const { rng } = ctx;
   const frame = zoneFrame(zone);
+  const taken = new Footprints(zone);
 
-  // Pelotão avançando para quem chega (em formação solta) e um caído do lado.
-  const squad: Array<[number, number, number]> = [
-    [-2.6, 0.6, 0],
-    [-1.0, 1.9, 1],
-    [0.8, 0.8, 0],
-    [-2.0, 3.4, 1],
-    [0.3, 3.6, 0],
-  ];
-  for (const [across, along, pose] of squad) {
-    const p = frame.point(across, along);
-    buildSoldier(ctx, p.x, p.y, frame.yaw(rng.range(-0.35, 0.35)), pose);
-  }
-  const fallen = frame.point(2.3, 2.8);
-  buildSoldier(ctx, fallen.x, fallen.y, frame.yaw(1.9), 0, true);
-
-  const cars: Array<[number, number, number, CarPose]> = [
-    [4.8, -2.2, 0.7, 'upright'],
-    [-5.6, -2.8, -0.4, 'upsideDown'],
-    [1.2, -5.6, 1.9, 'upright'],
-  ];
-  for (const [across, along, yaw, pose] of cars) {
-    const p = frame.point(across, along);
-    buildToyCar(ctx, p.x, p.y, frame.yaw(yaw), pose);
+  let soldiers = SOLDIERS;
+  let cars = CARS;
+  if (rng.next() < FORGOTTEN_CHANCE) {
+    const forgotten: LostItem = rng.next() < 0.6 ? 'soldier' : 'toyCar';
+    lost.push(forgotten);
+    if (forgotten === 'soldier') soldiers--;
+    else cars--;
   }
 
-  const inZone = frame.point(-6.2, 3.4);
-  buildDuck(ctx, inZone.x, inZone.y, frame.yaw(0.5));
+  // Bolas de tênis primeiro (rolam: precisam de chão livre em volta).
+  const tennis: THREE.Vector2[] = [];
+  for (let i = 0; i < TENNIS_BALLS; i++) {
+    const p = taken.spot(rng, 1.9, { gap: 1.2 });
+    if (p) tennis.push(p);
+  }
+
+  for (let i = 0; i < cars; i++) {
+    const yaw = rng.range(0, Math.PI * 2);
+    const p = taken.spot(rng, CAR_FOOTPRINT.radius, { gap: 1.4, capsule: { yaw, halfLength: CAR_FOOTPRINT.halfLength } });
+    if (!p) continue;
+    buildToyCar(ctx, p.x, p.y, yaw, randomCarPose(rng));
+    yield;
+  }
+
+  // Soldadinhos em grupinhos (um pelotão desfeito): o primeiro sorteia o lugar, os outros ficam por perto.
+  let left = soldiers;
+  while (left > 0) {
+    const group = Math.min(left, 1 + Math.floor(rng.next() * 3));
+    left -= group;
+    const anchor = taken.spot(rng, 0.6, { gap: 1.6 });
+    if (!anchor) continue;
+    const heading = frame.yaw(rng.range(-0.6, 0.6));
+    for (let k = 0; k < group; k++) {
+      const fallen = rng.next() < 0.25;
+      let x = anchor.x;
+      let z = anchor.y;
+      if (k > 0) {
+        let placed = false;
+        for (let tries = 0; tries < 12 && !placed; tries++) {
+          const a = rng.next() * Math.PI * 2;
+          const d = rng.range(1.3, 2.4);
+          x = anchor.x + Math.cos(a) * d;
+          z = anchor.y + Math.sin(a) * d;
+          placed = taken.fits(x, z, 0.6, 0.3) && Math.hypot(x - zone.x, z - zone.z) < zone.radius - 1;
+        }
+        if (!placed) continue;
+        taken.add(x, z, 0.6);
+      }
+      buildSoldier(ctx, x, z, fallen ? rng.range(0, Math.PI * 2) : heading + rng.range(-0.35, 0.35), Math.floor(rng.next() * SoldierPoses.length), fallen);
+      yield;
+    }
+  }
+
+  const inZone = taken.spot(rng, 1.4, { gap: 1 });
+  if (inZone) {
+    buildDuck(ctx, inZone.x, inZone.y, frame.yaw(rng.range(-0.8, 0.8)));
+    yield;
+  }
   const byPuddle = puddleForDuck(zone);
   if (byPuddle) {
     // O patinho da poça olha para a água.
     const puddle = PUDDLES.reduce((a, b) => (Math.hypot(a.x - byPuddle.x, a.z - byPuddle.y) < Math.hypot(b.x - byPuddle.x, b.z - byPuddle.y) ? a : b));
     buildDuck(ctx, byPuddle.x, byPuddle.y, Math.atan2(puddle.x - byPuddle.x, puddle.z - byPuddle.y));
+    // Fora do cantinho: reserva o chão para a natureza não nascer em cima dele.
+    ctx.reserve(byPuddle.x, byPuddle.y, 1.6);
   } else {
-    const p = frame.point(5.6, -4.6);
-    buildDuck(ctx, p.x, p.y, frame.yaw(-0.6));
+    const p = taken.spot(rng, 1.4, { gap: 1 });
+    if (p) buildDuck(ctx, p.x, p.y, frame.yaw(rng.range(-0.8, 0.8)));
   }
+  return tennis;
 }

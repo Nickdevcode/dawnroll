@@ -155,9 +155,21 @@ export class StaticBatch {
 
   /** Funde tudo. Depois disso o lote está vazio (os removíveis continuam em `removables`). */
   build(): THREE.Group {
+    const steps = this.buildSteps();
+    let step = steps.next();
+    while (!step.done) step = steps.next();
+    return step.value;
+  }
+
+  /**
+   * O mesmo `build`, um balde por passo: dá para fundir o lote aos poucos entre
+   * dois quadros (o jardim da próxima rodada se monta enquanto o jogo roda).
+   */
+  *buildSteps(): Generator<void, THREE.Group> {
     const group = new THREE.Group();
     group.name = 'static-batch';
     for (const bucket of this.buckets.values()) {
+      yield;
       // mergeGeometries concatena os índices na ordem das peças: dá para saber onde cada uma caiu.
       const counts = bucket.parts.map((g) => g.getIndex()!.count);
       const merged = mergeGeometries(bucket.parts, false);

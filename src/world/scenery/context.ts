@@ -77,6 +77,8 @@ export interface SceneryContext {
   addPickable(spec: PickableSpec): void;
   /** Chão coberto por algo chato (grama não atravessa; ver `CoverArea`). */
   addCover(area: CoverArea): void;
+  /** Reserva um círculo do chão: o sorteio do jardim não põe outra coisa em cima. */
+  reserve(x: number, z: number, radius: number): void;
 }
 
 /** Volume de uma esfera — atalho para o "quanto engorda" dos arrancáveis. */

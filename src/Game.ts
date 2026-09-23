@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { Physics, FIXED_DT, RAPIER, Groups, interactionGroups } from './core/Physics';
 import { Input } from './core/Input';
-import { ThirdPersonCamera } from './core/ThirdPersonCamera';
+import { ThirdPersonCamera, CAMERA_PROBE_RADIUS, type CameraBall } from './core/ThirdPersonCamera';
 import { loadSave, writeSave, type SaveData } from './core/save';
 import { settings, nativePixelRatio, type GameSettings } from './core/settings';
 import { Graphics, type RenderOptions } from './render/Graphics';
@@ -21,6 +21,9 @@ import { sphereVolume } from './world/scenery/context';
 import { DungBall, START_RADIUS } from './entities/DungBall';
 import { Beetle } from './entities/Beetle';
 import { Effects, type CritterEvent, type EffectsFrame } from './fx/Effects';
+import type { Critters } from './fx/critters/Critters';
+import type { ChunkedInstances } from './render/ChunkedInstances';
+import { disposeReplaced } from './render/dispose';
 import type { SurfaceProbe } from './fx/Rain';
 import { GameAudio } from './audio/GameAudio';
 import type { AudioFrame } from './audio/frame';
@@ -49,7 +52,7 @@ import type { RoundRequest } from './progression/requests';
 import { skin, type SkinId } from './progression/skins';
 import { quality } from './core/device';
 import { GRAVITY } from './core/Physics';
-import { clamp } from './utils/math';
+import { clamp, mixSeed, randomSeed } from './utils/math';
 
 /** Evita "espiral da morte" quando a aba volta do segundo plano. */
 const MAX_FRAME_TIME = 0.1;
@@ -78,6 +81,28 @@ const BUMP_COOLDOWN = 0.6;
 const ANT_FRIEND_INTERVAL = 0.9;
 /** O que cai de cada coisa grande demais quando a bola bate forte nela (poder Trombada). */
 const BUMP_DEBRIS: Record<PickableKind, DebrisMaterial> = { flower: 'petal', mushroom: 'leaf', rock: 'pebble', log: 'twig', object: 'pebble' };
+/**
+ * Quanto tempo por quadro a montagem do jardim da próxima rodada pode usar (ms):
+ * pouquinho jogando (ela começa logo que a rodada começa), mais no menu e no enterro.
+ */
+const GardenBudget = { playing: 2.5, burying: 8, paused: 10 } as const;
+/** Quadros até descartar o que saiu de cena (o substituto já foi desenhado: nada recompila). */
+const DISPOSE_AFTER_FRAMES = 3;
+/** Sorteios derivados da semente do jardim (grama, cobertura e bichos de cada jardim). */
+const GardenSalt = { grass: 11, cover: 12, critters: 13 } as const;
+
+/**
+ * Semente do primeiro jardim: nova a cada vez que o jogo abre. Em desenvolvimento,
+ * `?seed=123` na URL repete um jardim (para reproduzir um bug).
+ */
+function initialSeed(): number {
+  if (import.meta.env.DEV) {
+    const forced = Number(new URLSearchParams(location.search).get('seed'));
+    if (Number.isFinite(forced) && forced > 0) return forced >>> 0;
+  }
+  return randomSeed();
+}
+
 /** Cor → família (pedidos de cor); reaproveitado a cada coleta. */
 const tmpHsl = { h: 0, s: 0, l: 0 };
 
@@ -93,7 +118,7 @@ const nextFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() 
 
 /**
  * Orquestra tudo: laço de jogo com física em passo fixo + render interpolado,
- * rodadas (crescer → enterrar na toca → jardim refeito), clima, dicas, efeitos
+ * rodadas (crescer → enterrar na toca → jardim novo, sorteado de novo), clima, dicas, efeitos
  * e qualidade adaptativa.
  */
 export class Game {
@@ -108,6 +133,7 @@ export class Game {
   private readonly progression = new Progression(this.save, () => writeSave(this.save));
 
   private physics!: Physics;
+  private terrain!: Terrain;
   private grass!: Grass;
   private groundCover!: GroundCover;
   private scenery!: Scenery;
@@ -182,6 +208,16 @@ export class Game {
   private readonly frameInfo: EffectsFrame;
   private readonly audioFrame: AudioFrame;
   private readonly surfaceHit = { y: 0, water: false, normal: new THREE.Vector3(0, 1, 0) };
+  private readonly cameraBall: CameraBall = { center: new THREE.Vector3(), radius: START_RADIUS };
+
+  /** Montagem aos poucos do jardim da próxima rodada (começa quando a bola cai na toca). */
+  private gardenJob: Generator<void, void> | null = null;
+  /** A bola caiu na toca: a montagem acelera e os bichos do jardim novo podem nascer (é o passo mais pesado). */
+  private gardenRush = false;
+  /** Grama, cobertura e bichos já plantados para o jardim novo, esperando a troca. */
+  private gardenParts: { grass: ChunkedInstances; cover: ChunkedInstances[]; critters: Critters } | null = null;
+  /** O que saiu de cena e ainda vai ser descartado (depois de o substituto aparecer). */
+  private readonly disposals: Array<{ frames: number; run: () => void }> = [];
 
   constructor(private readonly canvas: HTMLCanvasElement, uiRoot: HTMLElement) {
     this.graphics = new Graphics(canvas);
@@ -288,22 +324,23 @@ export class Game {
     boot.step(0.26, 'loader.terrain');
     await nextFrame();
 
-    const terrain = new Terrain(this.physics, quality.terrainSegments);
-    scene.add(terrain.mesh);
+    this.terrain = new Terrain(this.physics, quality.terrainSegments);
+    scene.add(this.terrain.mesh);
     boot.step(0.4, 'loader.garden');
     await nextFrame();
 
-    this.scenery = new Scenery(this.physics, quality.decorDensity);
+    // Cada vez que o jogo abre o jardim é outro (e cada rodada sorteia um novo).
+    const seed = initialSeed();
+    this.scenery = new Scenery(this.physics, quality.decorDensity, seed);
     scene.add(this.scenery.group);
-    terrain.paintContactShade(this.scenery.shades);
+    this.terrain.paintContactShade(this.scenery.shades);
     boot.step(0.6, 'loader.grass');
     await nextFrame();
 
     // Grama e enfeites não nascem dentro de pedra/tronco nem em cima da toalha de piquenique.
-    const solidAt = (margin: number) => (x: number, z: number) => this.scenery.isInsideSolid(x, z, margin) || this.scenery.isCovered(x, z, margin);
-    this.grass = new Grass(quality.grassCount, solidAt(0.1));
+    this.grass = new Grass(quality.grassCount, this.scenery.groundBlocker(0.1), mixSeed(seed, GardenSalt.grass));
     scene.add(this.grass.group);
-    this.groundCover = new GroundCover(quality.decorDensity, solidAt(0.25));
+    this.groundCover = new GroundCover(quality.decorDensity, this.scenery.groundBlocker(0.25), mixSeed(seed, GardenSalt.cover));
     scene.add(this.groundCover.group);
     boot.step(0.74, 'loader.critters');
     await nextFrame();
@@ -343,7 +380,9 @@ export class Game {
       rainDrops: quality.rainDrops,
       rainSplashes: quality.rainSplashes,
       landingSpots: this.scenery.landingSpots,
-      isGroundFree: (x, z) => !this.scenery.isInsideSolid(x, z, 0.5) && !this.scenery.isDug(x, z),
+      isGroundFree: this.scenery.critterGround(),
+      picnic: this.scenery.zoneOf('picnic'),
+      critterSeed: mixSeed(seed, GardenSalt.critters),
       surface,
       sounds: this.audio.critterSounds,
     });
@@ -366,6 +405,8 @@ export class Game {
     settings.subscribe((s, changed) => this.applySettings(s, changed));
     void boot.finish();
     this.menu.setReady();
+    // O jardim da segunda rodada já vai nascendo (no menu sobra tempo).
+    this.prepareNextGarden();
     this.hud.setBall(this.ball.diameterCm, 0, 0);
     this.hud.setProgress(this.save);
     this.menu.setProgress(this.save);
@@ -431,6 +472,9 @@ export class Game {
     };
 
     this.burrow.onBurialStart = (at, radius) => {
+      // Enquanto a bola afunda, o jardim da próxima rodada termina de se montar.
+      if (!this.scenery.hasNext) this.prepareNextGarden();
+      this.gardenRush = true;
       // Antes do passo do besouro: ele ainda está em cima da bola se entregou montado.
       this.buriedWhileRiding = this.beetle.riding;
       this.audio.burialStart(at, radius);
@@ -586,16 +630,125 @@ export class Game {
     }
   }
 
-  /** A câmera consulta a física para não atravessar o cenário (só sólidos do mundo). */
+  /**
+   * A câmera consulta a física com uma esfera do tamanho da lente: sólidos do
+   * mundo (chão, pedras, objetos, bolas de tênis) barram; volumes macios
+   * (pétalas, folhas, caules: grupo só da câmera) ela só não pode invadir.
+   */
   private wireCameraCollision(): void {
-    const ray = new RAPIER.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 1 });
-    const groups = interactionGroups(Groups.PLAYER, Groups.WORLD);
-    this.cameraRig.obstruction = (origin, dir, maxDistance) => {
-      ray.origin = { x: origin.x, y: origin.y, z: origin.z };
-      ray.dir = { x: dir.x, y: dir.y, z: dir.z };
-      const hit = this.physics.world.castRay(ray, maxDistance, true, undefined, groups);
-      return hit ? hit.timeOfImpact : null;
+    const world = this.physics.world;
+    const shape = new RAPIER.Ball(CAMERA_PROBE_RADIUS);
+    const rotation = { x: 0, y: 0, z: 0, w: 1 };
+    // O besouro não entra (o PLAYER da consulta só serve para as bolas de tênis, que filtram por ele).
+    const solid = interactionGroups(Groups.PLAYER | Groups.CAMERA, Groups.WORLD);
+    const soft = interactionGroups(Groups.CAMERA, Groups.CAMERA);
+    const cast = (groups: number) => (origin: THREE.Vector3, dir: THREE.Vector3, maxDistance: number) => {
+      const hit = world.castShape(origin, rotation, dir, shape, 0, maxDistance, false, undefined, groups);
+      return hit ? hit.time_of_impact : null;
     };
+    this.cameraRig.collision = {
+      cast: cast(solid),
+      castSoft: cast(soft),
+      insideSoft: (point) => {
+        let inside = false;
+        world.intersectionsWithShape(
+          point,
+          rotation,
+          shape,
+          () => {
+            inside = true;
+            return false;
+          },
+          undefined,
+          soft,
+        );
+        return inside;
+      },
+    };
+  }
+
+  // --- Jardim novo a cada rodada ---------------------------------------------------
+
+  /**
+   * Sorteia o jardim da próxima rodada e começa a montá-lo aos poucos, sem
+   * travar o jogo: logo que uma rodada começa, o jardim da seguinte já vai
+   * nascendo nos intervalos entre os quadros.
+   */
+  private prepareNextGarden(): void {
+    const seed = randomSeed();
+    this.scenery.prepareNext(seed);
+    this.gardenParts = null;
+    this.gardenRush = false;
+    this.gardenJob = this.gardenSteps(seed);
+  }
+
+  /**
+   * O cenário (um objeto por passo), a grama e a cobertura (mil tufos por passo)
+   * e, quando a bola cai na toca, os bichos do jardim novo (um passo só, pesado:
+   * no meio do enterro ninguém sente).
+   */
+  private *gardenSteps(seed: number): Generator<void, void> {
+    while (!this.scenery.stepNext(0)) yield;
+    const plan = this.scenery.pendingPlan!;
+    const grass = yield* this.grass.plantSteps(this.scenery.groundBlocker(0.1, true), mixSeed(seed, GardenSalt.grass));
+    const cover = yield* this.groundCover.plantSteps(this.scenery.groundBlocker(0.25, true), mixSeed(seed, GardenSalt.cover));
+    while (!this.gardenRush) yield;
+    const picnic = plan.zones.find((zone) => zone.kind === 'picnic');
+    const critters = this.effects.createCritters(this.scenery.pending!.landingSpots, this.scenery.critterGround(true), picnic, mixSeed(seed, GardenSalt.critters));
+    this.gardenParts = { grass, cover, critters };
+  }
+
+  /** Avança a montagem do jardim novo por até `budgetMs` neste quadro. */
+  private advanceGarden(budgetMs: number): void {
+    const job = this.gardenJob;
+    if (!job) return;
+    const until = performance.now() + budgetMs;
+    do {
+      if (job.next().done) {
+        this.gardenJob = null;
+        return;
+      }
+    } while (performance.now() < until);
+  }
+
+  /**
+   * Troca o jardim: cenário, sombras no chão, grama, cobertura, bichos, montinhos,
+   * detritos e bolas de tênis passam para o sorteio novo. O que ficou pronto aos
+   * poucos entra de uma vez; o que faltar é terminado aqui.
+   */
+  private swapGarden(): void {
+    if (!this.scenery.hasNext) this.prepareNextGarden();
+    this.gardenRush = true;
+    while (this.gardenJob) this.advanceGarden(1000);
+    const parts = this.gardenParts!;
+    this.gardenParts = null;
+    this.scenery.commitNext();
+    this.terrain.paintContactShade(this.scenery.shades);
+    const oldGrass = this.grass.replaceField(parts.grass);
+    const oldCover = this.groundCover.replace(parts.cover);
+    const oldCritters = this.effects.swapCritters(parts.critters);
+    this.looseObjects.relayout();
+    this.collectibles.relayout(this.beetle.center);
+    this.disposeLater(() => {
+      oldGrass.dispose();
+      for (const layer of oldCover) layer.dispose();
+      disposeReplaced(oldCritters.group, parts.critters.group);
+    });
+    // E o jardim da rodada seguinte já começa a nascer.
+    this.prepareNextGarden();
+  }
+
+  private disposeLater(run: () => void): void {
+    this.disposals.push({ frames: DISPOSE_AFTER_FRAMES, run });
+  }
+
+  private runDisposals(): void {
+    for (let i = this.disposals.length - 1; i >= 0; i--) {
+      const item = this.disposals[i];
+      if (--item.frames > 0) continue;
+      this.disposals.splice(i, 1);
+      item.run();
+    }
   }
 
   private start(): void {
@@ -789,8 +942,10 @@ export class Game {
     }
 
     this.applyWeather();
+    this.advanceGarden(this.burrow.isBusy ? GardenBudget.burying : this.paused || this.choosing ? GardenBudget.paused : GardenBudget.playing);
     const alpha = this.paused || this.choosing ? 1 : this.accumulator / FIXED_DT;
     this.renderFrame(alpha, frameTime);
+    this.runDisposals();
     this.trackPerformance(frameTime);
     this.countFps(frameTime);
   };
@@ -947,11 +1102,9 @@ export class Game {
     this.rumble(0.8, 1, record ? 500 : 300);
   }
 
-  /** Rodada nova: o jardim volta inteiro e uma bola pequena brota do lado do besouro. */
+  /** Rodada nova: um jardim novo (outro sorteio) e uma bola pequena brota do lado do besouro. */
   private startNewRound(): void {
-    this.scenery.restoreAll();
-    this.collectibles.respawnAll(this.beetle.center);
-    this.looseObjects.restoreAll();
+    this.swapGarden();
     // Teias voltam, bichos param de ser atraídos (o Fedor irresistível era da rodada).
     this.effects.newRound();
     this.effects.setAttract(0);
@@ -977,6 +1130,8 @@ export class Game {
     const position = new THREE.Vector3(x, terrainHeight(x, z) + START_RADIUS + 0.05, z);
     this.ball.reset(position);
     this.ball.endBurial();
+    // A bola nova nasceu limpa: as coisas do jardim antigo que estavam grudadas já saíram.
+    this.pickables.reset();
     this.progression.startRound();
     this.collectibles.freshChance = FRESH_CHANCE;
     this.hud.resetRound();
@@ -995,6 +1150,10 @@ export class Game {
     const burying = this.burrow.isBusy;
     // Enterrando: a câmera enquadra besouro + toca (a bola some no chão).
     const cameraBall = burying ? this.tmpFocus.set(BURROW.x, BURROW.ground + 0.8, BURROW.z) : ballPos;
+    // A bola também é obstáculo da lente (menos afundando na toca).
+    this.cameraBall.center.copy(ballPos);
+    this.cameraBall.radius = this.ball.radius;
+    this.cameraRig.ball = burying ? null : this.cameraBall;
     this.cameraRig.update(dt, player, cameraBall, this.ball.radius, this.beetle.pushing || burying);
     this.graphics.followFocus(player);
 

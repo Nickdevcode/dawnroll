@@ -45,3 +45,19 @@ export const createRng = (seed: number) => {
 };
 
 export type Rng = ReturnType<typeof createRng>;
+
+/**
+ * Deriva uma semente independente de outra (um sorteio por "assunto": cantinhos,
+ * natureza, bichos...). Mexer num sorteio não embaralha os outros.
+ */
+export function mixSeed(seed: number, salt: number): number {
+  let h = (seed ^ Math.imul(salt + 0x9e3779b9, 0x85ebca6b)) >>> 0;
+  h = Math.imul(h ^ (h >>> 16), 0x7feb352d);
+  h = Math.imul(h ^ (h >>> 15), 0x846ca68b);
+  return (h ^ (h >>> 16)) >>> 0;
+}
+
+/** Semente nova de verdade (cada jardim sai diferente). */
+export function randomSeed(): number {
+  return (Math.random() * 0x100000000) >>> 0;
+}

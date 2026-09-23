@@ -2,7 +2,6 @@ import * as THREE from 'three';
 import { clamp, damp } from '../../utils/math';
 import { clay } from '../../render/clayMaterial';
 import { BURROW, dirtAmount, terrainHeight, PLAY_RADIUS } from '../../world/Terrain';
-import { zoneOf } from '../../world/zones';
 import { InstancedPart } from './InstancedPart';
 import { critterMaterials } from './materials';
 import { mergeParts } from './models';
@@ -173,7 +172,7 @@ export class AntColonies implements Species {
    * onde o pano não cobre o chão) e o formigueiro fica uns passos para fora.
    */
   private placePicnicColony(ctx: CritterContext): Colony | null {
-    const zone = zoneOf('picnic');
+    const zone = ctx.picnic;
     if (!zone) return null;
     for (const side of [1, -1, 3, -3]) {
       const a = zone.facing + (side * Math.PI) / 4;

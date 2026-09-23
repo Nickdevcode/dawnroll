@@ -10,12 +10,13 @@ import type { SceneryContext } from '../scenery/context';
 import type { ZoneSite } from '../zones';
 import { addObject, attachHull, restOnGround, settle, toWorld, zoneFrame, type ModelPart } from './common';
 import { roundedRectSection, slab, smoothOutline, sweep, warp } from './forms';
-import { buildGnome } from './gnome';
+import { Footprints, capsuleCircles, type LostItem } from './compose';
 
 /**
  * Cantinho do jardineiro: vasinhos de barro (um tombado, com a terra
- * derramada), pás de jardinagem (uma fincada na terra), luvas largadas, um par
- * de chinelos de dedo e, no meio de tudo, o anão de jardim — o chefão.
+ * derramada), pás de jardinagem (uma fincada na terra) e luvas largadas. Aqui
+ * também moram os chinelos de dedo — mas eles ficam largados pelo jardim, um pé
+ * em cada canto (ver `gardenLayout`), como o anão de jardim.
  */
 
 const UP = new THREE.Vector3(0, 1, 0);
@@ -617,43 +618,79 @@ export function buildFlipflop(ctx: SceneryContext, x: number, z: number, yaw: nu
 
 // --- A cena ----------------------------------------------------------------------
 
+/** Vaso tombado + terra derramada + pá fincada: o conjunto ocupa uma fileira no chão a partir do vaso. */
+const SPILL_FOOTPRINT = { radius: 2.5, halfLength: 3.4, forward: 2.6 };
+/** Raio de chão de um vaso em pé; a pá deitada e a luva ocupam cápsulas (comprimento ao longo do giro). */
+const POT_FOOTPRINT = 2.4;
+const TROWEL_FOOTPRINT = { radius: 1.9, halfLength: 6.2 };
+const GLOVE_FOOTPRINT = { radius: 2.4, halfLength: 3.9 };
+
 /**
- * Monta o cantinho: o anão no fundo, olhando para quem chega; vasos à esquerda
- * (um tombado, com a pá fincada na terra derramada); luvas, a outra pá e o par
- * de chinelos espalhados pela frente e pela direita.
+ * Monta o cantinho, sorteado a cada jardim: o vaso tombado com a terra
+ * derramada (e a pá fincada nela) virado para dentro do cantinho, a outra pá
+ * deitada, as duas luvas largadas e dois vasos em pé (muda e plaquinha). O
+ * anão de jardim e os chinelos não moram mais aqui: o jardim os larga soltos
+ * pelo mapa (e a luva ou o vaso que não couber aqui vai junto, em `lost`).
+ * Um passo (`yield`) por objeto.
  */
-export function buildGardenerCorner(ctx: SceneryContext, zone: ZoneSite): void {
+export function* buildGardenerCorner(ctx: SceneryContext, zone: ZoneSite, lost: LostItem[]): Generator<void> {
+  const { rng } = ctx;
   const frame = zoneFrame(zone);
-  const at = (across: number, along: number) => frame.point(across, along);
+  const taken = new Footprints(zone);
 
-  const gnome = at(0, -6);
-  buildGnome(ctx, gnome.x, gnome.y, frame.yaw(-0.12));
+  // Vaso tombado perto da borda, com a boca (e a terra que escorre) virada para dentro do
+  // cantinho: é a âncora da cena, vai primeiro.
+  for (let tries = 0; tries < 80; tries++) {
+    const a = rng.next() * Math.PI * 2;
+    const d = zone.radius * rng.range(0.35, 0.62);
+    const x = zone.x + Math.cos(a) * d;
+    const z = zone.z + Math.sin(a) * d;
+    const spillYaw = Math.atan2(zone.x - x, zone.z - z) + rng.range(-0.5, 0.5);
+    const cx = x + Math.sin(spillYaw) * SPILL_FOOTPRINT.forward;
+    const cz = z + Math.cos(spillYaw) * SPILL_FOOTPRINT.forward;
+    const capsule = { yaw: spillYaw, halfLength: SPILL_FOOTPRINT.halfLength };
+    if (!capsuleCircles(cx, cz, SPILL_FOOTPRINT.radius, capsule).every((c) => taken.fits(c.x, c.z, c.r, 0.4))) continue;
+    taken.add(cx, cz, SPILL_FOOTPRINT.radius, capsule);
+    const mouth = buildPot(ctx, x, z, spillYaw, 'empty', true);
+    const spill = buildSpill(ctx, mouth, spillYaw);
+    buildTrowel(ctx, spill.x + Math.sin(spillYaw) * 0.6, spill.y + Math.cos(spillYaw) * 0.6, spillYaw + Math.PI, true);
+    yield;
+    break;
+  }
 
-  const potA = at(-5.5, -7);
-  buildPot(ctx, potA.x, potA.y, frame.yaw(0.3), 'seedling');
-  const potB = at(-8.6, -3.6);
-  buildPot(ctx, potB.x, potB.y, frame.yaw(1.1), 'label');
-  // Tombado à esquerda, com a boca virada para quem chega; a terra escorre dali e a pá ficou fincada nela.
-  const spillYaw = frame.yaw(0.2);
-  const potC = at(-10.4, -0.6);
-  const mouth = buildPot(ctx, potC.x, potC.y, spillYaw, 'empty', true);
-  const spill = buildSpill(ctx, mouth, spillYaw);
-  buildTrowel(ctx, spill.x + Math.sin(spillYaw) * 0.6, spill.y + Math.cos(spillYaw) * 0.6, spillYaw + Math.PI, true);
+  // A outra pá, deitada onde couber (é a peça mais comprida depois do vaso tombado).
+  for (let tries = 0; tries < 6; tries++) {
+    const yaw = rng.range(0, Math.PI * 2);
+    const trowel = taken.spot(rng, TROWEL_FOOTPRINT.radius, { gap: 0.4, capsule: { yaw, halfLength: TROWEL_FOOTPRINT.halfLength } });
+    if (!trowel) continue;
+    buildTrowel(ctx, trowel.x, trowel.y, yaw);
+    yield;
+    break;
+  }
 
-  // Pá deitada atravessando o meio (lâmina para a direita).
-  const trowel = at(1, 0);
-  buildTrowel(ctx, trowel.x, trowel.y, frame.yaw(Math.PI / 2 - 0.3));
+  // Luvas largadas: uma de costas, outra com a palma para cima, os dedos para qualquer lado.
+  for (const palmUp of [false, true]) {
+    let placed = false;
+    for (let tries = 0; tries < 6 && !placed; tries++) {
+      const yaw = frame.yaw(rng.range(-Math.PI, Math.PI));
+      const p = taken.spot(rng, GLOVE_FOOTPRINT.radius, { gap: 0.5, capsule: { yaw, halfLength: GLOVE_FOOTPRINT.halfLength } });
+      if (!p) continue;
+      buildGlove(ctx, p.x, p.y, yaw, palmUp);
+      placed = true;
+      yield;
+    }
+    // Não coube no cantinho: ficou esquecida em outro canto do jardim.
+    if (!placed) lost.push('glove');
+  }
 
-  // Luva com os dedos apontando para quem chega, entre a terra derramada e os chinelos.
-  const gloveA = at(-3.2, 8.2);
-  buildGlove(ctx, gloveA.x, gloveA.y, frame.yaw(0.2));
-  const gloveB = at(8, -5);
-  buildGlove(ctx, gloveB.x, gloveB.y, frame.yaw(-0.6), true);
-
-  // O par de chinelos largado lado a lado, um meio torto.
-  const left = at(2.4, 7.8);
-  buildFlipflop(ctx, left.x, left.y, frame.yaw(0.15), false);
-  const right = at(8, 6);
-  buildFlipflop(ctx, right.x, right.y, frame.yaw(-0.15), true);
+  for (const contents of ['seedling', 'label'] as const) {
+    const p = taken.spot(rng, POT_FOOTPRINT, { gap: 0.8 });
+    if (!p) {
+      lost.push('pot');
+      continue;
+    }
+    buildPot(ctx, p.x, p.y, rng.range(0, Math.PI * 2), contents);
+    yield;
+  }
 }
 

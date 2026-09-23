@@ -3,11 +3,9 @@ import { RAPIER, Groups, interactionGroups, type Physics } from '../core/Physics
 import { clay } from '../render/clayMaterial';
 import type { DungBall } from '../entities/DungBall';
 import { BURROW, terrainHeight } from './Terrain';
-import { zoneOf } from './zones';
 import type { PickEvent } from './Pickables';
 import type { Scenery } from './Scenery';
 import { OBJECT_STATS } from './objects/common';
-import { tennisBallSpots } from './objects/toys';
 import { TENNIS_BALL_RADIUS, tennisBallGeometry } from './objects/tennisBall';
 
 /**
@@ -40,6 +38,8 @@ interface LooseItem {
   readonly prevRot: THREE.Quaternion;
   readonly currRot: THREE.Quaternion;
   swallowed: boolean;
+  /** Sem lugar neste jardim: fora da física e invisível até um jardim que tenha lugar pra ela. */
+  parked: boolean;
 }
 
 const tmpCenter = new THREE.Vector3();
@@ -61,12 +61,35 @@ export class LooseObjects {
 
   constructor(
     private readonly physics: Physics,
-    private readonly scenery?: Scenery,
+    private readonly scenery: Scenery,
   ) {
     this.group.name = 'loose-objects';
-    const zone = zoneOf('toys');
-    if (!zone) return;
-    for (const spot of tennisBallSpots(zone)) this.items.push(this.createBall(this.freeSpot(spot)));
+    this.relayout();
+  }
+
+  /**
+   * Jardim novo: as bolas de tênis vão para os lugares que o sorteio do cantinho
+   * dos brinquedos reservou (se o jardim tiver mais lugares que bolas, nascem
+   * bolas novas; se tiver menos, as que sobram ficam guardadas fora do mundo).
+   */
+  relayout(): void {
+    const spots = this.scenery.tennisBalls;
+    for (let i = 0; i < Math.max(spots.length, this.items.length); i++) {
+      const spot = spots[i];
+      if (!spot) {
+        this.park(this.items[i]);
+        continue;
+      }
+      const home = this.freeSpot(spot);
+      const item = this.items[i];
+      if (item) {
+        item.home.copy(home);
+        item.parked = false;
+        this.resetItem(item);
+      } else {
+        this.items.push(this.createBall(home));
+      }
+    }
   }
 
   /** Passo fixo (depois do passo da física): interpolação, freio de rolamento e "engolir". */
@@ -75,7 +98,7 @@ export class LooseObjects {
     const center = ball.position(tmpCenter);
     const r = ball.radius;
     for (const item of this.items) {
-      if (item.swallowed) continue;
+      if (item.swallowed || item.parked) continue;
       const body = item.body;
       item.prevPos.copy(item.currPos);
       item.prevRot.copy(item.currRot);
@@ -111,15 +134,16 @@ export class LooseObjects {
   /** Desenho interpolado entre os passos fixos. */
   render(alpha: number): void {
     for (const item of this.items) {
-      if (item.swallowed) continue;
+      if (item.swallowed || item.parked) continue;
       item.mesh.position.lerpVectors(item.prevPos, item.currPos, alpha);
       item.mesh.quaternion.slerpQuaternions(item.prevRot, item.currRot, alpha);
     }
   }
 
-  /** Rodada nova: tudo volta para o lugar de origem, parado. */
-  restoreAll(): void {
-    for (const item of this.items) this.resetItem(item);
+  private park(item: LooseItem): void {
+    item.parked = true;
+    item.body.setEnabled(false);
+    item.mesh.visible = false;
   }
 
   // ---------------------------------------------------------------------------
@@ -150,6 +174,7 @@ export class LooseObjects {
       prevRot: new THREE.Quaternion(),
       currRot: new THREE.Quaternion(),
       swallowed: false,
+      parked: false,
     };
   }
 
@@ -157,7 +182,7 @@ export class LooseObjects {
   private freeSpot(spot: THREE.Vector2): THREE.Vector3 {
     let x = spot.x;
     let z = spot.y;
-    for (let i = 0; i < 12 && this.scenery?.isInsideSolid(x, z, TENNIS_BALL_RADIUS); i++) {
+    for (let i = 0; i < 12 && this.scenery.isInsideSolid(x, z, TENNIS_BALL_RADIUS); i++) {
       const a = i * 2.4;
       x = spot.x + Math.cos(a) * (0.6 + i * 0.3);
       z = spot.y + Math.sin(a) * (0.6 + i * 0.3);

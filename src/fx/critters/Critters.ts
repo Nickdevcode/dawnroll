@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { createRng } from '../../utils/math';
 import { terrainHeight } from '../../world/Terrain';
-import { zoneOf } from '../../world/zones';
+import type { ZoneSite } from '../../world/zones';
 import { Butterflies, Bees, Dragonflies } from './flyers';
 import { PillBugs, SmallBeetles, Snails } from './crawlers';
 import { AntColonies } from './ants';
@@ -63,16 +63,16 @@ export class Critters {
   private readonly swarm: FlyingAnts;
   private readonly hummingbird: Hummingbird;
 
-  constructor(count: number, spots: THREE.Vector3[], isGroundFree: GroundFilter, sounds: CritterSounds = SILENT, seed = 31) {
+  constructor(count: number, spots: THREE.Vector3[], isGroundFree: GroundFilter, picnic: ZoneSite | undefined, sounds: CritterSounds = SILENT, seed = 31) {
     this.group.name = 'critters';
     // Bicho de chão não passeia na toalha do piquenique: ele anda no terreno e ficaria "por baixo" do pano.
-    const picnic = zoneOf('picnic');
     const groundFree: GroundFilter = picnic ? (x, z) => Math.hypot(x - picnic.x, z - picnic.z) > picnic.radius && isGroundFree(x, z) : isGroundFree;
     this.ctx = {
       rng: createRng(seed),
       sounds,
       spots,
       isGroundFree: groundFree,
+      picnic,
       world: initialWorld(),
       time: 0,
       viewDir: new THREE.Vector3(0, 0, -1),

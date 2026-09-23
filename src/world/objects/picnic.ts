@@ -8,14 +8,15 @@ import { terrainHeight } from '../Terrain';
 import type { CoverArea, SceneryContext } from '../scenery/context';
 import type { ZoneSite } from '../zones';
 import { addObject, settle, zoneFrame } from './common';
+import { Footprints, type LostItem } from './compose';
 import { buildStrawberry } from './fruits';
 import { fuseParts, polarOutline, slab } from './forms';
 
 /**
  * Cantinho do piquenique: a ponta de uma toalha xadrez jogada na grama (pano de
  * massinha que acompanha o relevo, com barra e franja), morangos e bolachas
- * recheadas espalhados. As comidinhas miúdas (jujuba, pipoca, uva, açúcar) são
- * detritos e nascem por aqui (ver `Collectibles`).
+ * recheadas espalhados (cada jardim arruma de um jeito). As comidinhas miúdas
+ * (jujuba, pipoca, uva, açúcar) são detritos e nascem por aqui (ver `Collectibles`).
  */
 
 /** Lado de um quadradinho do xadrez (≈ 1,8 cm, como um guingão de verdade). */
@@ -319,39 +320,52 @@ function scatterCrumbs(ctx: SceneryContext, x: number, z: number, yaw: number, l
 
 // --- A cena -------------------------------------------------------------------
 
+/** Quantas comidinhas o piquenique tem (somando as que fogem pelo jardim). */
+const STRAWBERRIES = 5;
+const COOKIES = 4;
+/** Chance de uma comidinha ter sido arrastada pra longe (vai para `lost`). */
+const RUNAWAY_CHANCE = 0.5;
+
 /**
- * Monta o cantinho: a toalha com a ponta virada para quem chega, morangos em
- * cima e em volta dela e as bolachas (uma mordida, com farelo).
+ * Monta o cantinho, sorteado a cada jardim: a toalha com a ponta virada para
+ * quem chega (um pouco fora do meio), bolachas (uma mordida, com farelo) e
+ * morangos em cima e em volta dela. Às vezes uma das comidinhas sumiu daqui
+ * (as formigas levaram): ela entra em `lost` e o jardim a larga em outro lugar.
+ * Um passo (`yield`) por objeto: o cantinho se monta aos poucos.
  */
-export function buildPicnicCorner(ctx: SceneryContext, zone: ZoneSite): void {
+export function* buildPicnicCorner(ctx: SceneryContext, zone: ZoneSite, lost: LostItem[]): Generator<void> {
+  const { rng } = ctx;
   const frame = zoneFrame(zone);
   const size = CHECK * 17;
   // Girada 45°: um canto aponta para o nascimento (a "ponta" da toalha).
-  const center = frame.point(0, -0.8);
+  const center = frame.point(rng.range(-0.9, 0.9), -0.8 + rng.range(-0.9, 0.9));
   const towel = buildTowel(ctx, { x: center.x, z: center.y, yaw: frame.yaw(-Math.PI / 4), size });
   ctx.addCover(towel);
   const lift = (p: THREE.Vector2) => towel.lift?.(p.x, p.y) ?? 0;
+  yield;
 
-  const strawberries: Array<[number, number]> = [
-    [-1.2, 4.6],
-    [0.6, 5.4],
-    [1.9, 3.9],
-    [5.6, 2.2],
-    [-6.4, 1.1],
-  ];
-  for (const [across, along] of strawberries) {
-    const p = frame.point(across, along);
-    buildStrawberry(ctx, p.x, p.y, ctx.rng.range(0, Math.PI * 2), lift(p));
+  let strawberries = STRAWBERRIES;
+  let cookies = COOKIES;
+  if (rng.next() < RUNAWAY_CHANCE) {
+    const runaway: LostItem = rng.next() < 0.5 ? 'strawberry' : 'cookie';
+    lost.push(runaway);
+    if (runaway === 'strawberry') strawberries--;
+    else cookies--;
   }
 
-  const cookies: Array<[number, number, boolean]> = [
-    [-3.2, 1.6, true],
-    [2.8, -2.2, false],
-    [-1.4, -4.6, false],
-    [7.4, -1.8, false],
-  ];
-  for (const [across, along, bite] of cookies) {
-    const p = frame.point(across, along);
-    buildCookie(ctx, p.x, p.y, ctx.rng.range(0, Math.PI * 2), { lift: lift(p), bite });
+  const taken = new Footprints(zone);
+  for (let i = 0; i < cookies; i++) {
+    const bite = i === 0;
+    // A mordida espalha farelo em volta: ocupa mais chão.
+    const p = taken.spot(rng, bite ? COOKIE_RADIUS * 1.9 : COOKIE_RADIUS * 1.1, { reach: 0.85 });
+    if (!p) continue;
+    buildCookie(ctx, p.x, p.y, rng.range(0, Math.PI * 2), { lift: lift(p), bite });
+    yield;
+  }
+  for (let i = 0; i < strawberries; i++) {
+    const p = taken.spot(rng, 1.1, { reach: 0.9 });
+    if (!p) continue;
+    buildStrawberry(ctx, p.x, p.y, rng.range(0, Math.PI * 2), lift(p));
+    yield;
   }
 }

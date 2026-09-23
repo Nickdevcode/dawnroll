@@ -56,14 +56,38 @@ export function sphericalUv(geometry: THREE.BufferGeometry): void {
   geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
 }
 
+/**
+ * Formas de massinha já deformadas, guardadas pelos parâmetros: deformar (fundir
+ * vértices, ruído, normais) é o que mais custa para montar bicho e cenário, e o
+ * jardim de cada rodada pede as mesmas formas de novo. Quem pede recebe sempre
+ * uma CÓPIA (pode escalar, pintar e mover à vontade). Tamanho limitado: as
+ * formas de semente aleatória não enchem a memória.
+ */
+const shapeCache = new Map<string, THREE.BufferGeometry>();
+const SHAPE_CACHE_LIMIT = 600;
+
+function cachedShape(key: string, build: () => THREE.BufferGeometry): THREE.BufferGeometry {
+  let shape = shapeCache.get(key);
+  if (!shape) {
+    shape = build();
+    if (shapeCache.size >= SHAPE_CACHE_LIMIT) shapeCache.delete(shapeCache.keys().next().value!);
+    shapeCache.set(key, shape);
+  }
+  return shape.clone();
+}
+
 /** Esfera "de massinha" já deformada. `detail` = subdivisões do icosaedro (3 ≈ 320 triângulos, 8 ≈ 1600). */
 export function claySphere(radius: number, detail = 3, lump = 0.06, frequency = 2.2, seed = 0): THREE.BufferGeometry {
-  return lumpify(new THREE.IcosahedronGeometry(radius, detail), radius * lump, frequency / radius, seed);
+  return cachedShape(`s|${radius}|${detail}|${lump}|${frequency}|${seed}`, () =>
+    lumpify(new THREE.IcosahedronGeometry(radius, detail), radius * lump, frequency / radius, seed),
+  );
 }
 
 /** Cápsula com as pontas levemente amassadas. */
 export function clayCapsule(radius: number, length: number, lump = 0.05, seed = 0, radialSegments = 12): THREE.BufferGeometry {
-  return lumpify(new THREE.CapsuleGeometry(radius, length, 6, radialSegments, Math.max(1, Math.round(length / radius))), radius * lump, 3 / radius, seed);
+  return cachedShape(`c|${radius}|${length}|${lump}|${seed}|${radialSegments}`, () =>
+    lumpify(new THREE.CapsuleGeometry(radius, length, 6, radialSegments, Math.max(1, Math.round(length / radius))), radius * lump, 3 / radius, seed),
+  );
 }
 
 /**

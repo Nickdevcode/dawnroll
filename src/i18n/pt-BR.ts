@@ -587,5 +587,5 @@ export const ptBR = {
   'skin.moon.desc': 'Prateado da madrugada, pra quem atende o pedido do Sol.',
   'skin.khepri.name': 'Khepri',
   'skin.khepri.desc': 'Dourado como o sol que o deus-escaravelho rola pelo céu.',
-  'help.zones': 'Procure os três cantinhos: o piquenique, o dos brinquedos e o do jardineiro, onde mora o anão.',
+  'help.zones': 'Procure os três cantinhos: o piquenique, o dos brinquedos e o do jardineiro. A cada rodada o jardim se arruma de outro jeito.',
 } as const;

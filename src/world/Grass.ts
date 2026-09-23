@@ -8,6 +8,9 @@ import { terrainHeight, terrainNormal, dirtAmount, PLAY_RADIUS, WORLD_SIZE } fro
 /** Altura (local) considerada "ponta" da lâmina para o vento e para a translucidez. */
 const BLADE_TIP = 1.75;
 
+/** Tufos plantados por passo quando o gramado é plantado aos poucos. */
+const PLANT_STEP = 1000;
+
 /** Filtro opcional: devolve true onde NÃO pode nascer grama (dentro de pedra, tronco...). */
 export type GrassBlocker = (x: number, z: number) => boolean;
 
@@ -20,15 +23,74 @@ export type GrassBlocker = (x: number, z: number) => boolean;
  */
 export class Grass {
   readonly group = new THREE.Group();
-  private readonly field: ChunkedInstances;
+  private field: ChunkedInstances;
   private readonly rim: ChunkedInstances;
+  private readonly geometry: THREE.BufferGeometry;
+  private readonly material: THREE.Material;
+  private density = 1;
 
-  constructor(count: number, blocked: GrassBlocker = () => false, seed = 42) {
+  /**
+   * @param count tufos no gramado jogável
+   * @param blocked onde não nasce grama no jardim atual (pedra, tronco, toalha...)
+   * @param seed sorteio do gramado deste jardim (o do morro da borda é sempre o mesmo)
+   */
+  constructor(
+    private readonly count: number,
+    blocked: GrassBlocker,
+    seed: number,
+  ) {
     this.group.name = 'grass';
-    const rng = createRng(seed);
-    const geometry = buildClumpGeometry(rng);
-    const material = createGrassMaterial();
+    const rng = createRng(42);
+    this.geometry = buildClumpGeometry(rng);
+    this.material = createGrassMaterial();
+    this.field = this.plant(blocked, seed);
 
+    // Touceiras gigantes no morro da borda (fora do jardim: não mudam de uma rodada para outra).
+    const quat = new THREE.Quaternion();
+    const scale = new THREE.Vector3();
+    const pos = new THREE.Vector3();
+    const up = new THREE.Vector3(0, 1, 0);
+    const rimSamples: InstanceSample[] = [];
+    const rimCount = Math.round(count * 0.035);
+    for (let i = 0; i < rimCount; i++) {
+      const angle = rng.next() * Math.PI * 2;
+      const radius = rng.range(PLAY_RADIUS + 3, PLAY_RADIUS + 24);
+      const x = Math.cos(angle) * radius;
+      const z = Math.sin(angle) * radius;
+      if (Math.abs(x) > WORLD_SIZE / 2 - 2 || Math.abs(z) > WORLD_SIZE / 2 - 2 || blocked(x, z)) continue;
+      const s = rng.range(4, 11) * (0.6 + (radius - PLAY_RADIUS) / 40);
+      quat.setFromAxisAngle(up, rng.next() * Math.PI * 2);
+      scale.set(s, s * rng.range(0.9, 1.4), s);
+      pos.set(x, terrainHeight(x, z) - 0.3, z);
+      rimSamples.push({ matrix: new THREE.Matrix4().compose(pos, quat, scale), color: grassTint(rng) });
+    }
+    this.rim = new ChunkedInstances(this.geometry, this.material, rimSamples, rng, {
+      name: 'grass-rim',
+      chunkSize: 32,
+      lodNear: 200,
+      lodFar: 300,
+      lodMinFraction: 1,
+      cullDistance: 400,
+      heightMargin: 30,
+      skipAO: true,
+    });
+    this.group.add(this.field.group, this.rim.group);
+  }
+
+  /**
+   * Planta o gramado de um jardim (ainda fora da cena): os tufos contornam as
+   * pedras, flores, objetos e a toalha dele. Entra com `replaceField`.
+   */
+  plant(blocked: GrassBlocker, seed: number): ChunkedInstances {
+    const steps = this.plantSteps(blocked, seed);
+    let step = steps.next();
+    while (!step.done) step = steps.next();
+    return step.value;
+  }
+
+  /** O mesmo `plant`, em passos de ~mil tufos (para plantar entre dois quadros). */
+  *plantSteps(blocked: GrassBlocker, seed: number): Generator<void, ChunkedInstances> {
+    const rng = createRng(seed);
     const samples: InstanceSample[] = [];
     const quat = new THREE.Quaternion();
     const spin = new THREE.Quaternion();
@@ -38,7 +100,7 @@ export class Grass {
     const up = new THREE.Vector3(0, 1, 0);
     const reach = Math.min(PLAY_RADIUS + 14, WORLD_SIZE / 2 - 1);
     let attempts = 0;
-    while (samples.length < count && attempts < count * 8) {
+    while (samples.length < this.count && attempts < this.count * 8) {
       attempts++;
       const angle = rng.next() * Math.PI * 2;
       const radius = Math.sqrt(rng.next()) * reach;
@@ -58,8 +120,9 @@ export class Grass {
       scale.set(s, s * rng.range(0.75, 1.35), s);
       pos.set(x, terrainHeight(x, z) - 0.05, z);
       samples.push({ matrix: new THREE.Matrix4().compose(pos, quat, scale), color: grassTint(rng) });
+      if (samples.length % PLANT_STEP === 0) yield;
     }
-    this.field = new ChunkedInstances(geometry, material, samples, rng, {
+    return new ChunkedInstances(this.geometry, this.material, samples, rng, {
       name: 'grass',
       chunkSize: 16,
       lodNear: 20,
@@ -69,37 +132,21 @@ export class Grass {
       heightMargin: 3,
       skipAO: true, // o passe de AO não roda este vertex shader (grama "fantasma")
     });
+  }
 
-    // Touceiras gigantes no morro da borda.
-    const rimSamples: InstanceSample[] = [];
-    const rimCount = Math.round(count * 0.035);
-    for (let i = 0; i < rimCount; i++) {
-      const angle = rng.next() * Math.PI * 2;
-      const radius = rng.range(PLAY_RADIUS + 3, PLAY_RADIUS + 24);
-      const x = Math.cos(angle) * radius;
-      const z = Math.sin(angle) * radius;
-      if (Math.abs(x) > WORLD_SIZE / 2 - 2 || Math.abs(z) > WORLD_SIZE / 2 - 2 || blocked(x, z)) continue;
-      const s = rng.range(4, 11) * (0.6 + (radius - PLAY_RADIUS) / 40);
-      quat.setFromAxisAngle(up, rng.next() * Math.PI * 2);
-      scale.set(s, s * rng.range(0.9, 1.4), s);
-      pos.set(x, terrainHeight(x, z) - 0.3, z);
-      rimSamples.push({ matrix: new THREE.Matrix4().compose(pos, quat, scale), color: grassTint(rng) });
-    }
-    this.rim = new ChunkedInstances(geometry, material, rimSamples, rng, {
-      name: 'grass-rim',
-      chunkSize: 32,
-      lodNear: 200,
-      lodFar: 300,
-      lodMinFraction: 1,
-      cullDistance: 400,
-      heightMargin: 30,
-      skipAO: true,
-    });
-    this.group.add(this.field.group, this.rim.group);
+  /** Troca o gramado pelo plantado para o jardim novo; devolve o antigo (já fora da cena) para descartar. */
+  replaceField(next: ChunkedInstances): ChunkedInstances {
+    const old = this.field;
+    this.group.remove(old.group);
+    next.setDensity(this.density);
+    this.field = next;
+    this.group.add(next.group);
+    return old;
   }
 
   /** Fração de tufos desenhada (qualidade adaptativa). */
   setDensity(density: number): void {
+    this.density = density;
     this.field.setDensity(density);
   }
 

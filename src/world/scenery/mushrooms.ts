@@ -34,20 +34,22 @@ const capHeightAt = (r: number, radius: number, height: number) => height * Math
 /**
  * Touceira de cogumelos: um grande (com colisão) e filhotes em volta.
  * Cada cogumelo tem pé com bulbo, saia, chapéu em domo com a borda virada,
- * lamelas por baixo e bolinhas no topo.
+ * lamelas por baixo e bolinhas no topo. Um passo (`yield`) por cogumelo:
+ * esculpir o chapéu é caro, e o jardim se monta aos poucos entre os quadros.
  */
-export function buildMushroomCluster(ctx: SceneryContext, x: number, z: number, height: number): void {
+export function* buildMushroomCluster(ctx: SceneryContext, x: number, z: number, height: number): Generator<void> {
   const { rng } = ctx;
   const style = rng.pick(CapStyles);
+  ctx.addShade(x, z, height * 0.9, 0.6);
   buildMushroom(ctx, x, z, height, style, rng.range(-0.08, 0.08), true);
   const babies = 2 + Math.floor(rng.next() * 4);
   for (let i = 0; i < babies; i++) {
+    yield;
     const a = rng.next() * Math.PI * 2;
     const d = height * rng.range(0.45, 0.8);
     const h = height * rng.range(0.22, 0.5);
     buildMushroom(ctx, x + Math.cos(a) * d, z + Math.sin(a) * d, h, style, rng.range(-0.3, 0.3), h > 1.1);
   }
-  ctx.addShade(x, z, height * 0.9, 0.6);
 }
 
 function buildMushroom(ctx: SceneryContext, x: number, z: number, height: number, style: CapStyle, tilt: number, collider: boolean): void {
