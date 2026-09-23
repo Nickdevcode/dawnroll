@@ -21,6 +21,8 @@ export interface PickEvent {
   tint: THREE.Color;
   /** Tamanho do que foi arrancado (≈ raio mínimo de bola). */
   size: number;
+  /** Espécie (flor e cogumelo), para o catálogo da toca. */
+  variant: string | undefined;
 }
 
 /** Folga para "encostou" pela cápsula (colisor ainda não tocou, mas vai). */
@@ -65,6 +67,8 @@ export class Pickables {
    * agora; 0 = nada grande demais encostado. Lido pelo HUD (dica).
    */
   blockedBySize = 0;
+  /** Poder Chifrudo: arranca objeto até `raio da bola × pluckReach` (1 = só o que cabe). */
+  pluckReach = 1;
 
   /** Geometria assada de cada arrancável (feita na primeira vez que ele é pego). */
   private readonly baked = new Map<number, THREE.BufferGeometry>();
@@ -90,8 +94,8 @@ export class Pickables {
 
       const touching = gap < TOUCH_MARGIN || this.isTouching(ball, record);
       if (!touching) continue;
-      if (r >= record.size) this.absorb(record, ball, center, random);
-      else this.blockedBySize = Math.max(this.blockedBySize, record.size);
+      if (r * this.pluckReach >= record.size) this.absorb(record, ball, center, random);
+      else this.blockedBySize = Math.max(this.blockedBySize, record.size / this.pluckReach);
     }
   }
 
@@ -146,6 +150,7 @@ export class Pickables {
       ground: record.probeA.clone(),
       tint: new THREE.Color(record.tint),
       size: record.size,
+      variant: record.variant,
     });
   }
 }

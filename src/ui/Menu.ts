@@ -14,16 +14,21 @@ import {
   type MessageKey,
 } from '../i18n';
 import { PAD_LABELS, type MenuAction, type PadStyle } from '../core/GamepadInput';
+import type { Progression } from '../progression/Progression';
 import { Icons } from './icons';
+import { GameIcons } from './gameIcons';
 import { segmented, slider, toggle, type Control } from './controls';
+import { BurrowSheet } from './BurrowSheet';
+import { bindTabs, tabsMarkup } from './tabs';
 
 /**
  * Menu de início e de pausa: a "madrugada" por cima do jardim (que continua
  * girando ao vivo atrás). Jogar faz amanhecer; pausar faz a noite voltar.
- * Tem duas placas que deslizam por cima: Configurações (com abas) e Como jogar.
+ * Tem três placas que deslizam por cima: Toca (despensa, catálogo e poderes),
+ * Configurações (com abas) e Como jogar.
  */
 
-type SheetName = 'settings' | 'help';
+type SheetName = 'burrow' | 'settings' | 'help';
 type TabName = 'graphics' | 'audio' | 'controls' | 'language';
 
 const TABS: ReadonlyArray<{ name: TabName; icon: string; label: MessageKey }> = [
@@ -65,6 +70,10 @@ export class Menu {
   private readonly playButton: HTMLButtonElement;
   private readonly playLabel: HTMLElement;
   private readonly record: HTMLElement;
+  private readonly burrowMeta: HTMLElement;
+  private readonly burrowBadge: HTMLElement;
+  /** Placa da toca (o jogo liga o `onMeal` dela). */
+  readonly burrow: BurrowSheet;
   private readonly sheets: Record<SheetName, HTMLElement>;
   private readonly openers: Record<SheetName, HTMLButtonElement>;
   private readonly tabButtons = new Map<TabName, HTMLButtonElement>();
@@ -79,7 +88,11 @@ export class Menu {
   private openSheet: SheetName | null = null;
   private lastSave: SaveData | null = null;
 
-  constructor(parent: HTMLElement, private readonly isTouch: boolean) {
+  constructor(
+    parent: HTMLElement,
+    private readonly isTouch: boolean,
+    private readonly progression: Progression,
+  ) {
     this.element = document.createElement('div');
     this.element.className = 'menu';
     this.element.setAttribute('role', 'dialog');
@@ -97,6 +110,10 @@ export class Menu {
           <button class="menu__play" type="button" data-play disabled>
             <span class="menu__play-icon">${Icons.play}</span><span data-play-label></span>
           </button>
+          <button class="menu__link" type="button" data-open="burrow" aria-expanded="false" aria-controls="sheet-burrow">
+            <span class="menu__link-icon">${GameIcons.burrow}<span class="menu__link-badge" data-burrow-badge hidden></span></span>
+            <span data-t="menu.burrow"></span><span class="menu__link-meta" data-burrow-meta></span>
+          </button>
           <button class="menu__link" type="button" data-open="settings" aria-expanded="false" aria-controls="sheet-settings">
             <span class="menu__link-icon">${Icons.gear}</span><span data-t="menu.settings"></span>
           </button>
@@ -113,14 +130,19 @@ export class Menu {
       ${this.settingsSheet()}
       ${this.helpSheet()}
     `;
+    // A placa da toca entra antes da coleta dos textos (ela também usa data-t).
+    this.burrow = new BurrowSheet(progression);
+    this.element.append(this.burrow.element);
     parent.append(this.element);
 
     const $ = <T extends HTMLElement>(sel: string) => this.element.querySelector(sel) as T;
     this.playButton = $('[data-play]');
     this.playLabel = $('[data-play-label]');
     this.record = $('[data-record]');
-    this.sheets = { settings: $('#sheet-settings'), help: $('#sheet-help') };
-    this.openers = { settings: $('[data-open="settings"]'), help: $('[data-open="help"]') };
+    this.burrowMeta = $('[data-burrow-meta]');
+    this.burrowBadge = $('[data-burrow-badge]');
+    this.sheets = { burrow: this.burrow.element, settings: $('#sheet-settings'), help: $('#sheet-help') };
+    this.openers = { burrow: $('[data-open="burrow"]'), settings: $('[data-open="settings"]'), help: $('[data-open="help"]') };
 
     this.element.querySelectorAll<HTMLElement>('[data-t]').forEach((el) => this.texts.push([el, el.dataset.t as MessageKey]));
     this.element.querySelectorAll<HTMLElement>('[data-t-aria]').forEach((el) => this.texts.push([el, el.dataset.tAria as MessageKey, 'aria-label']));
@@ -129,6 +151,7 @@ export class Menu {
     this.bindEvents();
 
     settings.subscribe((s) => this.syncControls(s));
+    progression.subscribe(() => this.updateBurrowLink());
     onLocaleChange(() => this.refreshTexts());
     this.syncControls(settings.get());
     this.refreshTexts();
@@ -163,6 +186,11 @@ export class Menu {
     this.element.setAttribute('inert', '');
   }
 
+  /** Abre a placa da toca (pela tecla T, pelo botão do HUD ou na primeira vez, com o recado de apresentação). */
+  openBurrow(intro = false): void {
+    this.open('burrow', intro);
+  }
+
   /** Controle ligado/desligado: mostra a legenda de botões e a ajuda no estilo certo (Xbox ou PlayStation). */
   setGamepad(style: PadStyle | null): void {
     (this.element.querySelector('[data-pad-legend]') as HTMLElement).hidden = style === null;
@@ -181,7 +209,8 @@ export class Menu {
   handleGamepad(action: MenuAction): boolean {
     document.documentElement.classList.add('using-gamepad');
     const scope = this.openSheet ? this.sheets[this.openSheet] : (this.element.querySelector('.menu__main') as HTMLElement);
-    const focusables = Array.from(scope.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled)')).filter(
+    // `data-focusable`: itens de leitura (catálogo, poderes) que o controle precisa alcançar pra rolar a placa.
+    const focusables = Array.from(scope.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), [data-focusable]')).filter(
       (el) => el.tabIndex >= 0 && el.offsetParent !== null,
     );
     const active = document.activeElement as HTMLElement | null;
@@ -238,23 +267,14 @@ export class Menu {
   // --- montagem ---------------------------------------------------------------
 
   private settingsSheet(): string {
-    const tabs = TABS.map(
-      (tab, i) => /* html */ `
-        <button class="tabs__tab" type="button" role="tab" id="tab-${tab.name}" data-tab="${tab.name}"
-          aria-controls="panel-${tab.name}" aria-selected="${i === 0}" tabindex="${i === 0 ? 0 : -1}">
-          ${tab.icon}<span data-t="${tab.label}"></span>
-        </button>`,
-    ).join('');
-    const panels = TABS.map(
-      (tab, i) => `<div class="sheet__panel" role="tabpanel" id="panel-${tab.name}" aria-labelledby="tab-${tab.name}" data-panel="${tab.name}" ${i === 0 ? '' : 'hidden'}></div>`,
-    ).join('');
+    const { tabs, panels } = tabsMarkup('', 'sheet-settings-title', TABS);
     return /* html */ `
       <section class="sheet" id="sheet-settings" role="region" aria-labelledby="sheet-settings-title" hidden>
         <header class="sheet__header">
           <h2 class="sheet__title" id="sheet-settings-title" data-t="menu.settings"></h2>
           <button class="sheet__close" type="button" data-close data-t-aria="menu.close">${Icons.close}</button>
         </header>
-        <div class="tabs" role="tablist" aria-labelledby="sheet-settings-title">${tabs}</div>
+        ${tabs}
         <div class="sheet__body">${panels}</div>
         <footer class="sheet__footer">
           <button class="sheet__reset" type="button" data-reset>${Icons.reset}<span data-t="settings.reset"></span></button>
@@ -270,7 +290,7 @@ export class Menu {
     const controls = this.isTouch
       ? /* html */ `<ul class="touch-list">
           <li data-t="touch.move"></li><li data-t="touch.look"></li><li data-t="touch.grab"></li>
-          <li data-t="touch.jump"></li><li data-t="touch.recall"></li>
+          <li data-t="touch.jump"></li><li data-t="touch.recall"></li><li data-t="touch.burrow"></li>
         </ul>`
       : /* html */ `<dl class="keys">
           ${row(keys('W', 'A', 'S', 'D'), 'controls.move')}
@@ -279,6 +299,7 @@ export class Menu {
           ${row(keyT('key.space'), 'controls.jump')}
           ${row(keys('Shift'), 'controls.run')}
           ${row(keys('R'), 'controls.recall')}
+          ${row(keys('T'), 'controls.burrow')}
           ${row(keyT('key.wheel'), 'controls.zoom')}
           ${row(keys('Esc'), 'controls.pause')}
         </dl>`;
@@ -294,6 +315,10 @@ export class Menu {
             <li data-t="help.step1"></li><li data-t="help.step2"></li><li data-t="help.step3"></li>
           </ol>
           <p class="help__weather" data-t="help.weather"></p>
+          <h3 class="sheet__heading" data-t="help.burrow"></h3>
+          <ul class="help-list">
+            <li data-t="help.burrow1"></li><li data-t="help.burrow2"></li><li data-t="help.burrow3"></li>
+          </ul>
           <h3 class="sheet__heading" data-t="help.controls"></h3>
           ${controls}
           <div data-pad-help hidden>
@@ -423,29 +448,18 @@ export class Menu {
 
   private bindEvents(): void {
     this.playButton.addEventListener('click', () => this.onPlay?.());
-    for (const name of ['settings', 'help'] as const) {
+    for (const name of ['burrow', 'settings', 'help'] as const) {
       this.openers[name].addEventListener('click', () => (this.openSheet === name ? this.closeSheet() : this.open(name)));
     }
     this.element.querySelectorAll<HTMLButtonElement>('[data-close]').forEach((b) => b.addEventListener('click', () => this.closeSheet()));
     this.element.querySelector('[data-reset]')!.addEventListener('click', () => settings.reset());
 
     // Abas (padrão WAI-ARIA): clique ou setas trocam e focam a aba.
-    const order = TABS.map((tab) => tab.name);
-    for (const [name, button] of this.tabButtons) {
-      button.addEventListener('click', () => this.selectTab(name));
-      button.addEventListener('keydown', (e) => {
-        const i = order.indexOf(name);
-        let next = -1;
-        if (e.key === 'ArrowRight') next = (i + 1) % order.length;
-        else if (e.key === 'ArrowLeft') next = (i - 1 + order.length) % order.length;
-        else if (e.key === 'Home') next = 0;
-        else if (e.key === 'End') next = order.length - 1;
-        if (next < 0) return;
-        e.preventDefault();
-        this.selectTab(order[next]);
-        this.tabButtons.get(order[next])!.focus();
-      });
-    }
+    bindTabs(
+      TABS.map((tab) => tab.name),
+      this.tabButtons,
+      this.tabPanels,
+    );
 
     // Esc fecha a placa aberta (e não deixa o evento vazar para o jogo).
     this.element.addEventListener('keydown', (e) => {
@@ -458,11 +472,15 @@ export class Menu {
     this.element.addEventListener('pointerdown', (e) => e.stopPropagation());
   }
 
-  private open(name: SheetName): void {
+  private open(name: SheetName, intro = false): void {
     if (this.openSheet && this.openSheet !== name) this.closeSheet(false);
     this.openSheet = name;
     const sheet = this.sheets[name];
     sheet.hidden = false;
+    if (name === 'burrow') {
+      this.burrow.prepare(intro);
+      this.progression.markBurrowSeen();
+    }
     this.openers[name].setAttribute('aria-expanded', 'true');
     this.element.classList.add('has-sheet');
     // Foco no primeiro controle útil da placa (aba ativa ou o fechar).
@@ -480,18 +498,17 @@ export class Menu {
     if (returnFocus) this.openers[name].focus({ preventScroll: true });
   }
 
-  private selectTab(name: TabName): void {
-    for (const [tab, button] of this.tabButtons) {
-      const selected = tab === name;
-      button.setAttribute('aria-selected', String(selected));
-      button.tabIndex = selected ? 0 : -1;
-      this.tabPanels.get(tab)!.hidden = !selected;
-    }
-  }
-
   private syncControls(s: Readonly<GameSettings>): void {
     for (const apply of this.sync) apply(s);
     if (s.language !== getLanguagePreference()) setLanguagePreference(s.language);
+  }
+
+  /** Link da toca: nível atual e bolinha com quantas bolas esperam pra ser comidas. */
+  private updateBurrowLink(): void {
+    this.burrowMeta.textContent = t('menu.level', { n: this.progression.level });
+    const count = this.progression.pantry.length;
+    this.burrowBadge.hidden = count === 0;
+    this.burrowBadge.textContent = String(count);
   }
 
   private updatePlayLabel(): void {
@@ -505,6 +522,7 @@ export class Menu {
     }
     for (const control of this.controls) control.refresh();
     this.updatePlayLabel();
+    this.updateBurrowLink();
     if (this.lastSave) this.setProgress(this.lastSave);
   }
 }

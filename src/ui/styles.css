@@ -302,6 +302,7 @@ body {
   line-height: 1.05;
   color: var(--color-dung);
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 .ball-card__meta {
   white-space: nowrap;
@@ -626,44 +627,6 @@ body {
   touch-action: none;
 }
 
-/* ==========================================================================
-   Carregando
-   ========================================================================== */
-.loader {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  background: #f3dcc0;
-  z-index: 5;
-  pointer-events: auto;
-  transition: opacity var(--dur-slow) var(--ease-out);
-}
-.loader.is-done {
-  opacity: 0;
-  pointer-events: none;
-}
-.loader__ball {
-  width: 56px;
-  height: 56px;
-  border-radius: 50%;
-  background: radial-gradient(circle at 35% 30%, var(--color-dung-light), var(--color-dung) 60%, #5a371d);
-  box-shadow: 0 6px 0 rgba(58, 42, 34, 0.18);
-  animation: roll 1.1s linear infinite;
-}
-.loader__text {
-  margin-top: var(--space-4);
-  font-weight: 800;
-  color: var(--color-ink-soft);
-  text-align: center;
-}
-
-@keyframes roll {
-  0% { transform: translateX(-40px) rotate(0deg); }
-  50% { transform: translateX(40px) rotate(360deg); }
-  100% { transform: translateX(-40px) rotate(720deg); }
-}
-
 @keyframes wobble {
   0%, 100% { transform: rotate(0deg) scale(1); }
   8% { transform: rotate(-2deg) scale(1.03, 0.97); }
@@ -765,5 +728,722 @@ body {
   .result,
   .is-touch .result {
     top: 22%;
+  }
+}
+
+/* ==========================================================================
+   Progressão no HUD: nível, pedidos da rodada, poderes e botão da toca
+   ========================================================================== */
+/* Cor de cada poder (ícone, carta e figurinha no HUD). */
+.perk-icon--sticky { --perk: #e0a43a; }
+.perk-icon--hotBlood { --perk: #e8563f; }
+.perk-icon--mudShell { --perk: #8a6a4a; }
+.perk-icon--nose { --perk: #d9679a; }
+.perk-icon--sneaky { --perk: #2f9e98; }
+.perk-icon--horned { --perk: #4b3f86; }
+
+.round-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  max-width: 280px;
+}
+
+.level-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px var(--space-3) 4px 6px;
+  border-radius: var(--radius-pill);
+  background: var(--color-cream);
+  box-shadow: var(--shadow-clay-pressed), var(--inner-highlight);
+  font-size: 12px;
+  font-weight: 900;
+  color: var(--color-ink);
+}
+.level-chip__star {
+  width: 18px;
+  height: 18px;
+  color: var(--color-accent);
+  filter: drop-shadow(0 1px 0 var(--color-accent-deep));
+}
+.level-chip__star svg {
+  width: 100%;
+  height: 100%;
+}
+.level-chip__bar {
+  width: 54px;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: rgba(123, 76, 42, 0.15);
+  overflow: hidden;
+}
+.level-chip__fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #ffc462, var(--color-accent-deep));
+  transform-origin: left center;
+  transition: transform var(--dur-slow) var(--ease-out);
+}
+
+.requests {
+  pointer-events: auto;
+  min-width: 210px;
+  border-radius: var(--radius-md);
+  background: rgba(255, 246, 232, 0.92);
+  box-shadow: var(--shadow-clay-pressed), var(--inner-highlight);
+  overflow: hidden;
+}
+.requests__toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: 7px var(--space-3) 5px;
+  border: 0;
+  background: transparent;
+  color: var(--color-ink-soft);
+  font: inherit;
+  cursor: pointer;
+}
+.requests__toggle:focus-visible {
+  outline: 3px solid var(--color-accent);
+  outline-offset: -3px;
+  border-radius: var(--radius-md);
+}
+.requests__title {
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.requests__tally {
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 900;
+  color: var(--color-dung);
+  font-variant-numeric: tabular-nums;
+}
+.requests__chevron {
+  width: 14px;
+  height: 14px;
+  transition: transform var(--dur-med) var(--ease-out);
+}
+.requests__chevron svg {
+  width: 100%;
+  height: 100%;
+}
+.requests.is-collapsed .requests__chevron {
+  transform: rotate(-90deg);
+}
+.requests__list {
+  display: grid;
+  gap: 3px;
+  margin: 0;
+  padding: 0 var(--space-3) var(--space-2);
+  list-style: none;
+}
+.requests.is-collapsed .requests__list {
+  display: none;
+}
+.request {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.3;
+  color: var(--color-ink);
+}
+.request__check {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 2px rgba(123, 76, 42, 0.3);
+}
+.request__check svg {
+  width: 12px;
+  height: 12px;
+}
+.request__count {
+  margin-left: auto;
+  padding-left: var(--space-2);
+  font-size: 12px;
+  color: var(--color-ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+.request.is-done {
+  color: var(--color-ink-soft);
+}
+.request.is-done .request__text {
+  text-decoration: line-through;
+  text-decoration-color: rgba(109, 86, 70, 0.5);
+}
+.request.is-done .request__check {
+  background: var(--color-leaf);
+  color: #fff;
+  box-shadow: 0 2px 0 #5c9a40;
+  animation: pop-in var(--dur-slow) var(--ease-spring);
+}
+.round-panel.is-flash .requests {
+  animation: request-flash 700ms var(--ease-out);
+}
+
+.round-perks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.round-perks[hidden] {
+  display: none;
+}
+.round-perk {
+  --heat: 0;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--perk);
+  color: #fff;
+  box-shadow: 0 3px 0 rgba(58, 42, 34, 0.25), inset 0 2px 0 rgba(255, 255, 255, 0.35);
+  animation: pop-in var(--dur-slow) var(--ease-spring);
+}
+.round-perk svg {
+  width: 18px;
+  height: 18px;
+}
+/* Sangue quente acende conforme esquenta. */
+.round-perk.perk-icon--hotBlood {
+  box-shadow:
+    0 3px 0 rgba(58, 42, 34, 0.25),
+    inset 0 2px 0 rgba(255, 255, 255, 0.35),
+    0 0 calc(var(--heat) * 16px) calc(var(--heat) * 4px) rgba(255, 150, 60, calc(var(--heat) * 0.85));
+  transform: scale(calc(1 + var(--heat) * 0.12));
+  transition: transform var(--dur-med) var(--ease-out), box-shadow var(--dur-med) var(--ease-out);
+}
+
+.burrow-btn {
+  position: relative;
+}
+.burrow-btn.has-food {
+  color: var(--color-dung);
+}
+.burrow-btn__badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  display: grid;
+  place-items: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: var(--radius-pill);
+  background: var(--color-accent);
+  color: #3a2208;
+  font-size: 11px;
+  font-weight: 900;
+  box-shadow: 0 2px 0 var(--color-accent-deep);
+  animation: pop-in var(--dur-slow) var(--ease-spring);
+}
+.burrow-btn__badge[hidden] {
+  display: none;
+}
+
+/* Faro: marcadores dos montinhos fresquinhos. */
+.scent-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.scent-marker {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 28px;
+  height: 28px;
+  margin: -14px 0 0 -14px;
+  opacity: 0;
+  transition: opacity var(--dur-med) var(--ease-out);
+  will-change: transform;
+}
+.scent-marker.is-visible {
+  opacity: 0.92;
+}
+.scent-marker__dot {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #fff1f6;
+  color: #d9679a;
+  box-shadow: 0 2px 0 rgba(122, 40, 80, 0.25), 0 0 0 3px rgba(217, 103, 154, 0.25);
+  animation: scent-bob 1.8s var(--ease-out) infinite;
+}
+.scent-marker__dot svg {
+  width: 16px;
+  height: 16px;
+}
+/* A seta só aparece presa na borda (apontando pra fora da tela). */
+.scent-marker__arrow {
+  position: absolute;
+  inset: -12px;
+  display: none;
+  color: #d9679a;
+}
+.scent-marker__arrow svg {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 14px;
+  height: 14px;
+  margin-left: -7px;
+}
+.scent-marker.is-edge .scent-marker__arrow {
+  display: block;
+}
+
+/* Resultado: o que a toca ganhou */
+.result__extra {
+  display: grid;
+  gap: 4px;
+  max-width: 330px;
+  margin: var(--space-3) 0 0;
+  padding: var(--space-3) 0 0;
+  border-top: 1px dashed rgba(123, 76, 42, 0.25);
+  list-style: none;
+  text-align: left;
+}
+.result__extra:empty {
+  display: none;
+}
+.result__line {
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  align-items: start;
+  gap: var(--space-2);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.35;
+  color: var(--color-ink);
+}
+.result__line svg {
+  width: 18px;
+  height: 18px;
+  color: var(--color-dung);
+}
+.result__line strong {
+  color: var(--color-accent-deep);
+  font-weight: 900;
+}
+.result__line .keycap {
+  height: 22px;
+  min-width: 22px;
+  margin: 0 2px;
+  vertical-align: middle;
+}
+
+/* ==========================================================================
+   Escolha de poder (1 entre 3)
+   ========================================================================== */
+.perk-picker {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: grid;
+  place-items: center;
+  padding: var(--space-5);
+  background:
+    radial-gradient(90% 70% at 50% 60%, rgba(255, 190, 110, 0.18), rgba(255, 190, 110, 0) 70%),
+    rgba(27, 26, 68, 0.62);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  pointer-events: auto;
+  animation: fade-in var(--dur-med) var(--ease-out);
+}
+.perk-picker[hidden] {
+  display: none;
+}
+.perk-picker__panel {
+  width: min(760px, 100%);
+  text-align: center;
+  color: var(--dawn-cream, #fff3e2);
+}
+.perk-picker__eyebrow {
+  display: inline-block;
+  margin: 0 0 var(--space-2);
+  padding: 4px var(--space-3);
+  border-radius: var(--radius-pill);
+  background: var(--color-accent);
+  color: #3a2208;
+  font-size: 13px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 3px 0 var(--color-accent-deep);
+}
+.perk-picker__title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(28px, 4vw, 40px);
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  text-shadow: 0 3px 0 rgba(15, 12, 40, 0.45);
+}
+.perk-picker__subtitle {
+  margin: var(--space-1) 0 var(--space-5);
+  font-size: 16px;
+  font-weight: 700;
+  color: #ffd9a8;
+}
+.perk-picker__cards {
+  display: grid;
+  grid-template-columns: repeat(var(--cards, 3), minmax(0, 1fr));
+  gap: var(--space-4);
+}
+.perk-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-5) var(--space-4) var(--space-4);
+  border: 0;
+  border-radius: var(--radius-lg);
+  background: linear-gradient(180deg, #fff8ec 0%, #f6e3c6 100%);
+  color: var(--color-ink);
+  font: inherit;
+  text-align: center;
+  cursor: pointer;
+  box-shadow: 0 6px 0 rgba(15, 12, 40, 0.35), 0 20px 40px rgba(15, 12, 40, 0.35), inset 0 2px 0 rgba(255, 255, 255, 0.8);
+  animation: card-in var(--dur-slow) var(--ease-spring) backwards;
+  transition:
+    transform var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out);
+}
+.perk-card:nth-child(2) {
+  animation-delay: 70ms;
+}
+.perk-card:nth-child(3) {
+  animation-delay: 140ms;
+}
+.perk-card:hover,
+.perk-card:focus-visible {
+  transform: translateY(-6px) rotate(-0.6deg);
+  box-shadow: 0 10px 0 rgba(15, 12, 40, 0.35), 0 26px 48px rgba(15, 12, 40, 0.4), inset 0 2px 0 rgba(255, 255, 255, 0.8);
+}
+.perk-card:focus-visible {
+  outline: 4px solid var(--color-accent);
+  outline-offset: 4px;
+}
+.perk-card:active {
+  transform: translateY(2px) scale(0.98);
+}
+.perk-card__key {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-sm);
+  background: rgba(43, 42, 94, 0.08);
+  color: var(--color-ink-soft);
+  font-size: 13px;
+  font-weight: 900;
+}
+.perk-card__icon {
+  display: grid;
+  place-items: center;
+  width: 68px;
+  height: 68px;
+  border-radius: 50%;
+  background: var(--perk);
+  color: #fff;
+  box-shadow: 0 5px 0 rgba(58, 42, 34, 0.25), inset 0 3px 0 rgba(255, 255, 255, 0.35);
+}
+.perk-card__icon svg {
+  width: 36px;
+  height: 36px;
+}
+.perk-card__name {
+  margin-top: var(--space-1);
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 900;
+  color: var(--color-ink);
+}
+.perk-card__desc {
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.4;
+  color: var(--color-ink-soft);
+}
+.perk-picker__hint {
+  margin: var(--space-5) 0 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: rgba(255, 243, 226, 0.75);
+}
+
+@keyframes card-in {
+  from {
+    opacity: 0;
+    transform: translateY(24px) scale(0.92);
+  }
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes pop-in {
+  from {
+    transform: scale(0.4);
+    opacity: 0;
+  }
+}
+@keyframes request-flash {
+  30% {
+    transform: scale(1.04);
+    box-shadow: var(--shadow-clay-pressed), var(--inner-highlight), 0 0 0 4px rgba(124, 191, 91, 0.55);
+  }
+}
+@keyframes scent-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+
+/* Celular em pé: cartas viram lista (ícone à esquerda, texto à direita). */
+@media (max-width: 640px) {
+  .perk-picker {
+    padding: var(--space-4);
+  }
+  .perk-picker__cards {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-3);
+  }
+  .perk-card {
+    display: grid;
+    grid-template-columns: 56px 1fr;
+    grid-template-rows: auto auto;
+    column-gap: var(--space-3);
+    row-gap: 2px;
+    align-items: center;
+    padding: var(--space-3) var(--space-4);
+    text-align: left;
+  }
+  .perk-card__key {
+    display: none;
+  }
+  .perk-card__icon {
+    grid-row: span 2;
+    width: 52px;
+    height: 52px;
+  }
+  .perk-card__icon svg {
+    width: 28px;
+    height: 28px;
+  }
+  .perk-card__name {
+    margin: 0;
+    font-size: 17px;
+  }
+  .perk-card__desc {
+    font-size: 13px;
+  }
+  .perk-picker__subtitle {
+    margin-bottom: var(--space-4);
+  }
+}
+/* Deitado: altura é ouro. */
+@media (max-height: 520px) {
+  .perk-picker__subtitle {
+    margin-bottom: var(--space-3);
+  }
+  .perk-card {
+    padding: var(--space-3);
+    gap: 4px;
+  }
+  .perk-card__icon {
+    width: 48px;
+    height: 48px;
+  }
+  .perk-card__icon svg {
+    width: 26px;
+    height: 26px;
+  }
+  .perk-card__name {
+    font-size: 17px;
+  }
+  .perk-card__desc {
+    font-size: 12px;
+  }
+  .perk-picker__hint {
+    margin-top: var(--space-3);
+  }
+}
+
+/* Progressão no toque: o topo do celular é apertado. */
+.is-touch .level-chip {
+  display: none;
+}
+.is-touch .requests {
+  min-width: 0;
+}
+.is-touch .hint {
+  top: calc(max(var(--space-4), env(safe-area-inset-top)) + 196px);
+}
+.is-touch .toast {
+  top: calc(max(var(--space-4), env(safe-area-inset-top)) + 256px);
+}
+@media (max-height: 520px) {
+  .round-panel {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .is-touch .hint {
+    top: calc(max(var(--space-4), env(safe-area-inset-top)) + 80px);
+    max-width: 46vw;
+  }
+  .is-touch .toast {
+    top: calc(max(var(--space-4), env(safe-area-inset-top)) + 132px);
+  }
+}
+
+/* ==========================================================================
+   Aviso de conquista (por cima de tudo, inclusive do menu)
+   ========================================================================== */
+.achievement-toast {
+  position: absolute;
+  top: max(var(--space-4), env(safe-area-inset-top));
+  left: 50%;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  max-width: calc(100% - 2 * var(--space-4));
+  padding: 8px var(--space-5) 8px 8px;
+  border-radius: var(--radius-pill);
+  background:
+    radial-gradient(120% 160% at 0% 50%, rgba(255, 181, 71, 0.35), rgba(255, 181, 71, 0) 55%),
+    linear-gradient(135deg, #2b2a5e 0%, #4b3f86 100%);
+  color: #fff3e2;
+  box-shadow: 0 5px 0 rgba(15, 12, 40, 0.35), 0 18px 40px rgba(15, 12, 40, 0.35), inset 0 2px 0 rgba(255, 255, 255, 0.14);
+  opacity: 0;
+  visibility: hidden;
+  transform: translate(-50%, -140%);
+  pointer-events: none;
+  transition:
+    transform 460ms var(--ease-spring),
+    opacity var(--dur-med) var(--ease-out),
+    visibility 0s linear var(--dur-med);
+}
+.achievement-toast.is-visible {
+  opacity: 1;
+  visibility: visible;
+  transform: translate(-50%, 0);
+  transition:
+    transform 460ms var(--ease-spring),
+    opacity var(--dur-med) var(--ease-out),
+    visibility 0s;
+}
+.achievement-toast.is-leaving {
+  opacity: 0;
+  transform: translate(-50%, -140%);
+  transition:
+    transform 320ms var(--ease-out),
+    opacity 320ms var(--ease-out);
+}
+.achievement-toast__icon {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background: linear-gradient(180deg, #ffd27a 0%, #ffb547 60%, #f39a2e 100%);
+  color: #2a1706;
+  box-shadow: 0 3px 0 #d98424, inset 0 2px 0 rgba(255, 255, 255, 0.5);
+}
+.achievement-toast.is-visible .achievement-toast__icon {
+  animation: trophy-pop 700ms var(--ease-spring) 120ms backwards;
+}
+.achievement-toast__icon svg {
+  width: 26px;
+  height: 26px;
+}
+.achievement-toast__text {
+  display: grid;
+  min-width: 0;
+  line-height: 1.2;
+}
+.achievement-toast__label {
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #ffd9a8;
+}
+.achievement-toast__text strong {
+  overflow: hidden;
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.achievement-toast__reward {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 800;
+  color: rgba(255, 243, 226, 0.85);
+}
+.achievement-toast__reward svg {
+  width: 13px;
+  height: 13px;
+  color: #ffb547;
+}
+@keyframes trophy-pop {
+  from {
+    transform: scale(0.3) rotate(-30deg);
+  }
+}
+
+/* Celular em pé: quatro botões no topo (toca, trazer bola, pausa, som) dividem a largura com o cartão da bola. */
+@media (max-width: 420px) {
+  .hud__top {
+    gap: var(--space-2);
+  }
+  .hud__actions {
+    gap: 6px;
+  }
+  .hud__actions .btn--icon {
+    width: 40px;
+    height: 40px;
+  }
+  .hud__actions .btn--icon svg {
+    width: 20px;
+    height: 20px;
+  }
+  .ball-card {
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3) var(--space-2) var(--space-2);
+  }
+  .ball-card__icon {
+    width: 36px;
+    height: 36px;
   }
 }

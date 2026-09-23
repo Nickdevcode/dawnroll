@@ -4,6 +4,7 @@ import type { InputState } from '../core/Input';
 import { BeetleModel } from './BeetleModel';
 import type { DungBall } from './DungBall';
 import { clamp, damp, dampAngle, angleDelta } from '../utils/math';
+import { neutralModifiers, type Modifiers } from '../progression/perks';
 
 const COLLIDER_RADIUS = 0.3;
 const WALK_SPEED = 3.6;
@@ -63,6 +64,8 @@ export class Beetle {
   landingSpeed = 0;
   /** Multiplicador de velocidade do terreno (água até a canela = mais devagar). O jogo atualiza a cada passo. */
   speedScale = 1;
+  /** Nível e poderes da rodada (força, velocidade, giro). O jogo atualiza a cada passo. */
+  modifiers: Modifiers = neutralModifiers();
   private pushBlend = 0;
   private readonly pushDir = new THREE.Vector3(0, 0, 1);
   private pushStrain = 0;
@@ -286,7 +289,7 @@ export class Beetle {
   }
 
   private updateWalk(dt: number, wish: THREE.Vector3, amount: number, run: boolean): THREE.Vector3 {
-    const speed = (run ? RUN_SPEED : WALK_SPEED) * this.speedScale;
+    const speed = (run ? RUN_SPEED : WALK_SPEED) * this.speedScale * this.modifiers.walk;
     const accel = this.grounded ? GROUND_ACCEL : AIR_ACCEL;
     const targetX = wish.x * speed * amount;
     const targetZ = wish.z * speed * amount;
@@ -329,7 +332,7 @@ export class Beetle {
     if (amount > 0.1 && !pulling) {
       const current = Math.atan2(this.pushDir.x, this.pushDir.z);
       const target = Math.atan2(wish.x, wish.z);
-      const turnRate = 3.4 / (1 + 0.3 * r);
+      const turnRate = (3.4 / (1 + 0.3 * r)) * this.modifiers.turn;
       const delta = clamp(angleDelta(current, target), -turnRate * dt, turnRate * dt);
       const next = current + delta;
       this.pushDir.set(Math.sin(next), 0, Math.cos(next));
@@ -338,7 +341,7 @@ export class Beetle {
     // Velocidade alvo da bola: menor e mais "pesada" quanto maior ela é — até ~12 cm;
     // daí em diante estabiliza (bola gigante cobre mais chão por volta, não pode virar lesma).
     const sizeFactor = 1 / (1 + 0.24 * (Math.min(r, 3) - 0.5));
-    const maxSpeed = (run ? 4.4 : 3.1) * sizeFactor * this.speedScale;
+    const maxSpeed = (run ? 4.4 : 3.1) * sizeFactor * this.speedScale * this.modifiers.pushSpeed;
     const desiredVel = new THREE.Vector3();
     if (amount > 0.1) {
       if (pulling) desiredVel.copy(wish).multiplyScalar(maxSpeed * 0.45 * amount);
@@ -346,7 +349,7 @@ export class Beetle {
     }
 
     // Aceleração limitada (força do besouro / massa). Segurar sem input = freio.
-    const accelLimit = 15 / (1 + 0.35 * r);
+    const accelLimit = (15 / (1 + 0.35 * r)) * this.modifiers.push;
     const needed = new THREE.Vector3(desiredVel.x - ballVel.x, 0, desiredVel.z - ballVel.z).divideScalar(0.18);
     const neededLen = needed.length();
     const applied = Math.min(neededLen, accelLimit);

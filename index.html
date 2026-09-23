@@ -3,14 +3,152 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no" />
-    <meta name="theme-color" content="#2b2a5e" />
+    <meta name="theme-color" content="#1b1a44" />
     <meta name="description" content="Dawnroll: um besouro rola-bosta de massinha num jardim em miniatura. Role seu solzinho, engula o jardim e enterre tudo na toca." />
     <title>Dawnroll</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <!--
+      Tela de carregamento: mora aqui (e não no JS) pra aparecer no primeiro
+      quadro, antes do download do jogo. É a madrugada do menu com o solzinho
+      rolando pelo horizonte, que é a própria barra de progresso (--p, 0..1).
+    -->
+    <style>
+      html, body { margin: 0; height: 100%; background: #1b1a44; }
+      .boot {
+        --p: 0.06;
+        position: fixed;
+        inset: 0;
+        z-index: 10;
+        display: grid;
+        place-items: center;
+        overflow: hidden;
+        background:
+          radial-gradient(120% 70% at 50% 118%, rgba(255, 190, 110, calc(0.18 + var(--p) * 0.42)), rgba(255, 190, 110, 0) 62%),
+          radial-gradient(70% 55% at 10% 0%, rgba(120, 104, 210, 0.35), rgba(120, 104, 210, 0) 70%),
+          linear-gradient(180deg, #1b1a44 0%, #2b2a5e 58%, #4b3f86 100%);
+        color: #fff3e2;
+        font-family: ui-rounded, 'SF Pro Rounded', 'Nunito', 'Varela Round', 'Segoe UI', system-ui, sans-serif;
+        transition: opacity 700ms cubic-bezier(0.22, 1, 0.36, 1), visibility 0s linear 700ms;
+      }
+      /* Some em dois tempos: primeiro o miolo (senão aparecem dois logos, o daqui e o do menu), depois o céu. */
+      .boot.is-done { opacity: 0; visibility: hidden; transition-delay: 220ms, 920ms; }
+      .boot.is-done .boot__center { opacity: 0; transform: translateY(-12px) scale(0.98); }
+      /* Estrelinhas que somem conforme amanhece. */
+      .boot__stars {
+        position: absolute;
+        inset: 0;
+        opacity: calc(1 - var(--p) * 0.7);
+        background-image:
+          radial-gradient(1.5px 1.5px at 12% 22%, #fff 50%, transparent 51%),
+          radial-gradient(1px 1px at 27% 12%, #fff 50%, transparent 51%),
+          radial-gradient(1.5px 1.5px at 44% 30%, #ffe9c4 50%, transparent 51%),
+          radial-gradient(1px 1px at 63% 16%, #fff 50%, transparent 51%),
+          radial-gradient(2px 2px at 78% 26%, #fff 50%, transparent 51%),
+          radial-gradient(1px 1px at 88% 10%, #ffe9c4 50%, transparent 51%),
+          radial-gradient(1.5px 1.5px at 6% 48%, #fff 50%, transparent 51%),
+          radial-gradient(1px 1px at 93% 44%, #fff 50%, transparent 51%);
+        animation: boot-twinkle 4s ease-in-out infinite alternate;
+        transition: opacity 600ms ease;
+      }
+      .boot__center {
+        position: relative;
+        display: grid;
+        justify-items: center;
+        gap: 28px;
+        padding: 24px;
+        text-align: center;
+        transition: opacity 240ms ease-out, transform 240ms ease-out;
+      }
+      .boot__title {
+        margin: 0;
+        font-size: clamp(56px, 11vw, 116px);
+        font-weight: 900;
+        line-height: 0.9;
+        letter-spacing: -0.035em;
+        color: #fff3e2;
+        text-shadow:
+          0 0.02em 0 #ffe1b6,
+          0 0.045em 0 #f0b577,
+          0 0.07em 0 #b8733f,
+          0 0.095em 0 #6e3f24,
+          0 0.2em 0.32em rgba(12, 10, 36, 0.55);
+      }
+      .boot__horizon {
+        position: relative;
+        width: min(320px, 72vw);
+        height: 10px;
+        margin-top: 18px;
+        border-radius: 999px;
+        background: rgba(255, 243, 226, 0.14);
+        box-shadow: inset 0 2px 3px rgba(12, 10, 36, 0.35);
+      }
+      .boot__fill {
+        position: absolute;
+        inset: 0;
+        border-radius: inherit;
+        background: linear-gradient(90deg, #ffd27a, #ffb547 60%, #f39a2e);
+        transform: scaleX(var(--p));
+        transform-origin: left center;
+        transition: transform 600ms cubic-bezier(0.22, 1, 0.36, 1);
+      }
+      /* O solzinho de massinha rola até a ponta do progresso. */
+      .boot__sun {
+        position: absolute;
+        left: 0;
+        bottom: 1px;
+        width: 30px;
+        height: 30px;
+        margin-left: -15px;
+        transform: translateX(calc(var(--p) * min(320px, 72vw)));
+        transition: transform 600ms cubic-bezier(0.22, 1, 0.36, 1);
+      }
+      .boot__ball {
+        width: 100%;
+        height: 100%;
+        border-radius: 50%;
+        background:
+          radial-gradient(circle at 30% 28%, #fff4d0 0 12%, transparent 13%),
+          radial-gradient(circle at 64% 70%, rgba(168, 90, 26, 0.55) 0 14%, transparent 15%),
+          radial-gradient(circle at 36% 32%, #ffe7a3 0%, #ffb547 45%, #b8611d 100%);
+        box-shadow: 0 0 16px 3px rgba(255, 181, 71, 0.35), 0 3px 0 #b8611d;
+        animation: boot-roll 1.6s linear infinite;
+      }
+      .boot__text {
+        min-height: 1.4em;
+        margin: 0;
+        font-size: 16px;
+        font-weight: 700;
+        color: #ffd9a8;
+      }
+      @keyframes boot-roll { to { transform: rotate(360deg); } }
+      @keyframes boot-twinkle { to { filter: brightness(1.5); } }
+      @media (prefers-reduced-motion: reduce) {
+        .boot__ball, .boot__stars { animation: none; }
+      }
+    </style>
   </head>
   <body>
     <canvas id="scene" aria-label="Dawnroll"></canvas>
     <div id="ui"></div>
+    <div id="boot" class="boot" role="status" aria-live="polite">
+      <div class="boot__stars" aria-hidden="true"></div>
+      <div class="boot__center">
+        <h1 class="boot__title">Dawnroll</h1>
+        <div class="boot__horizon" aria-hidden="true">
+          <div class="boot__fill"></div>
+          <div class="boot__sun"><div class="boot__ball"></div></div>
+        </div>
+        <p class="boot__text" data-boot-text></p>
+      </div>
+    </div>
+    <script>
+      // Texto antes do jogo chegar (o dicionário do jogo ainda não carregou).
+      (function () {
+        var lang = (navigator.languages && navigator.languages[0]) || navigator.language || '';
+        var el = document.querySelector('[data-boot-text]');
+        if (el) el.textContent = /^pt/i.test(lang) ? 'Amassando a massinha…' : 'Kneading the clay…';
+      })();
+    </script>
     <noscript>Dawnroll needs JavaScript and WebGL. / O Dawnroll precisa de JavaScript e WebGL.</noscript>
     <script type="module" src="/src/main.ts"></script>
   </body>

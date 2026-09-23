@@ -3,7 +3,14 @@ import { PAD_LABELS, type PadStyle } from '../core/GamepadInput';
 import { isTouchDevice } from '../core/device';
 import type { SaveData } from '../core/save';
 import { formatCm, onLocaleChange, t, tn, type MessageKey } from '../i18n';
+import type { BurialOutcome } from '../progression/Progression';
+import type { PerkId } from '../progression/perks';
 import { Icons } from './icons';
+import { GameIcons } from './gameIcons';
+import { escapeHtml } from './html';
+import { PerkPicker } from './PerkPicker';
+import { RoundPanel, type RoundView } from './RoundPanel';
+import { placeMarker, type ProjectedPoint, type ScreenMargins } from './screenMarker';
 
 /** Marcos de tamanho (cm) que disparam um aviso comemorativo; o nome vem do dicionário. */
 const MILESTONES: ReadonlyArray<[number, MessageKey]> = [
@@ -19,13 +26,7 @@ const MILESTONES: ReadonlyArray<[number, MessageKey]> = [
 export type HintKind = 'none' | 'grab' | 'pushing' | 'tooSmall' | 'burrowTooSmall' | 'dissolving';
 
 /** Onde desenhar o marcador da toca (coordenadas normalizadas da câmera). */
-export interface BurrowMarkerState {
-  /** -1..1 (esquerda → direita). */
-  ndcX: number;
-  /** -1..1 (baixo → cima). */
-  ndcY: number;
-  /** Ponto atrás da câmera (a direção na tela fica invertida). */
-  behind: boolean;
+export interface BurrowMarkerState extends ProjectedPoint {
   distanceCm: number;
   /** A bola já tem tamanho para ser enterrada. */
   ready: boolean;
@@ -36,7 +37,12 @@ export interface RoundResult {
   dungCount: number;
   itemCount: number;
   record: boolean;
+  /** O que o enterro rendeu (comida, pedidos, figurinhas novas). */
+  outcome: BurialOutcome;
 }
+
+/** Marcadores do Faro (montinhos fresquinhos) desenhados de uma vez. */
+const MAX_SCENT_MARKERS = 4;
 
 /**
  * Interface em jogo: carregando, cartão da bola, dicas, avisos, marcador da toca,
@@ -53,14 +59,20 @@ export class Hud {
   private readonly hint: HTMLElement;
   private readonly toast: HTMLElement;
   private readonly soundButton: HTMLButtonElement;
-  private readonly loader: HTMLElement;
   private readonly liveRegion: HTMLElement;
   private readonly recordChip: HTMLElement;
   private readonly marker: HTMLElement;
   private readonly markerArrow: HTMLElement;
   private readonly markerLabel: HTMLElement;
   private readonly result: HTMLElement;
+  private readonly resultExtra: HTMLElement;
   private readonly fps: HTMLElement;
+  private readonly burrowButton: HTMLButtonElement;
+  private readonly burrowBadge: HTMLElement;
+  private readonly scentMarkers: HTMLElement[] = [];
+  private readonly roundPanel: RoundPanel;
+  readonly perkPicker: PerkPicker;
+  private pantryCount = 0;
   /** Textos fixos: elemento + chave (+ atributo, se não for o texto). */
   private readonly texts: Array<[HTMLElement, MessageKey, string?]> = [];
 
@@ -89,6 +101,8 @@ export class Hud {
   onOpenMenu: (() => void) | null = null;
   /** Passou de um marco de tamanho (índice do marco). */
   onMilestone: ((index: number) => void) | null = null;
+  /** Botão da toca (ou tecla T): pausa e abre o painel da toca. */
+  onOpenBurrow: (() => void) | null = null;
 
   constructor(container: HTMLElement, private readonly input: Input) {
     this.root = container;
@@ -104,14 +118,26 @@ export class Hud {
     this.hint = $('[data-hint]');
     this.toast = $('[data-toast]');
     this.soundButton = $('[data-sound]');
-    this.loader = $('[data-loader]');
     this.liveRegion = $('[data-live]');
     this.recordChip = $('[data-record]');
     this.marker = $('[data-burrow]');
     this.markerArrow = $('[data-burrow-arrow]');
     this.markerLabel = $('[data-burrow-label]');
     this.result = $('[data-result]');
+    this.resultExtra = $('[data-result-extra]');
     this.fps = $('[data-fps]');
+    this.burrowButton = $('[data-burrow-open]');
+    this.burrowBadge = $('[data-burrow-badge]');
+    this.roundPanel = new RoundPanel($('[data-round-slot]'), this.isTouch);
+    this.perkPicker = new PerkPicker(this.hud);
+    const scentLayer = $('[data-scent]');
+    for (let i = 0; i < MAX_SCENT_MARKERS; i++) {
+      const marker = document.createElement('div');
+      marker.className = 'scent-marker';
+      marker.innerHTML = `<div class="scent-marker__arrow">${Icons.pointer}</div><div class="scent-marker__dot">${GameIcons.sparkle}</div>`;
+      scentLayer.append(marker);
+      this.scentMarkers.push(marker);
+    }
     this.root.querySelectorAll<HTMLElement>('[data-t]').forEach((el) => this.texts.push([el, el.dataset.t as MessageKey]));
     this.root.querySelectorAll<HTMLElement>('[data-t-aria]').forEach((el) => this.texts.push([el, el.dataset.tAria as MessageKey, 'aria-label']));
 
@@ -123,6 +149,10 @@ export class Hud {
       e.stopPropagation();
       this.onOpenMenu?.();
     });
+    this.burrowButton.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.onOpenBurrow?.();
+    });
     $<HTMLButtonElement>('[data-recall]').addEventListener('click', (e) => {
       e.stopPropagation();
       this.input.queueReset();
@@ -131,11 +161,6 @@ export class Hud {
     if (this.isTouch) this.bindTouchControls();
     onLocaleChange(() => this.refreshTexts());
     this.refreshTexts();
-  }
-
-  /** Mundo pronto: o "carregando" some. */
-  setLoaded(): void {
-    this.loader.classList.add('is-done');
   }
 
   /** HUD aparece durante o jogo e some por trás do menu. */
@@ -198,7 +223,7 @@ export class Hud {
     this.lastResult = result;
     this.fillResult(result);
     this.result.classList.add('is-visible');
-    this.resultTimer = 4.6;
+    this.resultTimer = 6.5;
     this.hint.classList.remove('is-visible');
     this.liveRegion.textContent = `${t('result.live', { cm: formatCm(result.diameterCm) })}${result.record ? ` ${t('result.record')}` : ''}`;
   }
@@ -274,35 +299,7 @@ export class Hud {
       this.marker.classList.remove('is-visible');
       return;
     }
-    const w = window.innerWidth;
-    const h = window.innerHeight;
-    // Área útil: fora do topo (cartão da bola) e, no toque, fora dos polegares.
-    const top = this.isTouch ? 150 : 120;
-    const bottom = this.isTouch ? 190 : 70;
-    const side = this.isTouch ? 70 : 56;
-
-    let x = (state.ndcX * 0.5 + 0.5) * w;
-    let y = (-state.ndcY * 0.5 + 0.5) * h;
-    const onScreen = !state.behind && x > side && x < w - side && y > top && y < h - bottom;
-    let angle = 180; // pino apontando para baixo (para a toca)
-    if (!onScreen) {
-      // Direção a partir do centro; atrás da câmera, a projeção vem espelhada.
-      const cx = w / 2;
-      const cy = (top + h - bottom) / 2;
-      let dx = x - cx;
-      let dy = y - cy;
-      if (state.behind) {
-        dx = -dx;
-        dy = -dy;
-      }
-      if (Math.abs(dx) < 1e-3 && Math.abs(dy) < 1e-3) dy = 1;
-      const hx = w / 2 - side;
-      const hy = (h - bottom - top) / 2;
-      const k = Math.min(hx / Math.abs(dx || 1e-3), hy / Math.abs(dy || 1e-3));
-      x = cx + dx * k;
-      y = cy + dy * k;
-      angle = (Math.atan2(dy, dx) * 180) / Math.PI + 90;
-    }
+    const { x, y, angle, onScreen } = placeMarker(state, this.markerMargins(), window.innerWidth, window.innerHeight);
     this.marker.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`;
     this.markerArrow.style.transform = `rotate(${angle.toFixed(1)}deg)`;
     this.marker.classList.add('is-visible');
@@ -313,6 +310,54 @@ export class Hud {
       this.markerLabel.textContent = label;
       this.lastMarkerLabel = label;
     }
+  }
+
+  /** Estado da rodada: nível, pedidos e poderes (o painel só refaz o que mudou). */
+  setRound(view: RoundView): void {
+    this.roundPanel.set(view);
+  }
+
+  /** Calor do Sangue quente (0..1). */
+  setHeat(heat: number): void {
+    this.roundPanel.setHeat(heat);
+  }
+
+  /** Pedido cumprido: aviso + pulinho no cartão dos pedidos. */
+  requestDone(): void {
+    this.showToast(t('hud.requestDone'));
+    this.roundPanel.flashRequests();
+  }
+
+  /** Quantas bolas esperam na despensa (bolinha no botão da toca). */
+  setPantryCount(count: number): void {
+    this.pantryCount = count;
+    this.burrowBadge.hidden = count === 0;
+    this.burrowBadge.textContent = String(count);
+    this.burrowButton.setAttribute('aria-label', count > 0 ? tn('hud.burrowCount', count) : t('hud.burrow'));
+    this.burrowButton.classList.toggle('has-food', count > 0);
+  }
+
+  showPerkPicker(options: readonly PerkId[], cm: number): void {
+    this.hint.classList.remove('is-visible');
+    this.currentHint = '';
+    this.perkPicker.show(options, cm, this.device, this.padStyle);
+  }
+
+  /** Marcadores dos montinhos fresquinhos (poder Faro). Lista vazia esconde. */
+  setScentMarkers(points: readonly ProjectedPoint[]): void {
+    const margins = this.markerMargins();
+    this.scentMarkers.forEach((el, i) => {
+      const point = points[i];
+      if (!point) {
+        el.classList.remove('is-visible');
+        return;
+      }
+      const { x, y, angle, onScreen } = placeMarker(point, margins, window.innerWidth, window.innerHeight);
+      el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`;
+      (el.firstElementChild as HTMLElement).style.transform = `rotate(${angle.toFixed(1)}deg)`;
+      el.classList.add('is-visible');
+      el.classList.toggle('is-edge', !onScreen);
+    });
   }
 
   update(dt: number): void {
@@ -348,8 +393,14 @@ export class Hud {
     this.currentHint = '';
     if (this.lastSave) this.setProgress(this.lastSave);
     if (this.lastResult) this.fillResult(this.lastResult);
+    this.setPantryCount(this.pantryCount);
     this.setHint(this.hintState.kind, this.hintState.value);
     if (this.markerState) this.setBurrowMarker(this.markerState);
+  }
+
+  /** Área útil dos marcadores: fora do topo (cartões) e, no toque, fora dos polegares. */
+  private markerMargins(): ScreenMargins {
+    return this.isTouch ? { top: 150, bottom: 190, side: 70 } : { top: 120, bottom: 70, side: 56 };
   }
 
   /** Botão de segurar a bola (RT / R2) como "tecla" na dica. */
@@ -364,6 +415,32 @@ export class Hud {
     if (result.itemCount > 0) parts.push(tn('result.items', result.itemCount));
     $('[data-result-meta]').textContent = parts.join(' · ');
     $('[data-result-badge]').hidden = !result.record;
+    this.resultExtra.innerHTML = this.resultLines(result.outcome)
+      .map(([icon, html]) => `<li class="result__line">${icon}<span>${html}</span></li>`)
+      .join('');
+  }
+
+  /** O que a toca ganhou com o enterro: comida, nível, pedidos, figurinhas e como abrir a toca. */
+  private resultLines(outcome: BurialOutcome): Array<[string, string]> {
+    const lines: Array<[string, string]> = [];
+    const meal = outcome.meal;
+    if (outcome.stored) lines.push([GameIcons.food, escapeHtml(t('result.food', { n: outcome.food.total }))]);
+    else if (meal) lines.push([GameIcons.food, escapeHtml(t('result.ate', { xp: meal.xp }))]);
+    if (meal && meal.levelAfter > meal.levelBefore) lines.push([GameIcons.star, `<strong>${escapeHtml(t('burrow.levelUp', { n: meal.levelAfter }))}</strong>`]);
+    if (outcome.requestsDone > 0) lines.push([Icons.check, escapeHtml(tn('result.requests', outcome.requestsDone))]);
+    if (outcome.discovered.length > 0) {
+      const names = outcome.discovered.slice(0, 3).map((id) => t(`catalog.${id}` as MessageKey));
+      const more = outcome.discovered.length > 3 ? '…' : '';
+      lines.push([GameIcons.catalog, escapeHtml(t('result.new', { names: names.join(', ') + more }))]);
+    }
+    if (outcome.stored) {
+      let hint: string;
+      if (this.device === 'gamepad') hint = escapeHtml(t('result.burrow.gamepad'));
+      else if (this.device === 'touch') hint = escapeHtml(t('result.burrow.touch'));
+      else hint = escapeHtml(t('result.burrow.desktop', { key: '{key}' })).replace('{key}', '<span class="keycap">T</span>');
+      lines.push([GameIcons.burrow, hint]);
+    }
+    return lines;
   }
 
   private bump(): void {
@@ -476,21 +553,15 @@ export class Hud {
 
   private template(): string {
     return /* html */ `
-      <div class="loader" data-loader role="status" aria-live="polite">
-        <div>
-          <div class="loader__ball"></div>
-          <div class="loader__text" data-t="loader.text"></div>
-        </div>
-      </div>
-
       <div class="hud" data-hud>
+        <div class="scent-layer" data-scent aria-hidden="true"></div>
         <div class="burrow-marker" data-burrow aria-hidden="true">
           <div class="burrow-marker__arrow" data-burrow-arrow>${Icons.pointer}</div>
           <div class="burrow-marker__label" data-burrow-label></div>
         </div>
 
         <div class="hud__top">
-          <div class="hud__stack">
+          <div class="hud__stack" data-round-slot>
             <div class="ball-card" data-ball-card>
               <div class="ball-card__icon">${Icons.ball}</div>
               <div style="flex:1">
@@ -503,6 +574,7 @@ export class Hud {
             <div class="record-chip" data-record hidden></div>
           </div>
           <div class="hud__actions">
+            <button class="btn btn--icon burrow-btn" data-burrow-open type="button" data-t-aria="hud.burrow">${GameIcons.burrow}<span class="burrow-btn__badge" data-burrow-badge hidden></span></button>
             <button class="btn btn--icon touch-only" data-recall type="button" data-t-aria="hud.recall">${Icons.recall}</button>
             <button class="btn btn--icon" data-menu-open type="button" data-t-aria="hud.menu">${Icons.menu}</button>
             <button class="btn btn--icon" data-sound type="button">${Icons.soundOn}</button>
@@ -517,6 +589,7 @@ export class Hud {
           <div class="result__title" data-t="result.title"></div>
           <div class="result__value" data-result-value></div>
           <div class="result__meta" data-result-meta></div>
+          <ul class="result__extra" data-result-extra></ul>
         </div>
         <div class="sr-only" data-live aria-live="polite"></div>
 
@@ -532,9 +605,4 @@ export class Hud {
       </div>
     `;
   }
-}
-
-/** Texto traduzido vai pro innerHTML junto com marcação nossa: escapa antes. */
-function escapeHtml(text: string): string {
-  return text.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 }

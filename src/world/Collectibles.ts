@@ -22,6 +22,15 @@ const DUNG_PILES = 60;
 const DEBRIS_COUNT = 230;
 const RESPAWN_SECONDS = 18;
 const ABSORB_SECONDS = 0.22;
+/** Moscas por montinho no máximo (o fresquinho junta todas). */
+const MAX_FLIES = 3;
+/** Chance de um montinho nascer fresquinho (sem o poder Faro). */
+export const FRESH_CHANCE = 0.1;
+/** O fresquinho vale o dobro de bola. */
+const FRESH_VOLUME = 2;
+/** Tom do fresquinho: mais claro, dourado e úmido (multiplica as cores do montinho). */
+const FRESH_TINT = new THREE.Color(1.55, 1.2, 0.62);
+const PLAIN_TINT = new THREE.Color(1, 1, 1);
 
 interface Fly {
   body: THREE.Object3D;
@@ -37,6 +46,10 @@ interface DungPile {
   state: 'idle' | 'absorbing' | 'gone';
   timer: number;
   flies: Fly[];
+  /** Quantas das moscas aparecem (o resto fica guardado para quando ele for fresquinho). */
+  flyCount: number;
+  /** Montinho fresquinho: raro, cheira mais, rende o dobro e conta no catálogo. */
+  fresh: boolean;
   seed: number;
   /** Vaga no pool de instâncias de montinho. */
   slot: number;
@@ -67,6 +80,8 @@ export interface CollectEvent {
   color: THREE.Color;
   /** Do que é feito (só detrito; montinho de bosta é `null`). */
   material: DebrisMaterial | null;
+  /** Montinho fresquinho (só montinho). */
+  fresh: boolean;
 }
 
 export interface StinkSource {
@@ -90,6 +105,10 @@ export class Collectibles {
   private time = 0;
 
   onCollect: ((event: CollectEvent) => void) | null = null;
+  /** Poder Bola grudenta: alcance extra (unidades) para montinho e detrito grudarem. */
+  magnet = 0;
+  /** Chance de um montinho renascer fresquinho (o poder Faro aumenta). */
+  freshChance = FRESH_CHANCE;
 
   constructor(private readonly scenery: Scenery, seed = 2024) {
     this.rng = createRng(seed);
@@ -102,13 +121,13 @@ export class Collectibles {
     this.flyBodyPool = new InstancePool(
       dungFlyBody(),
       clay(0xffffff, { vertexColors: true, roughness: 0.35, sheen: 0.3, iridescence: 0.7, clearcoat: 0.4, bump: 0, mottle: 0 }),
-      DUNG_PILES * 2,
+      DUNG_PILES * MAX_FLIES,
     );
     this.flyWingPool = new InstancePool(
       dungFlyWing(),
       // Dupla face: a asa esquerda é a direita espelhada (escala -1 em X).
       new THREE.MeshPhysicalMaterial({ color: '#e8f3ff', vertexColors: true, transparent: true, opacity: 0.5, roughness: 0.15, iridescence: 1, depthWrite: false, side: THREE.DoubleSide }),
-      DUNG_PILES * 4,
+      DUNG_PILES * MAX_FLIES * 2,
       false,
     );
     this.flyWingPool.mesh.userData.skipAO = true;
@@ -130,7 +149,7 @@ export class Collectibles {
         if (!solid) continue;
         const p = pile.mesh.position;
         const dist = Math.hypot(p.x - center.x, p.y + pile.size * 0.4 - center.y, p.z - center.z);
-        if (dist < r + pile.size * 0.75) {
+        if (dist < r + pile.size * 0.75 + this.magnet) {
           pile.state = 'absorbing';
           pile.timer = ABSORB_SECONDS;
           pile.absorbFrom.copy(p);
@@ -145,12 +164,12 @@ export class Collectibles {
           pile.timer = RESPAWN_SECONDS;
           pile.mesh.visible = false;
           // O montinho inteiro vira bola (o Katamari do cenário dá o resto do crescimento).
-          ball.addVolume((4 / 3) * Math.PI * Math.pow(pile.size, 3));
+          ball.addVolume((4 / 3) * Math.PI * Math.pow(pile.size, 3) * (pile.fresh ? FRESH_VOLUME : 1));
           ball.dungCount++;
           const dir = pile.absorbFrom.clone().setY(pile.absorbFrom.y + pile.size * 0.4).sub(center);
           if (dir.lengthSq() < 1e-6) dir.set(0, 1, 0);
           const hit = center.clone().addScaledVector(dir.normalize(), r);
-          this.onCollect?.({ kind: 'dung', position: hit, size: pile.size, color: DUNG_TINT, material: null });
+          this.onCollect?.({ kind: 'dung', position: hit, size: pile.size, color: DUNG_TINT, material: null, fresh: pile.fresh });
         }
       } else {
         pile.timer -= dt;
@@ -166,7 +185,7 @@ export class Collectibles {
       const dx = p.x - center.x;
       const dy = p.y - center.y;
       const dz = p.z - center.z;
-      const reach = r + item.size * 0.35;
+      const reach = r + item.size * 0.35 + this.magnet;
       if (dx * dx + dy * dy + dz * dz < reach * reach) {
         item.active = false;
         const at = p.clone();
@@ -180,7 +199,7 @@ export class Collectibles {
         ball.itemCount++;
         // Grudar também engorda um pouquinho a bola.
         ball.addVolume((4 / 3) * Math.PI * Math.pow(item.size * 0.45, 3));
-        this.onCollect?.({ kind: 'debris', position: at, size: item.size, color: (item.object.userData.tint as THREE.Color) ?? DUNG_TINT, material: item.material });
+        this.onCollect?.({ kind: 'debris', position: at, size: item.size, color: (item.object.userData.tint as THREE.Color) ?? DUNG_TINT, material: item.material, fresh: false });
         // Repõe o mundo para nunca "acabar" o que pegar — na MESMA vaga do array
         // (o que grudou agora pertence à bola; a lista não cresce com a sessão).
         this.debris[i] = this.spawnDebris(playerPosition);
@@ -210,6 +229,7 @@ export class Collectibles {
         continue;
       }
       pile.flies.forEach((fly, i) => {
+        if (i >= pile.flyCount) return;
         const t = this.time * (1.6 + i * 0.4) + pile.seed * 3 + i * 2.1;
         const radius = 1.1 + Math.sin(t * 0.7) * 0.25;
         fly.body.position.set(Math.cos(t) * radius, 1.4 + Math.sin(t * 2.3) * 0.3, Math.sin(t) * radius);
@@ -220,7 +240,12 @@ export class Collectibles {
         fly.wings[1].rotation.z = -flap;
       });
       pile.mesh.updateMatrixWorld(true);
-      for (const fly of pile.flies) {
+      for (let i = 0; i < pile.flies.length; i++) {
+        const fly = pile.flies[i];
+        if (i >= pile.flyCount) {
+          this.hideFly(fly);
+          continue;
+        }
         this.flyBodyPool.set(fly.bodySlot, fly.body.matrixWorld);
         this.flyWingPool.set(fly.wingSlots[0], fly.wings[0].matrixWorld);
         this.flyWingPool.set(fly.wingSlots[1], fly.wings[1].matrixWorld);
@@ -248,9 +273,25 @@ export class Collectibles {
       if (pile.state !== 'idle') continue;
       const p = pile.mesh.position;
       if (Math.hypot(p.x - near.x, p.z - near.z) > maxDistance) continue;
-      out.push({ x: p.x, y: p.y, z: p.z, size: pile.size });
+      out.push({ x: p.x, y: p.y, z: p.z, size: pile.fresh ? pile.size * 1.6 : pile.size });
     }
     return out;
+  }
+
+  /** Onde estão os montinhos fresquinhos inteiros (para o brilho e o Faro). */
+  freshSpots(out: THREE.Vector3[]): THREE.Vector3[] {
+    out.length = 0;
+    for (const pile of this.piles) if (pile.state === 'idle' && pile.fresh) out.push(pile.mesh.position);
+    return out;
+  }
+
+  /** Poder Faro: alguns montinhos comuns, sorteados, viram fresquinhos na hora. */
+  promoteFresh(count: number): void {
+    const plain = this.piles.filter((pile) => pile.state === 'idle' && !pile.fresh);
+    for (let i = 0; i < count && plain.length > 0; i++) {
+      const [pile] = plain.splice(Math.floor(this.rng.next() * plain.length), 1);
+      this.setFresh(pile, true);
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -277,14 +318,13 @@ export class Collectibles {
       state: 'idle',
       timer: 0,
       flies: [],
+      flyCount: 0,
+      fresh: false,
       seed: this.rng.next() * 100,
       absorbFrom: new THREE.Vector3(),
       slot: this.pilePool.add(new THREE.Matrix4()),
     };
-    if (this.rng.next() < 0.5) {
-      const flyCount = 1 + Math.floor(this.rng.next() * 2);
-      for (let i = 0; i < flyCount; i++) pile.flies.push(this.buildFly(mesh));
-    }
+    for (let i = 0; i < MAX_FLIES; i++) pile.flies.push(this.buildFly(mesh));
     this.piles.push(pile);
     this.placePile(pile, nearSpawn ? this.randomFreeSpot(3, 12, 0.6) : this.randomFreeSpot(6, PLAY_RADIUS - 2, 0.6));
   }
@@ -300,6 +340,14 @@ export class Collectibles {
     pile.mesh.scale.setScalar(pile.size);
     pile.mesh.visible = true;
     pile.state = 'idle';
+    this.setFresh(pile, this.rng.next() < this.freshChance);
+  }
+
+  private setFresh(pile: DungPile, fresh: boolean): void {
+    pile.fresh = fresh;
+    // Metade dos comuns tem 1–2 moscas; o fresquinho junta todas.
+    pile.flyCount = fresh ? MAX_FLIES : this.rng.next() < 0.5 ? 1 + Math.floor(this.rng.next() * 2) : 0;
+    this.pilePool.setColor(pile.slot, fresh ? FRESH_TINT : PLAIN_TINT);
   }
 
   private buildFly(parent: THREE.Object3D): Fly {

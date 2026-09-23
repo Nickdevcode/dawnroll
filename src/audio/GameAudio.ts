@@ -187,6 +187,37 @@ export class GameAudio {
     this.music.milestone(index);
   }
 
+  /** Subiu de nível. */
+  levelUp(): void {
+    this.music.levelUp();
+  }
+
+  /** Conquista feita. */
+  achievement(): void {
+    this.music.achievement();
+  }
+
+  /** Cartas de poder abriram. */
+  perkOffer(): void {
+    this.music.perkOffer();
+  }
+
+  /** Escolheu um poder. */
+  perkPick(): void {
+    this.music.perkPick();
+  }
+
+  /** Pedido da rodada cumprido. */
+  requestDone(): void {
+    this.music.requestDone();
+  }
+
+  /** O besouro comendo da despensa (menu aberto: vai no canal da interface). */
+  eat(): void {
+    const t = this.engine.now + 0.01;
+    for (let i = 0; i < 3; i++) this.engine.play(sfx.squish(0.35 + i * 0.1), { bus: 'ui', when: t + i * 0.13, essential: true });
+  }
+
   thunder(distance: number): void {
     this.soundscape.thunder(distance);
   }

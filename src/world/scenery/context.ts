@@ -31,6 +31,8 @@ export interface PickableSpec {
   volume: number;
   /** Maior dimensão do objeto (para caber na bola quando gruda). */
   extent: number;
+  /** Espécie (flor e cogumelo): vira figurinha própria no catálogo da toca. */
+  variant?: string;
 }
 
 /**

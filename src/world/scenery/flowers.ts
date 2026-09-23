@@ -32,6 +32,15 @@ export function pickFlowerKind(rng: Rng): FlowerKind {
  * Flor gigante (para o besouro). Caule curvo afinando, folhas com nervura na base
  * e a cabeça de cada espécie. Tudo balança com o vento (peso cresce com a altura).
  */
+/** Espécie → figurinha do catálogo da toca (a flor de trevo não é o trevinho do chão). */
+const FLOWER_VARIANT: Record<FlowerKind, string> = {
+  daisy: 'daisy',
+  tulip: 'tulip',
+  bell: 'bell',
+  dandelion: 'dandelion',
+  clover: 'cloverFlower',
+};
+
 export function buildFlower(ctx: SceneryContext, x: number, z: number, height: number, kind: FlowerKind): void {
   const { rng } = ctx;
   const root = new THREE.Group();
@@ -103,6 +112,7 @@ export function buildFlower(ctx: SceneryContext, x: number, z: number, height: n
     tint,
     volume: sphereVolume(size * 0.42),
     extent: height,
+    variant: FLOWER_VARIANT[kind],
   });
 }
 

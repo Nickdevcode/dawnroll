@@ -9,6 +9,8 @@ import { latheGeometry, smoothProfile } from './shapes';
 import { sphereVolume, type SceneryContext } from './context';
 
 interface CapStyle {
+  /** Figurinha do catálogo da toca. */
+  id: string;
   top: string;
   rim: string;
   dots: boolean;
@@ -16,11 +18,11 @@ interface CapStyle {
 }
 
 const CapStyles: CapStyle[] = [
-  { top: '#d9443c', rim: '#f2725b', dots: true, gills: '#f6dcc0' }, // amanita clássico
-  { top: '#e8793a', rim: '#f6ad5c', dots: true, gills: '#f8e2c2' },
-  { top: '#d24a73', rim: '#f082a3', dots: true, gills: '#f7d9e0' },
-  { top: '#9a5f38', rim: '#c98b55', dots: false, gills: '#efd8b4' }, // porcino
-  { top: '#8a6fd1', rim: '#b9a3ef', dots: false, gills: '#ebe0fb' },
+  { id: 'amanita', top: '#d9443c', rim: '#f2725b', dots: true, gills: '#f6dcc0' }, // amanita clássico
+  { id: 'orangeCap', top: '#e8793a', rim: '#f6ad5c', dots: true, gills: '#f8e2c2' },
+  { id: 'pinkCap', top: '#d24a73', rim: '#f082a3', dots: true, gills: '#f7d9e0' },
+  { id: 'porcini', top: '#9a5f38', rim: '#c98b55', dots: false, gills: '#efd8b4' }, // porcino
+  { id: 'violetCap', top: '#8a6fd1', rim: '#b9a3ef', dots: false, gills: '#ebe0fb' },
 ];
 
 const STEM = new THREE.Color('#fbefd9');
@@ -173,6 +175,7 @@ function buildMushroom(ctx: SceneryContext, x: number, z: number, height: number
     colliders,
     landingSpots: [spot],
     tint: style.top,
+    variant: style.id,
     volume: sphereVolume(size * 0.48),
     extent: Math.max(height + capH, capR * 2),
   });

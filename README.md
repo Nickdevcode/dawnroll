@@ -17,12 +17,14 @@ Um besouro rola-bosta de massinha num jardim em miniatura. Você rola uma bola d
 | 🍄 **Cogumelos** | Em touceiras, com pé de bulbo, saia, lamelas esculpidas e bolinhas no chapéu |
 | 🪨 **Pedras e troncos** | Rochedos com musgo e líquen, troncos com anéis na ponta e orelha-de-pau |
 | 🦋 **Bichinhos** | Borboletas (9 paletas), abelhas com cestinha de pólen, libélulas de 4 asas, joaninhas que abrem os élitros e voam, caracóis que recolhem os olhos, **formigas em trilha** saindo dos formigueiros (algumas carregando folhinha), **tatuzinhos** que viram bolinha (e grudam na bola!), **gafanhotos** que pulam, **minhocas** que saem na chuva e **sapos** na beira das poças cheias |
-| 🕳️ **A toca** | Buraco de terra fofa com bandeirinha de folha no monte escavado. Um anel tracejado pulsa quando a bola já pode ser enterrada |
+| 🕳️ **A toca** | Buraco de terra fofa com bandeirinha de folha no monte escavado. Um anel tracejado pulsa quando a bola já pode ser enterrada. Lá embaixo tem **despensa, catálogo, poderes e conquistas** (ver abaixo) |
+| 💩 **Montinho fresquinho** | Mais ou menos 1 em cada 10 montinhos nasce fresquinho: mais claro e dourado, com três moscas e um brilho de vez em quando. Vale o dobro de bola e conta como raro |
 | 🌧️ **Clima** | Nada muda de supetão: nuvenzinhas passando no sol → o céu fecha devagar → **garoa que vai engrossando** → chuva que "respira" (trechos fracos e rajadas) → amaina aos poucos → abre. Cada chuva é sorteada: **pancada** curta e fraca ou **tempestade** longa com raio, trovoada ao longe antes de chegar e depois de ir embora. O céu fecha, a luz fica difusa, tudo fica molhado e brilhante |
 | 💧 **Poças** | Seis bacias rasas (uma de lama no meio da trilha) que enchem na chuva, com anéis de gota, reflexo do céu e borda rasa transparente. Secam devagar |
 | 🔊 **Som** | Tudo sintetizado na hora (nenhum arquivo de áudio) e em 3D. A bola rolando muda com o chão (grama, terra, lama, água), com o tamanho e com a tralha grudada; cada coisa que gruda tem o seu som (pedrinha "toc", graveto estala, tampinha tilinta) e uma notinha que sobe a cada item seguido, estilo Katamari. Passinhos no ritmo das patas, vento e folhas, chuva em camadas com gota na folha e na poça, trovão que rola, passarinhos de dia, grilos e coruja na madrugada do menu, abelha zumbindo, moscas nos montinhos, sapo coaxando no ritmo do papo e gafanhoto cantando |
 | 🎵 **Trilha** | Generativa, em Fá maior, nunca repete igual: madrugada no menu (caixinha de música), dia jogando (marimba, baixo e, conforme a bola cresce, chocalho, bloco, bumbo e melodia de kalimba) e chuva (Ré menor, gotas de kalimba). Amanhecer ao jogar, anoitecer ao pausar, vinheta nos marcos e fanfarra no enterro (maior no recorde) |
-| 🌙 **Menu** | A "madrugada" por cima do jardim ao vivo: logo com o "o" virando um solzinho de massinha, e Jogar faz amanhecer. Configurações e Como jogar abrem em placas por cima |
+| 🌙 **Menu** | A "madrugada" por cima do jardim ao vivo: logo com o "o" virando um solzinho de massinha, e Jogar faz amanhecer. Toca, Configurações e Como jogar abrem em placas por cima |
+| 🌅 **Carregando** | A madrugada já aparece no primeiro quadro, antes do download do jogo: logo de massinha, estrelinhas e um **solzinho rolando pelo horizonte**, que é a própria barra de progresso (física, chão, jardim, grama, bichos, shaders). No fim o miolo some e o céu se funde no menu |
 | ⚙️ **Configurações** | Qualidade (Auto, Baixa, Média, Alta, Ultra ou Personalizada), resolução, sombras, oclusão ambiente, desfoque de maquete, brilho, densidade da grama, FPS, volumes (geral, música, efeitos, natureza e clima — cada slider toca uma prévia do próprio canal), sensibilidade e inversão da câmera, tremida de câmera e vibração do controle. Tudo aplica na hora e fica salvo |
 | 🌐 **Idiomas** | Português (Brasil) e inglês. No automático, o jogo segue o idioma do navegador/sistema, e dá pra fixar um nas configurações |
 | 💨 **Efeitos** | Poeira nos passos e na bola, respingo ao pegar bosta, brilho ao grudar, confete nos marcos, rastro da bola no chão, fedor subindo dos montinhos, suor quando o besouro faz força, torrões e pétalas ao arrancar coisas, terra voando no enterro, respingos d'água, folhas caindo e pólen no ar |
@@ -39,6 +41,8 @@ Um besouro rola-bosta de massinha num jardim em miniatura. Você rola uma bola d
 | Pular | `Espaço` | `A` / `✕` | Botão de seta |
 | Correr | `Shift` | `LT` / `L2` (ou `B` / `○`) | Botão de correr |
 | Trazer a bola de volta | `R` | `Y` / `△` | Botão circular no topo |
+| Abrir a toca | `T` | Pausa → **Toca** | Botão da toca no topo |
+| Escolher poder | `1` `2` `3` (ou setas + `Enter`, ou clique) | Direcional + `A` / `✕` | Tocar na carta |
 | Zoom | Roda do mouse | `LB` / `RB` (`L1` / `R1`) | — |
 | Pausar | `Esc` | `Start` / `Options` | Botão de pausa no topo |
 
@@ -53,6 +57,27 @@ Um besouro rola-bosta de massinha num jardim em miniatura. Você rola uma bola d
 - **Rodada nova:** depois do enterro o jardim volta inteiro, os montinhos renascem e uma bola pequena brota do lado do besouro.
 - **Chuva e poças:** a água das poças **derrete a bola** (bola pequena derrete rápido; gigante quase nada) e freia; o besouro anda mais devagar com água na canela. Em compensação, rolar na **terra molhada** gruda lama na bola: engorda um pouco, mas pesa.
 - **Peso de verdade:** bola maior = mais pesada, mais lenta pra acelerar, mais difícil de virar e de subir ladeira (a partir de ~12 cm a velocidade estabiliza, pra bola gigante não virar lesma).
+
+### 🕳️ A toca: despensa, nível, poderes, pedidos e conquistas
+
+| | |
+|---|---|
+| 🍽️ **Despensa** | Toda bola enterrada vira comida guardada na toca (até 8). Na placa **Toca** você come: cada bola dá **XP**. Comer várias juntas é **banquete**: +10% por bola a mais, até +50%. Despensa cheia? O besouro come a bola nova na hora |
+| 🥗 **Quanto rende** | Tamanho (3 por cm) + **variedade** (4 por tipo diferente de coisa na bola) + montinho fresquinho (6 cada) + pedidos cumpridos. Variedade pesa de propósito: é o que faz valer explorar o jardim |
+| ⭐ **Nível** | O besouro fica **mais forte** (+4% de força por nível) e **mais rápido** (+2% de velocidade), com teto no nível 11 (+40% e +20%). A primeira bola já sobe de nível. Os níveis 2, 3 e 4 liberam poderes novos |
+| 🃏 **Poderes da rodada** | Quando a bola chega a **5, 10 e 16 cm**, o jogo congela e você escolhe **1 entre 3**. Vale até enterrar aquela bola |
+| 📋 **Pedidos** | Três metas opcionais por rodada ("arranque 3 flores", "chegue a 10 cm", "pegue 1 montinho fresquinho"...), sempre com pelo menos uma fácil. Cumprir rende comida extra no enterro |
+| 📖 **Catálogo** | 25 figurinhas: bosta, flores (por espécie), cogumelos (por espécie), pedra, tronco, a tralha do chão e o tatuzinho. O que ainda não desceu pra toca aparece só como silhueta |
+| 🏆 **Conquistas** | 21 feitos. Os marcos de tamanho da rodada ("Bola respeitável", "Terror do jardim", "O Rei da Bosta"...) viram conquista na primeira vez; outros: enterrar 1/10/50 bolas, banquete de 6, níveis 5 e 10, todos os pedidos numa rodada, tronco, 10 fresquinhos, enterrar na chuva, catálogo, 3 poderes numa bola e usar os 6. **Cada uma paga XP uma vez só.** Save antigo ganha retroativo o que já tinha feito |
+
+| Poder | O que faz | Libera no nível |
+|---|---|---|
+| 🧲 **Bola grudenta** | Montinho e tralha grudam de mais longe | 1 |
+| 🔥 **Sangue quente** | Empurrando sem parar, esquenta e acelera (até +35% de força e +30% de velocidade) | 1 |
+| 🛡️ **Casca de lama** | A poça quase não derrete a bola (−70%), a água freia menos e a lama engorda 2,5× | 1 |
+| 👃 **Faro** | Marcadores nos montinhos fresquinhos mais perto; na hora 3 viram fresquinhos e passam a nascer mais | 2 |
+| 🥷 **Sorrateiro** | Vira e arranca bem mais rápido com bola pequena (perde o efeito até ~12 cm) | 3 |
+| 🦏 **Chifrudo** | Arranca coisa até 25% maior que a bola, mas vira mais devagar | 4 |
 
 ---
 
@@ -115,13 +140,21 @@ Não tem nenhum arquivo de modelo, textura ou som: **tudo é gerado por código*
 src/
 ├── main.ts                 # entrada: idioma, checa WebGL 2 e sobe o jogo
 ├── Game.ts                 # laço de jogo, rodadas, clima, água/lama, dicas, qualidade adaptativa
+├── progression/            # a toca e tudo que atravessa as rodadas (sem Three.js, sem DOM)
+│   ├── Progression.ts      # estado: nível/XP, despensa, poderes da rodada, pedidos, conquistas
+│   ├── catalog.ts          # as 25 figurinhas do catálogo
+│   ├── perks.ts            # os 6 poderes e os multiplicadores que eles aplicam
+│   ├── leveling.ts         # curva de XP e bônus de nível (com teto)
+│   ├── food.ts             # o que a bola engoliu na rodada, quanto ela rende e o banquete
+│   ├── requests.ts         # sorteio e progresso dos pedidos da rodada
+│   └── achievements.ts     # as 21 conquistas e as recompensas
 ├── core/
 │   ├── Physics.ts          # mundo Rapier, passo fixo 60 Hz, grupos de colisão
 │   ├── Input.ts            # teclado + mouse (pointer lock) + toque + controle; último dispositivo usado
 │   ├── GamepadInput.ts     # Gamepad API: analógicos, gatilhos, menu, vibração, Xbox x PlayStation
 │   ├── settings.ts         # configurações salvas e validadas, predefinições de qualidade
 │   ├── device.ts           # perfis de qualidade (PC x celular)
-│   ├── save.ts             # recorde e bolas enterradas no localStorage (validado)
+│   ├── save.ts             # progresso no localStorage (recorde, XP, despensa, catálogo, conquistas), validado
 │   └── ThirdPersonCamera.ts # órbita, colisão com o cenário e tremidinha de impacto
 ├── render/
 │   ├── Graphics.ts         # renderer, cúpula do céu (sol x chuva), luzes, pós (GTAO, DOF, bloom, grading)
@@ -171,6 +204,14 @@ src/
 ├── i18n/                   # dicionários pt-BR/en tipados + detecção do idioma do navegador
 └── ui/
     ├── Hud.ts              # HUD em jogo, dicas, marcador da toca, resultado, toque
+    ├── RoundPanel.ts       # nível, pedidos (recolhíveis) e poderes da rodada no HUD
+    ├── PerkPicker.ts       # as cartas de "escolha um poder"
+    ├── BurrowSheet.ts      # placa da toca: despensa, catálogo, poderes e conquistas
+    ├── AchievementToast.ts # aviso de conquista (em fila, por cima até do menu)
+    ├── BootScreen.ts       # avança a tela de carregamento (o desenho mora no index.html)
+    ├── gameIcons.ts        # figurinhas do catálogo e ícones dos poderes (SVG)
+    ├── screenMarker.ts     # marcador preso na borda da tela (toca e Faro)
+    ├── tabs.ts             # abas acessíveis compartilhadas pelas placas
     ├── Menu.ts             # menu de início/pausa, configurações (abas) e como jogar
     ├── controls.ts         # seletor, chave e slider acessíveis (teclado, leitor de tela)
     ├── icons.ts            # ícones SVG
@@ -216,4 +257,10 @@ src/
 - **Mixagem medida, não chutada:** cada receita foi renderizada offline (`OfflineAudioContext`) e medida em pico e RMS, e os canais foram medidos ao vivo com ponderação próxima da audição (corta sub-grave, realça médios) — o medidor comum superestima vento e baixo.
 - **Bichos não sabem de áudio:** as espécies só avisam "coaxei aqui", "estou zumbindo ali"; o áudio escolhe o mais perto de cada tipo pra zumbir (uma abelha nítida vale mais que dez embolando).
 - **Xbox antes de PlayStation:** "Xbox Wireless Controller" contém "Wireless Controller", que é o nome do controle de PS4 em vários navegadores, então o teste por Xbox (e pelo fabricante `045e`) vem primeiro.
+- **O limite real da bola é o jardim, não os 24 cm:** medido no jogo, todos os arrancáveis somam ~755 de volume e a bola de 24 cm pede ~905. Por isso o nível não "sobe o teto da bola" (seria promessa vazia sem jardim maior): ele dá força e velocidade com teto e libera poderes.
+- **Poder bom muda o jeito de jogar, não só um número:** velocidade pura encurta a fase de bola pequena, que é o contraste que dá graça (o spin-off de Katamari com upgrade de velocidade virou "números sobem, nada muda"). Aqui o que mexe em velocidade é condicional (Sangue quente esquenta empurrando, Sorrateiro só vale com bola pequena) e o bônus fixo de nível tem teto baixo.
+- **Escolher poder congela a simulação e solta o mouse:** o `pointerlockchange` normalmente pausa o jogo; durante a escolha ele é ignorado (senão abriria o menu). Escolher é um gesto (clique/tecla), então o mouse é preso de novo na hora. Pulo e "trazer bola" apertados durante a escolha são descartados.
+- **Cor por instância antes de compilar:** o fresquinho usa `setColorAt` no `InstancedMesh` dos montinhos. Isso muda o programa do shader (entra o `USE_INSTANCING_COLOR`), então todas as vagas ganham cor já na construção, antes do `renderer.compile` — tingir pela primeira vez no meio do jogo daria engasgo.
+- **Carregamento no HTML:** a tela de carregamento é HTML + CSS inline no `index.html`, então aparece antes do download de 1,35 MB do jogo. O JS só avança o progresso (`--p`) entre as etapas pesadas, com um `requestAnimationFrame` entre elas pra tela pintar. Ela some em dois tempos (miolo, depois céu) pra não mostrar dois logos junto com o menu.
+- **Conquista retroativa sem enxurrada:** save de antes das conquistas ganha o que já tinha feito (pelo recorde, bolas enterradas e catálogo) de uma vez e em silêncio, com o XP; o aviso na tela é só pro que acontece jogando.
 - **Recorde à prova de lixo:** o save é lido com validação (número finito, não negativo, com teto); aba anônima ou storage bloqueado só não salva. O recorde da época do Rola Bosta é migrado pra chave nova na primeira leitura.

@@ -227,7 +227,56 @@ export class Music {
     this.stinger(glock(89, 0.35), t + 0.09);
   }
 
-  private stinger(recipe: Recipe, when: number, bus: 'fx' | 'music' = 'fx', reverb = 0.12): void {
+  /**
+   * Subiu de nível (na toca, com o menu aberto): escala subindo em kalimba e
+   * sininho, e um acorde cheio lá em cima. Vai no canal da interface — o dos
+   * efeitos está abafado na pausa, e a música pode estar desligada.
+   */
+  levelUp(): void {
+    const t = this.engine.now + 0.02;
+    [72, 74, 77, 79, 81, 84].forEach((m, i) => {
+      this.stinger(kalimba(m, 0.7), t + i * 0.07, 'ui');
+      this.stinger(glock(m + 12, 0.3), t + i * 0.07, 'ui');
+    });
+    const hit = t + 0.48;
+    for (const m of [77, 81, 84, 89]) this.stinger(celesta(m, 0.5), hit, 'ui');
+    this.stinger(pad([65, 69, 72, 77], 1, 1.8, 2400), hit, 'ui', 0.3);
+    this.stinger(timpani(41, 0.6), hit, 'ui');
+  }
+
+  /** Conquista: "ding-ding" de troféu (canal da interface: pode acontecer com o menu aberto). */
+  achievement(): void {
+    const t = this.engine.now + 0.02;
+    [77, 81, 84].forEach((m, i) => this.stinger(glock(m, 0.45), t + i * 0.08, 'ui'));
+    this.stinger(celesta(89, 0.55), t + 0.26, 'ui');
+    this.stinger(kalimba(89, 0.5), t + 0.26, 'ui');
+    this.stinger(shimmer(true), t + 0.2, 'ui');
+  }
+
+  /** Cartas de poder aparecendo: um brilho subindo e três notinhas. */
+  perkOffer(): void {
+    const t = this.engine.now + 0.01;
+    this.stinger(shimmer(true), t);
+    [84, 89, 91].forEach((m, i) => this.stinger(celesta(m, 0.45), t + 0.06 + i * 0.08));
+  }
+
+  /** Escolheu o poder: marimba e sininho em quinta. */
+  perkPick(): void {
+    const t = this.engine.now + 0.01;
+    this.stinger(marimba(77, 0.8), t);
+    this.stinger(glock(84, 0.4), t + 0.08);
+    this.stinger(glock(89, 0.35), t + 0.16);
+  }
+
+  /** Pedido cumprido: terça subindo, bem curtinha. */
+  requestDone(): void {
+    const t = this.engine.now + 0.01;
+    this.stinger(kalimba(81, 0.6), t);
+    this.stinger(kalimba(84, 0.6), t + 0.09);
+    this.stinger(glock(96, 0.25), t + 0.18);
+  }
+
+  private stinger(recipe: Recipe, when: number, bus: 'fx' | 'music' | 'ui' = 'fx', reverb = 0.12): void {
     this.engine.play(recipe, { bus, when, reverb, essential: true });
   }
 

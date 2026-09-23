@@ -10,7 +10,7 @@ import { Terrain, terrainHeight, terrainNormal, dirtAmount, BURROW } from './wor
 import { Scenery } from './world/Scenery';
 import { Grass } from './world/Grass';
 import { GroundCover } from './world/GroundCover';
-import { Collectibles, type StinkSource } from './world/Collectibles';
+import { Collectibles, FRESH_CHANCE, type StinkSource } from './world/Collectibles';
 import { Pickables } from './world/Pickables';
 import { Burrow, MIN_BURY_RADIUS } from './world/Burrow';
 import { Weather } from './world/Weather';
@@ -24,7 +24,14 @@ import { GameAudio } from './audio/GameAudio';
 import type { AudioFrame } from './audio/frame';
 import { Hud, type HintKind } from './ui/Hud';
 import { Menu } from './ui/Menu';
-import { t } from './i18n';
+import { AchievementToast } from './ui/AchievementToast';
+import type { BootScreen } from './ui/BootScreen';
+import type { ProjectedPoint } from './ui/screenMarker';
+import { t, type MessageKey } from './i18n';
+import { Progression, type MealResult } from './progression/Progression';
+import { catalogIdForDebris, catalogIdForPickable, type CatalogId } from './progression/catalog';
+import { NOSE_FRESH_CHANCE, NOSE_PROMOTE_COUNT, type PerkId } from './progression/perks';
+import type { RoundRequest } from './progression/requests';
 import { quality } from './core/device';
 import { clamp } from './utils/math';
 
@@ -37,6 +44,15 @@ const STINK_RANGE = 24;
 const EVENT_HINT_SECONDS = 1.6;
 /** Perto assim da toca, o anel no chão já faz o papel do marcador. */
 const MARKER_HIDE_DISTANCE = 7;
+/** Faro: até que distância os montinhos fresquinhos ganham marcador na tela. */
+const SCENT_RANGE = 60;
+/** Brilho de montinho fresquinho: de quanto em quanto tempo, e até que distância (sem e com Faro). */
+const FRESH_GLINT_SECONDS = 1.1;
+const FRESH_GLINT_RANGE = 18;
+const FRESH_GLINT_RANGE_NOSE = 45;
+/** A primeira vez que a toca é apresentada, ela abre sozinha depois do placar. */
+const BURROW_INTRO_DELAY = 5;
+const FRESH_GLINT_COLOR = new THREE.Color('#ffd479');
 
 /** Deixa o navegador pintar um frame (o loader continua animando entre as etapas pesadas). */
 const nextFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
@@ -55,6 +71,7 @@ export class Game {
   private readonly cameraRig: ThirdPersonCamera;
   private readonly weather = new Weather();
   private readonly save: SaveData = loadSave();
+  private readonly progression = new Progression(this.save, () => writeSave(this.save));
 
   private physics!: Physics;
   private grass!: Grass;
@@ -71,6 +88,13 @@ export class Game {
   private readonly spawn = new THREE.Vector3();
   private started = false;
   private startDisabled = true;
+  /** Escolhendo um poder: a simulação congela e o mouse fica solto pra clicar nas cartas. */
+  private choosing = false;
+  /** Contagem até a toca abrir sozinha na primeira vez (0 = nada agendado). */
+  private burrowIntroTimer = 0;
+  private freshGlintTimer = 0;
+  private readonly freshSpots: THREE.Vector3[] = [];
+  private readonly scentPoints: ProjectedPoint[] = [];
   private accumulator = 0;
   private lastTime = 0;
   private elapsed = 0;
@@ -111,7 +135,13 @@ export class Game {
     this.graphics = new Graphics(canvas);
     this.input = new Input(canvas);
     this.hud = new Hud(uiRoot, this.input);
-    this.menu = new Menu(uiRoot, this.hud.isTouch);
+    this.menu = new Menu(uiRoot, this.hud.isTouch, this.progression);
+    // Depois do menu: o aviso de conquista fica por cima dele (dá pra conquistar comendo na toca).
+    const achievementToast = new AchievementToast(uiRoot);
+    this.progression.onAchievement = (unlock) => {
+      achievementToast.show(unlock);
+      this.audio.achievement();
+    };
     this.cameraRig = new ThirdPersonCamera(this.graphics.camera);
     this.audio = new GameAudio(uiRoot);
 
@@ -152,7 +182,11 @@ export class Game {
     };
 
     this.menu.onPlay = () => this.start();
+    this.menu.burrow.onMeal = (meal) => this.onMeal(meal);
     this.hud.onOpenMenu = () => this.pause();
+    this.hud.onOpenBurrow = () => this.openBurrow();
+    this.hud.perkPicker.onChoose = (perk) => this.choosePerk(perk);
+    this.progression.subscribe(() => this.syncRound());
     this.hud.onToggleSound = () => {
       const muted = !settings.get().muted;
       settings.update({ muted });
@@ -171,6 +205,10 @@ export class Game {
       }
     };
     document.addEventListener('pointerlockchange', this.onPointerLockChange);
+    // Perdeu o mouse sem pausar (ex.: escolheu poder pelo controle): um clique na cena prende de novo.
+    canvas.addEventListener('click', () => {
+      if (this.started && !this.paused && !this.choosing && !this.hud.isTouch && !this.input.pointerLocked) this.input.requestPointerLock();
+    });
     document.addEventListener('visibilitychange', () => {
       if (!document.hidden) return;
       this.lastTime = 0;
@@ -180,23 +218,33 @@ export class Game {
     window.addEventListener('keydown', (e) => {
       // Enter na tela inicial também começa (acessível pelo teclado).
       if (this.menu.isVisible && !this.startDisabled && document.activeElement === document.body && (e.code === 'Enter' || e.code === 'NumpadEnter')) this.start();
+      // T abre a toca (despensa, catálogo e poderes).
+      if (e.code === 'KeyT' && !e.repeat && this.started && !this.paused && !this.choosing) this.openBurrow();
+      // Escolhendo poder o mouse já está solto: Esc pausa como no resto do jogo.
+      if (e.code === 'Escape' && this.choosing && !this.paused) this.pause();
       // Atalho de desenvolvimento: F8 adianta o tempo para a próxima fase (sol → nublando → chuva...).
       if (import.meta.env.DEV && e.code === 'F8') this.weather.skipAhead();
     });
   }
 
-  async init(): Promise<void> {
+  /** Monta o mundo em etapas, avisando a tela de carregamento (e deixando ela pintar entre uma e outra). */
+  async init(boot: BootScreen): Promise<void> {
+    boot.step(0.12, 'loader.physics');
+    await nextFrame();
     this.physics = await Physics.create();
     const scene = this.graphics.scene;
+    boot.step(0.26, 'loader.terrain');
     await nextFrame();
 
     const terrain = new Terrain(this.physics, quality.terrainSegments);
     scene.add(terrain.mesh);
+    boot.step(0.4, 'loader.garden');
     await nextFrame();
 
     this.scenery = new Scenery(this.physics, quality.decorDensity);
     scene.add(this.scenery.group);
     terrain.paintContactShade(this.scenery.shades);
+    boot.step(0.6, 'loader.grass');
     await nextFrame();
 
     const solidAt = (margin: number) => (x: number, z: number) => this.scenery.isInsideSolid(x, z, margin);
@@ -204,6 +252,7 @@ export class Game {
     scene.add(this.grass.group);
     this.groundCover = new GroundCover(quality.decorDensity, solidAt(0.25));
     scene.add(this.groundCover.group);
+    boot.step(0.74, 'loader.critters');
     await nextFrame();
 
     this.collectibles = new Collectibles(this.scenery);
@@ -246,19 +295,22 @@ export class Game {
 
     this.wireEvents();
     this.wireCameraCollision();
+    boot.step(0.88, 'loader.shaders');
     await nextFrame();
 
     // Aquece shaders antes de mostrar (evita engasgo no primeiro frame).
     this.graphics.renderer.compile(scene, this.graphics.camera);
+    boot.step(1, 'loader.ready');
 
     this.startDisabled = false;
     this.applySettings(settings.get());
     settings.subscribe((s, changed) => this.applySettings(s, changed));
-    this.hud.setLoaded();
+    void boot.finish();
     this.menu.setReady();
     this.hud.setBall(this.ball.diameterCm, 0, 0);
     this.hud.setProgress(this.save);
     this.menu.setProgress(this.save);
+    this.syncRound();
     requestAnimationFrame(this.frame);
 
     if (import.meta.env.DEV) {
@@ -290,6 +342,12 @@ export class Game {
       this.audio.collect(event, this.ball.radius);
       if (event.kind === 'dung') this.effects.splat(event.position, event.size);
       else this.effects.sparkle(event.position, event.color);
+      if (event.kind === 'dung') {
+        this.noteCollected(event.fresh ? 'freshDung' : 'dung');
+        if (event.fresh) this.effects.sparkle(event.position, FRESH_GLINT_COLOR);
+      } else if (event.material) {
+        this.noteCollected(catalogIdForDebris(event.material));
+      }
     };
     this.pickables.onPick = (event) => {
       this.audio.pluck(event);
@@ -297,6 +355,7 @@ export class Game {
       this.effects.startle(event.ground, 4 + event.size * 2);
       this.cameraRig.shake(0.03 + Math.min(event.size, 3) * 0.03);
       this.rumble(0.25 + Math.min(event.size, 3) * 0.15, 0.5, 140);
+      this.noteCollected(catalogIdForPickable(event.kind, event.variant));
     };
     this.ball.onImpact = (strength) => {
       if (strength > 0.25) {
@@ -349,14 +408,16 @@ export class Game {
     this.audio.setPaused(false);
     this.menu.hide();
     this.hud.setVisible(true);
+    this.hud.perkPicker.setSuspended(false);
     this.started = true;
-    if (!this.hud.isTouch) this.input.requestPointerLock();
+    // Voltando pra uma escolha de poder, o mouse continua solto (pra clicar nas cartas).
+    if (!this.hud.isTouch && !this.choosing) this.input.requestPointerLock();
     this.canvas.focus();
   }
 
   private onPointerLockChange = (): void => {
-    // Perdeu o mouse (Esc): pausa e mostra a tela de controles.
-    if (!this.input.pointerLocked && this.started && !this.hud.isTouch) this.pause();
+    // Perdeu o mouse (Esc): pausa e mostra a tela de controles. Soltar pra escolher poder não conta.
+    if (!this.input.pointerLocked && this.started && !this.hud.isTouch && !this.choosing) this.pause();
   };
 
   /**
@@ -365,7 +426,17 @@ export class Game {
    */
   private handleGamepadMenu(): void {
     if (!this.paused) {
-      if (this.input.pausePressed) this.pause();
+      if (this.input.pausePressed) {
+        this.pause();
+        return;
+      }
+      if (this.choosing) {
+        // As cartas de poder usam o controle como menu; nada vaza pro besouro.
+        const state = this.input.state;
+        state.jumpPressed = false;
+        state.resetPressed = false;
+        for (const action of this.input.menuActions) this.hud.perkPicker.handleGamepad(action);
+      }
       return;
     }
     const state = this.input.state;
@@ -399,6 +470,16 @@ export class Game {
     this.menu.show(true);
     this.audio.setPaused(true);
     this.hud.setVisible(false);
+    // Escolhendo poder: as cartas ficam atrás do menu e não podem ser escolhidas às cegas pelo teclado.
+    this.hud.perkPicker.setSuspended(true);
+  }
+
+  /** Pausa e abre a placa da toca (tecla T, botão do HUD ou a apresentação da primeira vez). */
+  private openBurrow(intro = false): void {
+    if (!this.started || this.choosing) return;
+    this.burrowIntroTimer = 0;
+    this.pause();
+    this.menu.openBurrow(intro);
   }
 
   private get paused(): boolean {
@@ -476,7 +557,7 @@ export class Game {
     this.hud.setInputDevice(this.input.device, this.input.gamepad.style);
     this.handleGamepadMenu();
 
-    if (!this.paused) {
+    if (!this.paused && !this.choosing) {
       this.cameraRig.applyLook(look.x, look.y, look.zoom);
       // No toque, mirar com o dedão é trabalhoso: a câmera volta sozinha pra trás do besouro.
       if (this.hud.isTouch || this.input.device === 'gamepad') {
@@ -492,13 +573,18 @@ export class Game {
         this.input.state.jumpPressed = false;
         this.input.state.resetPressed = false;
       }
+      this.updateRound(frameTime);
+    } else if (this.choosing) {
+      // Congelado na escolha: nem o pulo nem o "trazer bola" apertados agora valem depois.
+      this.input.state.jumpPressed = false;
+      this.input.state.resetPressed = false;
     } else {
       // Na tela inicial a câmera gira devagar em volta do besouro: vitrine do cenário.
       this.cameraRig.applyLook(-frameTime * 60 * 0.35, 0, 0);
     }
 
     this.applyWeather();
-    const alpha = this.paused ? 1 : this.accumulator / FIXED_DT;
+    const alpha = this.paused || this.choosing ? 1 : this.accumulator / FIXED_DT;
     this.renderFrame(alpha, frameTime);
     this.trackPerformance(frameTime);
     this.countFps(frameTime);
@@ -509,10 +595,18 @@ export class Game {
 
     if (state.resetPressed && !this.burrow.isBusy) this.recoverBall();
 
+    // Nível + poderes da rodada → besouro, ímã dos montinhos e alcance do Chifrudo.
+    const mods = this.progression.modifiers(this.ball.radius);
+    this.beetle.modifiers = mods;
+    this.collectibles.magnet = mods.magnet;
+    this.pickables.pluckReach = mods.pluckReach;
+
     // A toca vem antes da física: durante o enterro é ela quem conduz a bola.
     this.burrow.fixedUpdate(FIXED_DT, this.ball);
     this.applyWaterAndMud(FIXED_DT);
     this.beetle.fixedUpdate(FIXED_DT, state, this.cameraRig.yaw);
+    // Sangue quente: esquenta empurrando com o analógico/teclas apontando pra frente.
+    this.progression.updateHeat(FIXED_DT, this.beetle.pushing && Math.hypot(state.moveX, state.moveY) > 0.3);
     this.physics.step();
     this.ball.fixedUpdate(FIXED_DT);
     this.collectibles.fixedUpdate(FIXED_DT, this.ball, this.beetle.center);
@@ -538,6 +632,7 @@ export class Game {
    */
   private applyWaterAndMud(dt: number): void {
     const ball = this.ball;
+    const mods = this.beetle.modifiers;
     const p = ball.position(this.tmpBall);
     const r = ball.radius;
     const surface = this.puddles.surfaceAt(p.x, p.z);
@@ -545,18 +640,18 @@ export class Game {
     const submersion = clamp(this.ballWater / (2 * r), 0, 1);
     const speed = Math.hypot(ball.body.linvel().x, ball.body.linvel().z);
 
-    let drag = submersion * 3.2;
+    let drag = submersion * 3.2 * mods.waterDrag;
     this.dissolving = false;
     if (submersion > 0.02) {
       // Perde volume pela área molhada (bola pequena derrete rápido; gigante quase nada).
-      ball.removeVolume(1.35 * submersion * r * r * dt);
-      this.dissolving = r > START_RADIUS * 1.08;
+      ball.removeVolume(1.35 * submersion * r * r * dt * mods.melt);
+      this.dissolving = r > START_RADIUS * 1.08 && mods.melt > 0.5;
     } else if (ball.isSolid && this.weather.wetness > 0.2 && speed > 0.3) {
       const onGround = p.y - r - terrainHeight(p.x, p.z) < 0.2;
       const dirt = dirtAmount(p.x, p.z);
       if (onGround && dirt > 0.3) {
-        ball.addVolume(0.018 * speed * this.weather.wetness * dirt * r * dt);
-        drag += 0.5 * this.weather.wetness * dirt;
+        ball.addVolume(0.018 * speed * this.weather.wetness * dirt * r * dt * mods.mud);
+        drag += (0.5 * this.weather.wetness * dirt) / mods.mud;
       }
     }
     ball.extraDrag = drag;
@@ -570,7 +665,7 @@ export class Game {
 
     const c = this.beetle.center;
     this.playerWater = this.puddles.depthAt(c.x, c.z);
-    this.beetle.speedScale = 1 - 0.45 * clamp(this.playerWater / 0.5, 0, 1);
+    this.beetle.speedScale = 1 - 0.45 * mods.wade * clamp(this.playerWater / 0.5, 0, 1);
     const playerWet = this.playerWater > 0.04;
     if (playerWet && !this.playerWasWet) this.audio.splash(c, 0.15);
     this.playerWasWet = playerWet;
@@ -598,16 +693,19 @@ export class Game {
     this.audio.recall(to);
   }
 
-  /** Bola enterrada: placar, recorde salvo e festa. */
+  /** Bola enterrada: placar, recorde, comida na despensa, figurinhas e festa. */
   private finishRound(result: { diameterCm: number; dungCount: number; itemCount: number }, at: THREE.Vector3): void {
     const record = result.diameterCm > this.save.bestCm + 0.05;
     this.save.buried += 1;
     this.save.totalCm += result.diameterCm;
     this.save.bestCm = Math.max(this.save.bestCm, result.diameterCm);
-    writeSave(this.save);
+    // O enterro salva tudo junto (recorde + despensa + catálogo).
+    const outcome = this.progression.bury(result.diameterCm, this.weather.rain > 0.3);
     this.hud.setProgress(this.save);
     this.menu.setProgress(this.save);
-    this.hud.showResult({ ...result, record });
+    this.hud.showResult({ ...result, record, outcome });
+    if (outcome.meal && outcome.meal.levelAfter > outcome.meal.levelBefore) this.audio.levelUp();
+    if (outcome.introduceBurrow) this.burrowIntroTimer = BURROW_INTRO_DELAY;
     this.effects.buried(at, result.diameterCm / 4);
     this.audio.buried(at, result.diameterCm / 4, record);
     this.cameraRig.shake(0.1);
@@ -635,6 +733,8 @@ export class Game {
     const position = new THREE.Vector3(x, terrainHeight(x, z) + START_RADIUS + 0.05, z);
     this.ball.reset(position);
     this.ball.endBurial();
+    this.progression.startRound();
+    this.collectibles.freshChance = FRESH_CHANCE;
     this.hud.resetRound();
     this.effects.sparkle(position, new THREE.Color('#e6c46a'));
     this.audio.newBall(position);
@@ -665,7 +765,8 @@ export class Game {
     this.collectibles.update(dt);
     this.burrow.update(dt, this.elapsed, this.ball.radius);
     this.updateEffects(dt, player);
-    if (!this.paused) this.collectCritters();
+    if (!this.paused && !this.choosing) this.collectCritters();
+    this.updateFreshPiles(dt, player);
 
     this.hud.setBall(this.ball.diameterCm, this.ball.dungCount, this.ball.itemCount);
     const hint = this.computeHint();
@@ -695,8 +796,8 @@ export class Game {
     f.playerWater = this.playerWater;
     f.ballWater = this.ballWater;
     this.collectibles.stinkSources(player, STINK_RANGE, this.stink);
-    // Pausado, o mundo continua vivo (bichos, pólen, chuva), mas nada de poeira de passo.
-    if (this.paused) {
+    // Pausado (ou escolhendo poder), o mundo continua vivo (bichos, pólen, chuva), mas nada de poeira de passo.
+    if (this.paused || this.choosing) {
       f.playerVelocity.set(0, 0, 0);
       f.ballVelocity.set(0, 0, 0);
     }
@@ -708,7 +809,7 @@ export class Game {
     const a = this.audioFrame;
     const ball = this.ball.root.position;
     const r = this.ball.radius;
-    a.paused = this.paused;
+    a.paused = this.paused || this.choosing;
     a.footfalls = this.beetle.model.footfalls;
     a.feetClearance = player.y - terrainHeight(player.x, player.z);
     a.playerDirt = dirtAmount(player.x, player.z);
@@ -735,10 +836,131 @@ export class Game {
     const at = found.object.getWorldPosition(new THREE.Vector3());
     this.audio.critterStuck(at);
     this.effects.sparkle(at, found.color);
+    this.noteCollected('pillbug');
+  }
+
+  // --- progressão (toca, poderes, pedidos) ---------------------------------------
+
+  /** A bola engoliu algo: conta pra rodada (pedidos) e pro catálogo quando enterrar. */
+  private noteCollected(id: CatalogId): void {
+    this.announceRequests(this.progression.noteCollected(id, this.ball.diameterCm));
+  }
+
+  private announceRequests(done: readonly RoundRequest[]): void {
+    if (done.length === 0) return;
+    this.hud.requestDone();
+    this.audio.requestDone();
+  }
+
+  /** Depois dos passos de física: pedidos de tamanho, marcos de poder e a apresentação da toca. */
+  private updateRound(frameTime: number): void {
+    if (!this.burrow.isBusy) {
+      const cm = this.ball.diameterCm;
+      this.announceRequests(this.progression.noteBallSize(cm));
+      const offer = this.progression.checkPerkMilestone(cm);
+      if (offer) this.offerPerks(offer, cm);
+    }
+    if (this.burrowIntroTimer > 0 && !this.choosing) {
+      this.burrowIntroTimer -= frameTime;
+      if (this.burrowIntroTimer <= 0) this.openBurrow(true);
+    }
+    this.hud.setHeat(this.progression.heat);
+  }
+
+  /** Marco de poder: 2 ou 3 opções abrem as cartas; 1 só vem de presente; 0 não faz nada. */
+  private offerPerks(options: readonly PerkId[], cm: number): void {
+    if (options.length === 0) return;
+    if (options.length === 1) {
+      this.grantPerk(options[0]);
+      this.hud.notify(t('perk.gained', { name: t(`perk.${options[0]}.name` as MessageKey) }));
+      return;
+    }
+    this.choosing = true;
+    if (this.beetle.pushing) this.beetle.releaseBall();
+    // Solta o mouse pra dar pra clicar nas cartas (o `choosing` impede que isso vire pausa).
+    if (this.input.pointerLocked) document.exitPointerLock();
+    this.hud.showPerkPicker(options, cm);
+    this.audio.perkOffer();
+  }
+
+  private choosePerk(perk: PerkId): void {
+    this.choosing = false;
+    this.grantPerk(perk);
+    // A escolha é um gesto (clique/tecla): dá pra prender o mouse de novo na hora.
+    if (!this.hud.isTouch && !this.paused) this.input.requestPointerLock();
+    this.canvas.focus();
+  }
+
+  private grantPerk(perk: PerkId): void {
+    this.progression.takePerk(perk);
+    this.audio.perkPick();
+    if (perk === 'nose') {
+      // O Faro já chega farejando: alguns montinhos viram fresquinhos e mais deles vão nascer.
+      this.collectibles.promoteFresh(NOSE_PROMOTE_COUNT);
+      this.collectibles.freshChance = NOSE_FRESH_CHANCE;
+    }
+  }
+
+  /** Comeu da despensa (na placa da toca): som e festa se subiu de nível. */
+  private onMeal(meal: MealResult): void {
+    this.audio.eat();
+    if (meal.levelAfter > meal.levelBefore) this.audio.levelUp();
+  }
+
+  /** Progressão mudou → HUD (nível, pedidos, poderes, contador da despensa). */
+  private syncRound(): void {
+    const info = this.progression.levelProgress;
+    this.hud.setRound({
+      level: info.level,
+      levelProgress: info.into / info.needed,
+      requests: this.progression.requests,
+      perks: this.progression.roundPerks,
+    });
+    this.hud.setPantryCount(this.progression.pantry.length);
+  }
+
+  /**
+   * Montinhos fresquinhos: um brilho de vez em quando (pra serem achados) e, com
+   * o Faro, marcadores na tela apontando pros mais perto.
+   */
+  private updateFreshPiles(dt: number, player: THREE.Vector3): void {
+    const nose = this.progression.hasPerk('nose');
+    const spots = this.collectibles.freshSpots(this.freshSpots);
+    const points = this.scentPoints;
+    points.length = 0;
+    if (this.paused || spots.length === 0) {
+      this.hud.setScentMarkers(points);
+      return;
+    }
+
+    this.freshGlintTimer -= dt;
+    if (this.freshGlintTimer <= 0) {
+      this.freshGlintTimer = FRESH_GLINT_SECONDS * (nose ? 0.5 : 1);
+      const range = nose ? FRESH_GLINT_RANGE_NOSE : FRESH_GLINT_RANGE;
+      const near = spots.filter((p) => Math.hypot(p.x - player.x, p.z - player.z) < range);
+      const pick = near[Math.floor(Math.random() * near.length)];
+      if (pick) this.effects.sparkle(this.tmpFocus.set(pick.x, pick.y + 0.7, pick.z), FRESH_GLINT_COLOR);
+    }
+
+    if (nose && !this.choosing) {
+      const camera = this.graphics.camera;
+      const sorted = spots
+        .map((p) => ({ p, d: Math.hypot(p.x - player.x, p.z - player.z) }))
+        .filter((entry) => entry.d < SCENT_RANGE && entry.d > 2.5)
+        .sort((a, b) => a.d - b.d)
+        .slice(0, 4);
+      for (const { p } of sorted) {
+        const point = this.tmpMarker.set(p.x, p.y + 1.2, p.z);
+        const behind = point.clone().applyMatrix4(camera.matrixWorldInverse).z > 0;
+        point.project(camera);
+        points.push({ ndcX: point.x, ndcY: point.y, behind });
+      }
+    }
+    this.hud.setScentMarkers(points);
   }
 
   private computeHint(): { kind: HintKind; value: number } {
-    if (this.paused) return { kind: 'none', value: 0 };
+    if (this.paused || this.choosing) return { kind: 'none', value: 0 };
     if (this.dissolving) return { kind: 'dissolving', value: 0 };
     if (this.burrowHintTimer > 0) return { kind: 'burrowTooSmall', value: MIN_BURY_RADIUS * 4 };
     if (this.tooSmallTimer > 0) return { kind: 'tooSmall', value: this.tooSmallCm };
@@ -752,7 +974,7 @@ export class Game {
   /** Marcador da toca no HUD (some perto dela, durante o enterro e na pausa). */
   private updateBurrowMarker(player: THREE.Vector3): void {
     const distance = Math.hypot(player.x - BURROW.x, player.z - BURROW.z);
-    if (this.paused || this.burrow.isBusy || distance < MARKER_HIDE_DISTANCE) {
+    if (this.paused || this.choosing || this.burrow.isBusy || distance < MARKER_HIDE_DISTANCE) {
       this.hud.setBurrowMarker(null);
       return;
     }
@@ -786,7 +1008,7 @@ export class Game {
    * assim ficar abaixo de ~30 fps, desce mais um degrau.
    */
   private trackPerformance(frameTime: number): void {
-    if (this.perfStage >= 2 || this.paused || settings.get().quality !== 'auto') return;
+    if (this.perfStage >= 2 || this.paused || this.choosing || settings.get().quality !== 'auto') return;
     this.perfTime += frameTime;
     this.perfSamples++;
     if (this.perfTime < 4) return;

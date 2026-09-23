@@ -50,6 +50,12 @@ export class InstancePool {
     this.mesh.instanceMatrix.needsUpdate = true;
   }
 
+  /** Tinge uma vaga (multiplica a cor do material/vértices; valores acima de 1 clareiam). */
+  setColor(index: number, color: THREE.Color): void {
+    this.mesh.setColorAt(index, color);
+    this.mesh.instanceColor!.needsUpdate = true;
+  }
+
   /** Esconde sem liberar a vaga (o dono vai voltar a usar). */
   hide(index: number): void {
     this.set(index, HIDDEN);
