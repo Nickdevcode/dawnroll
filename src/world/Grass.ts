@@ -3,6 +3,7 @@ import { createRng, smoothstep, type Rng } from '../utils/math';
 import { globalUniforms, pushersGLSL, windGLSL } from '../render/shaderChunks';
 import { SUN_DIRECTION } from '../render/Graphics';
 import { ChunkedInstances, type InstanceSample } from '../render/ChunkedInstances';
+import { outlineReachGLSL } from '../render/OutlinePass';
 import { terrainHeight, terrainNormal, dirtAmount, PLAY_RADIUS, WORLD_SIZE } from './Terrain';
 
 /** Altura (local) considerada "ponta" da lâmina para o vento e para a translucidez. */
@@ -229,7 +230,10 @@ function createGrassMaterial(): THREE.MeshStandardMaterial {
         vec3 sunView = normalize((viewMatrix * vec4(uSunDirection, 0.0)).xyz);
         float backlit = pow(max(dot(normalize(-vViewPosition), sunView), 0.0), 3.0);
         totalEmissiveRadiance += diffuseColor.rgb * vec3(1.0, 0.92, 0.6) * backlit * vGrassH * 0.9;`,
-      );
+      )
+      // Contorno só na grama de perto: de longe, lâmina de 1 px virava pontilhado preto.
+      .replace('#include <dithering_fragment>', `#include <dithering_fragment>
+${outlineReachGLSL(0.15)}`);
   };
   material.customProgramCacheKey = () => 'grass';
   return material;

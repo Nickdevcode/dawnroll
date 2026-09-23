@@ -6,7 +6,7 @@ Um besouro rola-bosta de massinha num jardim em miniatura. Você rola uma bola d
 
 > 🌞 **Por que Dawnroll?** Os egípcios viam o besouro rola-bosta empurrando a bola e imaginaram **Khepri**, o deus-escaravelho que rola o sol pelo céu, enterra ele à noite e faz ele renascer de manhã. É o ciclo do jogo: você rola seu "solzinho", enterra na toca e uma bola nova nasce. O jogo se chamava **Rola Bosta**; o link antigo redireciona pro novo.
 
-> Visual inspirado em **Human Fall Flat**: tudo com cara de massinha (fosco, aveludado, com marquinha de dedo e até digital), luz suave, oclusão ambiente forte e um desfoque de **maquete** que faz o jardim parecer um diorama fotografado de pertinho.
+> Visual inspirado em **Human Fall Flat**: tudo com cara de massinha (fosco, aveludado, com marquinha de dedo e até digital), luz suave, oclusão ambiente forte, um **contorno preto fininho** de desenho animado em volta de tudo e um desfoque de **maquete** que faz o jardim parecer um diorama fotografado de pertinho.
 
 ### ✨ O que tem no jardim
 
@@ -179,7 +179,8 @@ src/
 │   ├── save.ts             # progresso no localStorage (recorde, XP, despensa, catálogo, conquistas), validado
 │   └── ThirdPersonCamera.ts # órbita, colisão com o cenário e tremidinha de impacto
 ├── render/
-│   ├── Graphics.ts         # renderer, cúpula do céu (sol x chuva), luzes, pós (GTAO, DOF, bloom, grading)
+│   ├── Graphics.ts         # renderer, cúpula do céu (sol x chuva), luzes, pós (contorno, GTAO, DOF, bloom, FXAA, grading)
+│   ├── OutlinePass.ts      # contorno preto de desenho animado (lido da profundidade da cena)
 │   ├── clayMaterial.ts     # material de massinha (digitais, mosqueado, manchas úmidas, vento, chuva)
 │   ├── shaderChunks.ts     # GLSL e uniforms globais (ruído, vento, grama que deita, molhado)
 │   ├── StaticBatch.ts      # funde milhares de peças em poucos draw calls (e apaga as arrancadas)
@@ -263,6 +264,7 @@ src/
 - **Muita coisa, poucos draw calls:** o cenário estático é assado num lote (uma malha por acabamento × pedaço do mapa, cor nos vértices); grama e cobertura do chão são instâncias em pedaços; detritos parados, montinhos e moscas são vagas num `InstancedMesh`. Um detrito só vira `Mesh` de verdade quando gruda na bola.
 - **LOD sem buraco:** as instâncias de cada pedaço são embaralhadas, então desenhar só os primeiros N (longe da câmera) deixa o gramado mais ralo por igual, sem clarões.
 - **Grama fora do AO:** o passe de oclusão desenha a cena com um material próprio, que não roda o vento da grama — então a vegetação animada é escondida só durante esse passe (senão aparecem "sombras fantasmas" da grama parada).
+- **Contorno de desenho:** um passe de tela cheia logo depois da cena lê a profundidade (a do próprio MSAA, sem draw call a mais) e procura onde a superfície "pula" pra trás, usando profundidade *inversa* (1/z), que num plano varia em linha reta pela tela: o chão visto de raspão não ganha risco, só as silhuetas. A linha fica só do lado do objeto da frente (~2 px em 1080p, escala com a resolução) e some junto com a neblina. A grama grava no alfa um "alcance" menor (só a de perto ganha contorno, senão vira pontilhado) e um FXAA depois alisa a escadinha da linha.
 - **AO em meia resolução:** era o passe mais caro do jogo; na massinha a oclusão já é macia, então metade da resolução fica igual e custa bem menos. O desfoque de maquete reaproveita a profundidade que o AO já renderiza.
 - **Pólen sem CPU:** cada ponto tem uma semente fixa e o shader calcula a deriva e "dá a volta" numa caixa em torno da câmera.
 - **Câmera x cenário:** uma esfera do tamanho da lente é varrida do foco até a câmera (`castShape` do Rapier) e encurta a distância quando tem sólido no meio (entra rápido, volta devagar). A bola de bosta entra como esfera analítica (foco dentro dela, empurrando a gigante, não conta). Encurralada, a câmera sobe em degraus de ângulo antes de encostar no besouro.

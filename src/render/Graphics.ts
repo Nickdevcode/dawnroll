@@ -3,10 +3,12 @@ import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
+import { FXAAPass } from 'three/examples/jsm/postprocessing/FXAAPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { Pass } from 'three/examples/jsm/postprocessing/Pass.js';
 import { isTouchDevice, quality } from '../core/device';
+import { OutlinePass } from './OutlinePass';
 import type { ShadowQuality } from '../core/settings';
 import { createRng } from '../utils/math';
 
@@ -255,6 +257,7 @@ export class Graphics {
   private readonly skyDome: THREE.Mesh;
   private readonly fog: THREE.Fog;
   private readonly composer: EffectComposer;
+  private readonly outlinePass: OutlinePass;
   private readonly aoPass: GTAOPass;
   private readonly aoHide: AOVisibilityPass;
   private readonly aoRestore: AOVisibilityPass;
@@ -319,9 +322,17 @@ export class Graphics {
     this.scene.add(this.sun, this.sun.target);
 
     const size = this.renderer.getDrawingBufferSize(new THREE.Vector2());
-    const target = new THREE.WebGLRenderTarget(size.x, size.y, { samples: quality.msaaSamples, type: THREE.HalfFloatType });
+    // Profundidade em textura (o MSAA resolve junto): o contorno lê dela logo depois da cena.
+    const target = new THREE.WebGLRenderTarget(size.x, size.y, {
+      samples: quality.msaaSamples,
+      type: THREE.HalfFloatType,
+      depthTexture: new THREE.DepthTexture(size.x, size.y),
+    });
     this.composer = new EffectComposer(this.renderer, target);
     this.composer.addPass(new RenderPass(this.scene, this.camera));
+    // Antes do AO e do desfoque: o contorno de fundo desfoca junto com o que ele contorna.
+    this.outlinePass = new OutlinePass(this.camera);
+    this.composer.addPass(this.outlinePass);
 
     const hidden: THREE.Object3D[] = [];
     this.aoHide = new AOVisibilityPass(this.scene, true, hidden);
@@ -342,6 +353,9 @@ export class Graphics {
     this.composer.addPass(this.bloomPass);
 
     this.composer.addPass(new OutputPass());
+    // O contorno nasce depois do MSAA (sai serrilhado pixel a pixel): o FXAA alisa a
+    // escadinha. Já em sRGB, como ele espera, e antes do grão (que não deve borrar).
+    this.composer.addPass(new FXAAPass());
     this.finishPass = new ShaderPass(FinishShader);
     this.composer.addPass(this.finishPass);
 
@@ -413,6 +427,8 @@ export class Graphics {
     this.fog.color.copy(Palette.fog).lerp(StormPalette.fog, k);
     this.fog.near = THREE.MathUtils.lerp(42, 26, k);
     this.fog.far = THREE.MathUtils.lerp(175, 118, k);
+    // Linha preta não leva neblina: some antes, junto de onde a névoa começa a pesar.
+    this.outlinePass.setFade(this.fog.near * 0.55, this.fog.near * 1.65);
     this.scene.environmentIntensity = THREE.MathUtils.lerp(0.5, 0.36, k);
     this.renderer.toneMappingExposure = 1.02 - k * 0.05 + flash * 0.35;
     this.finishPass.uniforms.uOvercast.value = k;
