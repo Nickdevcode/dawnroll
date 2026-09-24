@@ -98,9 +98,15 @@ const DISPOSE_AFTER_FRAMES = 3;
 /** Sorteios derivados da semente do jardim (grama, cobertura e bichos de cada jardim). */
 const GardenSalt = { grass: 11, cover: 12, critters: 13, find: 14 } as const;
 /** Achado raro: longe assim do besouro quando nasce (tem que explorar pra achar). */
-const RARE_FIND_MIN_DISTANCE = 15;
-/** Até que distância do besouro o achado solta brilhinhos (o facho se vê de mais longe). */
-const RARE_FIND_GLINT_RANGE = 45;
+const RARE_FIND_MIN_DISTANCE = 25;
+/**
+ * Pistas de perto: um brilhinho e um "plim" de vez em quando, só pra quem já
+ * está explorando ali (de longe não há sinal nenhum além do item no capim).
+ */
+const RARE_FIND_GLINT_RANGE = 12;
+const RARE_FIND_GLINT_SECONDS = 2.6;
+const RARE_FIND_CHIME_RANGE = 15;
+const RARE_FIND_CHIME_SECONDS = 3.4;
 const RARE_FIND_GOLD = new THREE.Color('#ffc94a');
 /** O que cada passo da montagem do jardim devolve: `idle` = nada a fazer até a bola cair na toca. */
 type GardenStep = 'idle' | void;
@@ -212,6 +218,8 @@ export class Game {
   private readonly viewport = { width: 1, height: 1 };
   /** Achado raro do jardim atual (um acessório brilhando em algum canto). */
   private readonly rareFind = new RareFind();
+  private rareGlintTimer = 0;
+  private rareChimeTimer = 0;
   private readonly achievementToast: AchievementToast;
   /** O aviso de pedido dourado já saiu nesta rodada. */
   private goldenAnnounced = false;
@@ -1282,25 +1290,44 @@ export class Game {
     }
     if (!id) return;
     const beetle = this.beetle.center;
-    for (let i = 0; i < 120; i++) {
+    // Esconderijo: no capim (fora da trilha de terra) e encostado em alguma coisa (pedra, flor,
+    // cogumelo, brinquedo). Sem lugar assim, qualquer canto livre longe do besouro.
+    for (let i = 0; i < 240; i++) {
+      const tucked = i < 160;
       const a = rng.next() * Math.PI * 2;
       const d = 12 + Math.sqrt(rng.next()) * (PLAY_RADIUS - 16);
       const x = Math.cos(a) * d;
       const z = Math.sin(a) * d;
       if (Math.hypot(x - beetle.x, z - beetle.z) < RARE_FIND_MIN_DISTANCE) continue;
-      if (!this.scenery.isFree(x, z, 1.2) || this.scenery.isInsideSolid(x, z, 1.2) || this.scenery.isDug(x, z) || this.scenery.isCovered(x, z, 0.8)) continue;
+      if (!this.scenery.isFree(x, z, 0.9) || this.scenery.isInsideSolid(x, z, 0.9) || this.scenery.isDug(x, z) || this.scenery.isCovered(x, z, 0.8)) continue;
+      if (tucked && (dirtAmount(x, z) > 0.2 || this.scenery.isFree(x, z, 2.4))) continue;
       this.rareFind.place(id, x, z);
+      this.rareGlintTimer = this.rareChimeTimer = 0;
       return;
     }
   }
 
-  /** Achado raro: anima, solta brilhinho de vez em quando e confere se o besouro (ou a bola) passou por cima. */
+  /**
+   * Achado raro: anima, dá as pistas de perto (brilhinho e "plim") e confere se
+   * o besouro (ou a bola) passou por cima.
+   */
   private updateRareFind(dt: number): void {
     if (!this.rareFind.active) return;
     const player = this.beetle.renderPosition(1, this.tmpFocus);
     const at = this.rareFind.position!;
-    if (this.rareFind.update(dt) && player.distanceTo(at) < RARE_FIND_GLINT_RANGE) this.effects.sparkle(at, RARE_FIND_GOLD);
+    this.rareFind.update(dt, player);
     if (this.paused || this.choosing || this.burrow.isBusy) return;
+    const distance = player.distanceTo(at);
+    this.rareGlintTimer -= dt;
+    if (this.rareGlintTimer <= 0 && distance < RARE_FIND_GLINT_RANGE) {
+      this.rareGlintTimer = RARE_FIND_GLINT_SECONDS;
+      this.effects.sparkle(at, RARE_FIND_GOLD);
+    }
+    this.rareChimeTimer -= dt;
+    if (this.rareChimeTimer <= 0 && distance < RARE_FIND_CHIME_RANGE) {
+      this.rareChimeTimer = RARE_FIND_CHIME_SECONDS;
+      this.audio.treasureTwinkle(at);
+    }
     const ball = this.ball.root.position;
     const id = this.rareFind.collect(player, ball, this.ball.isSolid ? this.ball.radius : 0);
     if (!id) return;

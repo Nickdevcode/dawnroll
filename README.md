@@ -111,7 +111,7 @@ Um botão novo no menu (com bolinha contando o que chegou). O besouro vira o cen
 | 💎 **Raridade** | Comum, raro, épico e lendário: cor na faixinha de cada quadradinho, selo no cartão e borda dourada nos lendários |
 | 🔓 **Como libera** | Cada visual vem de uma **conquista que combina** (o chapéu de cowboy é do rodeio em cima da bola, o monóculo é do museu completo, o gorro é de levar o anão, a camuflagem é do bicho-pau...) ou de um **nível** (do 2 ao 12 quase todo nível dá um visual novo; o Amanhecer é do nível 20). O aviso da conquista e o resultado do enterro dizem o que chegou |
 | 👀 **Provar** | Os trancados dá pra **provar**: o besouro veste enquanto a placa está aberta e o cartão mostra como liberar. Fechou, volta pro que estava |
-| ✨ **Achado raro** | De vez em quando (mais ou menos 1 jardim em 5) um **acessório que você ainda não tem** aparece girando num canto do jardim, dentro de um **facho de luz dourado** que se vê de longe. Passou por cima (ou rolou a bola nele), pegou: libera na hora, com confete e aviso. Comum aparece mais, lendário quase nunca, e se a bola for enterrada antes, ele vai embora junto com o jardim. **Cascos não aparecem:** eles continuam só por conquista e nível |
+| ✨ **Achado raro** | De vez em quando (mais ou menos 1 jardim em 5) um **acessório que você ainda não tem** aparece escondido no jardim: longe do começo, baixinho no meio do capim, de preferência encostado numa pedra, flor ou cogumelo. **De longe não há sinal nenhum**; chegando perto ele ganha um brilho dourado macio e um anel no chão, solta um brilhinho de vez em quando e toca um "plim" de sininho que dá pra seguir pelo som. Passou por cima (ou rolou a bola nele), pegou: libera na hora, com confete e aviso. Comum aparece mais, lendário quase nunca, e se a bola for enterrada antes, ele vai embora junto com o jardim. **Cascos não aparecem:** eles continuam só por conquista e nível |
 | 🏅 **5 conquistas novas** | **Peão de rodeio** (1 minuto em cima da bola, somando), **Febre** (Sangue quente no máximo), **Fashionista** (chapéu, rosto, pescoço e costas ao mesmo tempo), **Maratonista** (100 m de bola rolada, na escala do jardim) e **Escaravelho lendário** (nível 20) |
 
 | Raridade | Cascos | Acessórios |
@@ -240,7 +240,7 @@ src/
 │   ├── objects/            # objetos perdidos: frutas, piquenique, brinquedos, jardineiro, anão, detritos novos
 │   │                       # + compose.ts (montagem procedural de um cantinho sem sobrepor nada)
 │   ├── Burrow.ts           # a toca: bandeirinha, anel, enterro da bola
-│   ├── RareFind.ts         # o achado raro no chão: acessório girando no facho de luz, coleta por cima
+│   ├── RareFind.ts         # o achado raro no chão: acessório no capim, brilho só de perto, coleta por cima
 │   ├── Weather.ts          # ciclo do tempo (nublado, chuva, relâmpago, molhado, poças enchendo)
 │   ├── Puddles.ts          # água das poças (shader com profundidade e anéis de gota)
 │   ├── Grass.ts            # grama instanciada com vento, translucidez e LOD

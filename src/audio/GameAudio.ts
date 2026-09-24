@@ -14,6 +14,7 @@ import { UiSounds } from './UiSounds';
 import { Wildlife } from './Wildlife';
 import * as sfx from './voices/foley';
 import { uiNotify } from './voices/ui';
+import { celesta } from './voices/instruments';
 
 /** Itens pegos dentro deste intervalo sobem a notinha do combo. */
 const COMBO_WINDOW = 1.4;
@@ -138,6 +139,15 @@ export class GameAudio {
   critterStuck(at: Vec3Like, id: CatalogId): void {
     this.engine.play(sfx.critterStick(id), { at });
     this.bumpCombo();
+  }
+
+  /**
+   * Achado raro por perto: um "plim" de sininho (duas notas de celesta) saindo
+   * do lugar dele, em 3D. É a pista pra quem está explorando: dá pra seguir o som.
+   */
+  treasureTwinkle(at: Vec3Like): void {
+    this.engine.play(celesta(88, 0.55), { at, key: 'treasure', minInterval: 1.5, reverb: 0.35 });
+    this.engine.play(celesta(95, 0.4), { at, delay: 0.12, reverb: 0.35 });
   }
 
   /** O poder de apertar recarregou (aviso curtinho, no canal da interface). */
