@@ -336,7 +336,10 @@ export class Collectibles {
     return true;
   }
 
-  /** Animação idle (montinho respirando, moscas voando em volta) e escrita das instâncias. */
+  /**
+   * Animação idle (montinho respirando, moscas voando em volta) e escrita das
+   * instâncias; só o que cai na visão da câmera vai para a GPU.
+   */
   update(dt: number): void {
     this.time += dt;
     for (const pile of this.piles) {
@@ -381,6 +384,10 @@ export class Collectibles {
       }
     }
     this.animateExtras(dt);
+    this.pilePool.sync();
+    this.flyBodyPool.sync();
+    this.flyWingPool.sync();
+    for (const pool of this.debrisPools.values()) pool.sync();
   }
 
   /** Extras: o pulinho até o chão e o encolher antes de sumir (só o desenho; a lógica usa o lugar final). */

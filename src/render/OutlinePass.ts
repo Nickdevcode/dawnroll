@@ -82,17 +82,21 @@ export function outlineReachGLSL(reach: number): string {
 const LINE_WIDTH_AT_1080P = 1.5;
 
 /**
- * Passe do composer que aplica o contorno. Precisa vir logo depois do RenderPass:
- * lê a profundidade de `readBuffer.depthTexture`, que só existe no alvo onde a
- * cena acabou de ser desenhada. Não desligue com `enabled = false`: é ele que
- * devolve o alfa a 1 (sem isso a grama sai branca do resto do pós-processamento).
+ * Passe do composer que aplica o contorno. Lê cor e profundidade do alvo onde a
+ * cena foi desenhada (`source`, o único com MSAA) e escreve no ping-pong do
+ * composer: é a ponte entre a cena e o resto do pós-processamento. Não desligue
+ * com `enabled = false`: é ele que devolve o alfa a 1 e tira a cena do alvo dela
+ * (sem ele a grama sai branca e o resto da cadeia fica sem imagem).
  * Para ver a cena sem contorno, `setFade(0, 0.001)`.
  */
 export class OutlinePass extends Pass {
   private readonly material: THREE.ShaderMaterial;
   private readonly quad: FullScreenQuad;
 
-  constructor(private readonly camera: THREE.PerspectiveCamera) {
+  constructor(
+    private readonly camera: THREE.PerspectiveCamera,
+    private readonly source: THREE.WebGLRenderTarget,
+  ) {
     super();
     this.material = new THREE.ShaderMaterial({
       uniforms: THREE.UniformsUtils.clone(OutlineShader.uniforms),
@@ -115,10 +119,10 @@ export class OutlinePass extends Pass {
     this.material.uniforms.uTexel.value.set(px / Math.max(1, width), px / Math.max(1, height));
   }
 
-  render(renderer: THREE.WebGLRenderer, writeBuffer: THREE.WebGLRenderTarget, readBuffer: THREE.WebGLRenderTarget): void {
+  render(renderer: THREE.WebGLRenderer, writeBuffer: THREE.WebGLRenderTarget): void {
     const u = this.material.uniforms;
-    u.tDiffuse.value = readBuffer.texture;
-    u.tDepth.value = readBuffer.depthTexture;
+    u.tDiffuse.value = this.source.texture;
+    u.tDepth.value = this.source.depthTexture;
     u.cameraNear.value = this.camera.near;
     u.cameraFar.value = this.camera.far;
     renderer.setRenderTarget(this.renderToScreen ? null : writeBuffer);

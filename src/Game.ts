@@ -6,6 +6,7 @@ import { loadSave, writeSave, type SaveData } from './core/save';
 import { settings, nativePixelRatio, type GameSettings } from './core/settings';
 import { Graphics, type RenderOptions } from './render/Graphics';
 import { globalUniforms } from './render/shaderChunks';
+import { clearFrameView, updateFrameView } from './render/frameView';
 import { Terrain, terrainHeight, terrainNormal, dirtAmount, BURROW } from './world/Terrain';
 import { Scenery } from './world/Scenery';
 import { Grass } from './world/Grass';
@@ -90,6 +91,8 @@ const GardenBudget = { playing: 2.5, burying: 8, paused: 10 } as const;
 const DISPOSE_AFTER_FRAMES = 3;
 /** Sorteios derivados da semente do jardim (grama, cobertura e bichos de cada jardim). */
 const GardenSalt = { grass: 11, cover: 12, critters: 13 } as const;
+/** O que cada passo da montagem do jardim devolve: `idle` = nada a fazer até a bola cair na toca. */
+type GardenStep = 'idle' | void;
 
 /**
  * Semente do primeiro jardim: nova a cada vez que o jogo abre. Em desenvolvimento,
@@ -211,7 +214,7 @@ export class Game {
   private readonly cameraBall: CameraBall = { center: new THREE.Vector3(), radius: START_RADIUS };
 
   /** Montagem aos poucos do jardim da próxima rodada (começa quando a bola cai na toca). */
-  private gardenJob: Generator<void, void> | null = null;
+  private gardenJob: Generator<GardenStep, void> | null = null;
   /** A bola caiu na toca: a montagem acelera e os bichos do jardim novo podem nascer (é o passo mais pesado). */
   private gardenRush = false;
   /** Grama, cobertura e bichos já plantados para o jardim novo, esperando a troca. */
@@ -687,12 +690,12 @@ export class Game {
    * e, quando a bola cai na toca, os bichos do jardim novo (um passo só, pesado:
    * no meio do enterro ninguém sente).
    */
-  private *gardenSteps(seed: number): Generator<void, void> {
+  private *gardenSteps(seed: number): Generator<GardenStep, void> {
     while (!this.scenery.stepNext(0)) yield;
     const plan = this.scenery.pendingPlan!;
     const grass = yield* this.grass.plantSteps(this.scenery.groundBlocker(0.1, true), mixSeed(seed, GardenSalt.grass));
     const cover = yield* this.groundCover.plantSteps(this.scenery.groundBlocker(0.25, true), mixSeed(seed, GardenSalt.cover));
-    while (!this.gardenRush) yield;
+    while (!this.gardenRush) yield 'idle';
     const picnic = plan.zones.find((zone) => zone.kind === 'picnic');
     const critters = this.effects.createCritters(this.scenery.pending!.landingSpots, this.scenery.critterGround(true), picnic, mixSeed(seed, GardenSalt.critters));
     this.gardenParts = { grass, cover, critters };
@@ -704,10 +707,13 @@ export class Game {
     if (!job) return;
     const until = performance.now() + budgetMs;
     do {
-      if (job.next().done) {
+      const step = job.next();
+      if (step.done) {
         this.gardenJob = null;
         return;
       }
+      // Pronto, só esperando a bola cair na toca: girar em falso queimaria o orçamento do quadro.
+      if (step.value === 'idle') return;
     } while (performance.now() < until);
   }
 
@@ -1156,6 +1162,10 @@ export class Game {
     this.cameraRig.ball = burying ? null : this.cameraBall;
     this.cameraRig.update(dt, player, cameraBall, this.ball.radius, this.beetle.pushing || burying);
     this.graphics.followFocus(player);
+    // Jogando, o que é instanciado pelo mapa todo (montinhos, detritos, bichos) só desenha o que
+    // cabe nesta visão; no menu vai tudo (é lá que cada shader compila, antes de o jogo começar).
+    if (this.paused) clearFrameView();
+    else updateFrameView(this.graphics.camera);
 
     const camera = this.graphics.camera;
     globalUniforms.uTime.value = this.elapsed;

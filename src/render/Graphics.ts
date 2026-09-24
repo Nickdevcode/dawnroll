@@ -3,10 +3,10 @@ import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
-import { FXAAPass } from 'three/examples/jsm/postprocessing/FXAAPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
-import { Pass } from 'three/examples/jsm/postprocessing/Pass.js';
+import { FullScreenQuad, Pass } from 'three/examples/jsm/postprocessing/Pass.js';
+import { FXAAShader } from 'three/examples/jsm/shaders/FXAAShader.js';
 import { isTouchDevice, quality } from '../core/device';
 import { OutlinePass } from './OutlinePass';
 import type { ShadowQuality } from '../core/settings';
@@ -58,6 +58,61 @@ export interface RenderOptions {
 }
 const tmpSize = new THREE.Vector2();
 
+/** O pedaço da fila de desenho do three que as ordenações abaixo usam. */
+interface SortItem {
+  id: number;
+  object: THREE.Object3D;
+  /** O id interno do material (o three ordena por ele; os tipos não o expõem). */
+  material: { id: number };
+  groupOrder: number;
+  renderOrder: number;
+  z: number;
+}
+
+/**
+ * O que, além do material, obriga o three a trocar de programa de shader: ser
+ * instanciado, ter cor por instância, esqueleto, lote. O three já separa
+ * instanciado de não instanciado; a cor por instância ele não separa, e cada
+ * alternância (detrito tingido × não tingido, que dividem material) custava
+ * um recálculo de programa inteiro na CPU.
+ */
+function programVariant(object: THREE.Object3D): number {
+  const o = object as THREE.Object3D & Partial<Pick<THREE.InstancedMesh, 'isInstancedMesh' | 'instanceColor' | 'morphTexture'>> & { isSkinnedMesh?: boolean; isBatchedMesh?: boolean };
+  let variant = 0;
+  if (o.isSkinnedMesh) variant |= 1;
+  if (o.isInstancedMesh) {
+    variant |= 2;
+    if (o.instanceColor) variant |= 4;
+    if (o.morphTexture) variant |= 8;
+  }
+  if (o.isBatchedMesh) variant |= 16;
+  return variant;
+}
+
+/** Opacos da cena: a ordem do three (material, depois frente-para-trás), agrupando também por variante. */
+function sceneOpaqueSort(a: SortItem, b: SortItem): number {
+  if (a.groupOrder !== b.groupOrder) return a.groupOrder - b.groupOrder;
+  if (a.renderOrder !== b.renderOrder) return a.renderOrder - b.renderOrder;
+  if (a.material.id !== b.material.id) return a.material.id - b.material.id;
+  const variant = programVariant(a.object) - programVariant(b.object);
+  if (variant !== 0) return variant;
+  if (a.z !== b.z) return a.z - b.z;
+  return a.id - b.id;
+}
+
+/**
+ * Passe de normais do AO: todo mundo desenha com o MESMO material (o de
+ * normais), então o que troca o programa é só a variante — agrupa por ela.
+ */
+function overrideOpaqueSort(a: SortItem, b: SortItem): number {
+  if (a.groupOrder !== b.groupOrder) return a.groupOrder - b.groupOrder;
+  if (a.renderOrder !== b.renderOrder) return a.renderOrder - b.renderOrder;
+  const variant = programVariant(a.object) - programVariant(b.object);
+  if (variant !== 0) return variant;
+  if (a.z !== b.z) return a.z - b.z;
+  return a.id - b.id;
+}
+
 /**
  * Esconde, só durante o passe de AO, o que o AO não consegue ver direito:
  * vegetação com vertex shader animado (o override de material do GTAO desenharia
@@ -90,16 +145,70 @@ class AOVisibilityPass extends Pass {
  * GTAO em meia resolução: a oclusão da massinha é macia de qualquer jeito, e
  * isso corta ~70% do custo do passe mais caro do jogo (o composer continua
  * chamando setSize com o tamanho cheio; aqui ele vira metade).
+ *
+ * A saída multiplica a oclusão direto na imagem que já está no `readBuffer`
+ * (a saída padrão do three copia a tela inteira pro outro buffer antes de
+ * multiplicar: um passe de tela cheia a mais, com o mesmo resultado).
  */
 class HalfResGTAOPass extends GTAOPass {
   static readonly SCALE = 0.5;
+  private readonly blendQuad: FullScreenQuad;
 
   constructor(scene: THREE.Scene, camera: THREE.Camera, width: number, height: number) {
     super(scene, camera, Math.max(1, Math.round(width * HalfResGTAOPass.SCALE)), Math.max(1, Math.round(height * HalfResGTAOPass.SCALE)));
+    this.output = GTAOPass.OUTPUT.Off;
+    this.needsSwap = false;
+    this.blendQuad = new FullScreenQuad(this.blendMaterial);
   }
 
   setSize(width: number, height: number): void {
     super.setSize(Math.max(1, Math.round(width * HalfResGTAOPass.SCALE)), Math.max(1, Math.round(height * HalfResGTAOPass.SCALE)));
+  }
+
+  render(renderer: THREE.WebGLRenderer, writeBuffer: THREE.WebGLRenderTarget, readBuffer: THREE.WebGLRenderTarget, deltaTime: number, maskActive: boolean): void {
+    // O passe de normais desenha a cena de novo, e o three redesenharia junto o mapa de
+    // sombra (que o passe da cena acabou de fazer e as normais nem usam): pula.
+    const shadowAutoUpdate = renderer.shadowMap.autoUpdate;
+    renderer.shadowMap.autoUpdate = false;
+    // As matrizes de mundo também já foram atualizadas neste quadro (nada se mexe entre os passes).
+    const matrixAutoUpdate = this.scene.matrixWorldAutoUpdate;
+    this.scene.matrixWorldAutoUpdate = false;
+    renderer.setOpaqueSort(overrideOpaqueSort);
+    // Com a saída "Off" o three só calcula (normais, AO e o filtro); a mistura fica aqui.
+    super.render(renderer, writeBuffer, readBuffer, deltaTime, maskActive);
+    renderer.setOpaqueSort(sceneOpaqueSort);
+    this.scene.matrixWorldAutoUpdate = matrixAutoUpdate;
+    renderer.shadowMap.autoUpdate = shadowAutoUpdate;
+    this.blendMaterial.uniforms.intensity.value = this.blendIntensity;
+    this.blendMaterial.uniforms.tDiffuse.value = this.pdRenderTarget.texture;
+    // A mistura multiplica o que já está no alvo: sem limpar antes (o autoClear apagaria a cena).
+    const autoClear = renderer.autoClear;
+    renderer.autoClear = false;
+    renderer.setRenderTarget(readBuffer);
+    this.blendQuad.render(renderer);
+    renderer.autoClear = autoClear;
+  }
+
+  dispose(): void {
+    super.dispose();
+    this.blendQuad.dispose();
+  }
+}
+
+/**
+ * Desenha a cena num alvo só dela, o único com MSAA (e profundidade em textura).
+ * Os passes de tela cheia seguintes usam alvos simples: num quad de tela cheia
+ * todas as amostras de um pixel saem iguais, então MSAA ali só gastava banda
+ * e um "resolve" (cor + profundidade) a cada passe.
+ */
+class MultisampleScenePass extends RenderPass {
+  constructor(scene: THREE.Scene, camera: THREE.Camera, readonly target: THREE.WebGLRenderTarget) {
+    super(scene, camera);
+    this.needsSwap = false;
+  }
+
+  render(renderer: THREE.WebGLRenderer, writeBuffer: THREE.WebGLRenderTarget, _readBuffer: THREE.WebGLRenderTarget, deltaTime: number, maskActive: boolean): void {
+    super.render(renderer, writeBuffer, this.target, deltaTime, maskActive);
   }
 }
 
@@ -168,39 +277,59 @@ const DepthOfFieldShader = {
 /**
  * Acabamento final (já em sRGB): sombras levemente erguidas para um lilás quente
  * (massinha nunca tem preto puro), um pouco mais de saturação, vinheta e grão.
+ *
+ * Roda no mesmo passe do FXAA, logo depois dele: o contorno nasce depois do MSAA
+ * (serrilhado pixel a pixel) e o FXAA alisa a escadinha antes do grão (que não
+ * deve borrar). Juntos, economizam uma leitura e uma escrita da tela inteira.
  */
-const FinishShader = {
+const FINISH_GLSL = /* glsl */ `
+  uniform float uTime;
+  uniform float uOvercast;
+  float finishHash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233)) + uTime) * 43758.5453); }
+  vec3 finish(vec3 c, vec2 uv) {
+    float luma = dot(c, vec3(0.299, 0.587, 0.114));
+    c += vec3(0.04, 0.018, 0.055) * pow(1.0 - luma, 2.0);
+    // Dia de chuva: um pouco menos de cor e um tom mais frio (sem virar cinza morto).
+    c = mix(vec3(luma), c, 1.08 - uOvercast * 0.2);
+    c *= mix(vec3(1.015, 1.0, 0.975), vec3(0.975, 0.995, 1.025), uOvercast);
+    vec2 d = uv - 0.5;
+    float vignette = smoothstep(0.9, 0.28, length(d * vec2(1.1, 1.0)));
+    c *= mix(0.8, 1.0, vignette);
+    c += (finishHash(uv * 731.0) - 0.5) * 0.016;
+    return c;
+  }
+`;
+
+const FXAA_MAIN = /void main\(\)\s*\{[\s\S]*\}\s*$/;
+
+const FxaaFinishShader = {
   uniforms: {
-    tDiffuse: { value: null as THREE.Texture | null },
+    ...FXAAShader.uniforms,
     uTime: { value: 0 },
     uOvercast: { value: 0 },
   },
-  vertexShader: /* glsl */ `
-    varying vec2 vUv;
-    void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }
-  `,
-  fragmentShader: /* glsl */ `
-    uniform sampler2D tDiffuse;
-    uniform float uTime;
-    uniform float uOvercast;
-    varying vec2 vUv;
-    float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233)) + uTime) * 43758.5453); }
+  vertexShader: FXAAShader.vertexShader,
+  fragmentShader: FXAAShader.fragmentShader.replace(
+    FXAA_MAIN,
+    /* glsl */ `${FINISH_GLSL}
     void main() {
-      vec4 color = texture2D(tDiffuse, vUv);
-      vec3 c = color.rgb;
-      float luma = dot(c, vec3(0.299, 0.587, 0.114));
-      c += vec3(0.04, 0.018, 0.055) * pow(1.0 - luma, 2.0);
-      // Dia de chuva: um pouco menos de cor e um tom mais frio (sem virar cinza morto).
-      c = mix(vec3(luma), c, 1.08 - uOvercast * 0.2);
-      c *= mix(vec3(1.015, 1.0, 0.975), vec3(0.975, 0.995, 1.025), uOvercast);
-      vec2 d = vUv - 0.5;
-      float vignette = smoothstep(0.9, 0.28, length(d * vec2(1.1, 1.0)));
-      c *= mix(0.8, 1.0, vignette);
-      c += (hash(vUv * 731.0) - 0.5) * 0.016;
-      gl_FragColor = vec4(c, color.a);
-    }
-  `,
+      vec4 color = ApplyFXAA(tDiffuse, resolution.xy, vUv);
+      gl_FragColor = vec4(finish(color.rgb, vUv), color.a);
+    }`,
+  ),
 };
+
+/** FXAA + acabamento num passe só (o FXAA precisa saber o tamanho do texel). */
+class FxaaFinishPass extends ShaderPass {
+  constructor() {
+    super(FxaaFinishShader);
+    if (!FXAA_MAIN.test(FXAAShader.fragmentShader)) throw new Error('FXAAShader mudou: o main() não foi encontrado para o acabamento');
+  }
+
+  setSize(width: number, height: number): void {
+    this.uniforms.resolution.value.set(1 / width, 1 / height);
+  }
+}
 
 /**
  * Cúpula do céu: mistura o céu de sol com o de chuva pelo `uOvercast` e acende
@@ -257,13 +386,15 @@ export class Graphics {
   private readonly skyDome: THREE.Mesh;
   private readonly fog: THREE.Fog;
   private readonly composer: EffectComposer;
+  /** Onde a cena é desenhada (MSAA + profundidade); o resto do pós-processamento parte dele. */
+  private readonly sceneTarget: THREE.WebGLRenderTarget;
   private readonly outlinePass: OutlinePass;
   private readonly aoPass: GTAOPass;
   private readonly aoHide: AOVisibilityPass;
   private readonly aoRestore: AOVisibilityPass;
   private readonly dofPass: ShaderPass;
   private readonly bloomPass: UnrealBloomPass;
-  private readonly finishPass: ShaderPass;
+  private readonly finishPass: FxaaFinishPass;
   private pixelRatio: number;
   private options: RenderOptions = {
     pixelRatio: 1,
@@ -288,6 +419,7 @@ export class Graphics {
     this.renderer.toneMappingExposure = 1.02;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
+    this.renderer.setOpaqueSort(sceneOpaqueSort);
 
     this.camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 400);
 
@@ -323,15 +455,17 @@ export class Graphics {
 
     const size = this.renderer.getDrawingBufferSize(new THREE.Vector2());
     // Profundidade em textura (o MSAA resolve junto): o contorno lê dela logo depois da cena.
-    const target = new THREE.WebGLRenderTarget(size.x, size.y, {
+    this.sceneTarget = new THREE.WebGLRenderTarget(size.x, size.y, {
       samples: quality.msaaSamples,
       type: THREE.HalfFloatType,
       depthTexture: new THREE.DepthTexture(size.x, size.y),
     });
-    this.composer = new EffectComposer(this.renderer, target);
-    this.composer.addPass(new RenderPass(this.scene, this.camera));
+    // Ping-pong do pós-processamento: sem MSAA e sem profundidade (só quads de tela cheia).
+    this.composer = new EffectComposer(this.renderer, new THREE.WebGLRenderTarget(size.x, size.y, { type: THREE.HalfFloatType, depthBuffer: false }));
+    this.composer.addPass(new MultisampleScenePass(this.scene, this.camera, this.sceneTarget));
     // Antes do AO e do desfoque: o contorno de fundo desfoca junto com o que ele contorna.
-    this.outlinePass = new OutlinePass(this.camera);
+    // É ele quem tira a cena do alvo com MSAA e põe no ping-pong.
+    this.outlinePass = new OutlinePass(this.camera, this.sceneTarget);
     this.composer.addPass(this.outlinePass);
 
     const hidden: THREE.Object3D[] = [];
@@ -353,10 +487,8 @@ export class Graphics {
     this.composer.addPass(this.bloomPass);
 
     this.composer.addPass(new OutputPass());
-    // O contorno nasce depois do MSAA (sai serrilhado pixel a pixel): o FXAA alisa a
-    // escadinha. Já em sRGB, como ele espera, e antes do grão (que não deve borrar).
-    this.composer.addPass(new FXAAPass());
-    this.finishPass = new ShaderPass(FinishShader);
+    // FXAA já em sRGB, como ele espera, e o acabamento no mesmo passe.
+    this.finishPass = new FxaaFinishPass();
     this.composer.addPass(this.finishPass);
 
     this.applyQuality();
@@ -572,6 +704,8 @@ export class Graphics {
     this.renderer.setSize(w, h, false);
     this.composer.setPixelRatio(this.pixelRatio);
     this.composer.setSize(w, h);
+    // Mesma conta do composer (tamanho × densidade), pra cena e ping-pong baterem texel a texel.
+    this.sceneTarget.setSize(w * this.pixelRatio, h * this.pixelRatio);
     const size = this.renderer.getDrawingBufferSize(new THREE.Vector2());
     this.dofPass.uniforms.uResolution.value.copy(size);
     // Desfoque proporcional à altura da tela (mesma "lente" em qualquer resolução).

@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { RAPIER, Groups, interactionGroups, type Physics } from '../core/Physics';
 import { getClayNormalMapRepeated } from '../render/clayMaterial';
-import { globalUniforms, noiseGLSL } from '../render/shaderChunks';
+import { globalUniforms } from '../render/shaderChunks';
+import { getNoiseTexture, noiseTextureGLSL } from '../render/noiseTexture';
 import { fbm2 } from '../utils/noise';
 import { lerp, smoothstep } from '../utils/math';
 import { createBurrowSite, pickPuddleSites, puddleBowl, puddleFlatten, type BurrowSite, type PuddleSite } from './sites';
@@ -278,11 +279,12 @@ function createTerrainMaterial(): THREE.MeshPhysicalMaterial {
   });
   material.onBeforeCompile = (shader) => {
     shader.uniforms.uWetness = globalUniforms.uWetness;
+    shader.uniforms.tClayNoise = { value: getNoiseTexture() };
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\nattribute float dirt;\nattribute float mud;\nvarying float vDirt;\nvarying float vMud;\nvarying vec2 vGround;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvDirt = dirt;\nvMud = mud;\nvGround = position.xz;');
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', `#include <common>\nvarying float vDirt;\nvarying float vMud;\nvarying vec2 vGround;\nuniform float uWetness;\n${noiseGLSL}`)
+      .replace('#include <common>', `#include <common>\nvarying float vDirt;\nvarying float vMud;\nvarying vec2 vGround;\nuniform float uWetness;\n${noiseTextureGLSL}`)
       .replace(
         '#include <roughnessmap_fragment>',
         /* glsl */ `#include <roughnessmap_fragment>
@@ -293,22 +295,22 @@ function createTerrainMaterial(): THREE.MeshPhysicalMaterial {
       .replace(
         '#include <color_fragment>',
         /* glsl */ `#include <color_fragment>
-        float broad = clayNoise2(vGround * 0.21);
-        float mid = clayNoise2(vGround * 0.93 + 17.0);
+        float broad = clayNoise2Tex(vGround * 0.21);
+        float mid = clayNoise2Tex(vGround * 0.93 + 17.0);
         diffuseColor.rgb *= 0.9 + broad * 0.12 + mid * 0.09;
         float grassMask = 1.0 - smoothstep(0.2, 0.6, vDirt);
         // Gramado: pontinhos claros e escuros (sensação de grama baixa entre os tufos).
-        float fleck = smoothstep(0.62, 0.92, clayNoise2(vGround * 6.5 + 3.0));
-        float dark = smoothstep(0.66, 0.9, clayNoise2(vGround * 4.1 - 11.0));
+        float fleck = smoothstep(0.62, 0.92, clayNoise2Tex(vGround * 6.5 + 3.0));
+        float dark = smoothstep(0.66, 0.9, clayNoise2Tex(vGround * 4.1 - 11.0));
         diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(1.12, 1.14, 0.9), fleck * grassMask * 0.7);
         diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.8, 0.86, 0.78), dark * grassMask * 0.6);
         // Terra: pedrinhas claras e grumos escuros.
         float dirtMask = smoothstep(0.3, 0.8, vDirt);
         // Média de duas oitavas: manchas redondinhas (uma oitava só dá recorte quadrado).
-        float pebbleN = clayNoise2(vGround * 5.4 + 9.0) * 0.6 + clayNoise2(vGround * 11.0 - 3.0) * 0.4;
+        float pebbleN = clayNoise2Tex(vGround * 5.4 + 9.0) * 0.6 + clayNoise2Tex(vGround * 11.0 - 3.0) * 0.4;
         float pebble = smoothstep(0.66, 0.8, pebbleN);
-        float clod = smoothstep(0.68, 0.88, clayNoise2(vGround * 2.7 - 21.0) * 0.7 + clayNoise2(vGround * 6.1) * 0.3);
-        float grit = clayNoise2(vGround * 14.0);
+        float clod = smoothstep(0.68, 0.88, clayNoise2Tex(vGround * 2.7 - 21.0) * 0.7 + clayNoise2Tex(vGround * 6.1) * 0.3);
+        float grit = clayNoise2Tex(vGround * 14.0);
         diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * 1.16 + vec3(0.025), pebble * dirtMask);
         diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * 0.76, clod * dirtMask * 0.8);
         diffuseColor.rgb *= 1.0 + (grit - 0.5) * 0.12 * dirtMask;

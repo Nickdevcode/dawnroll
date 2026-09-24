@@ -185,7 +185,9 @@ src/
 │   ├── shaderChunks.ts     # GLSL e uniforms globais (ruído, vento, grama que deita, molhado)
 │   ├── StaticBatch.ts      # funde milhares de peças em poucos draw calls (e apaga as arrancadas)
 │   ├── ChunkedInstances.ts # instâncias em pedaços do mapa com LOD por distância
-│   ├── InstancePool.ts     # vagas de instância (detritos, montinhos, moscas)
+│   ├── InstancePool.ts     # vagas de instância (detritos, montinhos, moscas), só as na visão vão pra GPU
+│   ├── frameView.ts        # a visão da câmera do quadro (quem instancia pelo mapa todo desenha só o que cabe nela)
+│   ├── noiseTexture.ts     # o ruído do chão pré-calculado numa textura que se repete
 │   ├── mergeStatic.ts      # funde enfeites presos na mesma junta (besouro)
 │   └── geometry.ts         # "amassa" primitivas, pinta vértices, tubos afinando
 ├── entities/
@@ -252,6 +254,32 @@ src/
 
 ---
 
+## ⚡ Desempenho
+
+Otimização geral feita **sem mudar o visual** (mesmos efeitos, mesmas predefinições, Ultra incluso). Medido em PC com RX 6600, quadro inteiro (todos os passes), GPU pelo timer query do WebGL:
+
+| Cenário | Antes | Depois |
+|---|---|---|
+| GPU, **Alto** em 1080p | ~7,0 ms | ~3,8 ms |
+| GPU, **Ultra** numa tela 2x (4K interno) | ~27 ms | ~13 ms |
+| Triângulos por quadro | ~8,4 milhões | ~3,2 milhões |
+| Draw calls por quadro | ~860 | ~590 |
+| CPU por quadro (Alto, sem a GPU limitar) | ~7,7 ms | ~5,1 ms |
+
+O que mudou:
+
+- **MSAA só onde tem geometria:** a cena é desenhada num alvo próprio com MSAA; o resto do pós-processamento (contorno, AO, desfoque, bloom, FXAA) usa alvos simples. Antes cada passe de tela cheia pagava MSAA e um "resolve" de cor + profundidade à toa (num quad de tela cheia as amostras saem iguais). Foi o maior ganho, principalmente em tela de alta densidade e no celular.
+- **Sombra desenhada uma vez por quadro:** o passe de normais do AO chamava o render da cena de novo e o three redesenhava junto o mapa de sombra inteiro (~2 milhões de triângulos jogados fora). Agora ele pula, e também não recalcula as matrizes de mundo (nada se mexe entre os passes).
+- **AO sem cópia de tela:** a oclusão é multiplicada direto na imagem (a saída padrão do three copiava a tela inteira antes). FXAA e acabamento (grading, vinheta, grão) viraram um passe só.
+- **Só o que está na visão vai pra GPU:** montinhos, moscas, detritos e bichos ficam espalhados pelo mapa num `InstancedMesh` por tipo; a cada quadro as instâncias na visão da câmera (com folga pra sombra que cai pra dentro da tela) são juntadas no começo do buffer. O que está atrás da câmera não custa vértice em nenhum passe. No menu vai tudo, pra cada shader compilar antes de o jogo começar (sem engasgo no primeiro olhar).
+- **Ruído do chão em textura:** o chão calculava 10 ruídos por pixel; agora lê de uma textura pré-calculada do mesmo ruído (1024², com mipmap e filtro anisotrópico, o que ainda tira a cintilação ao longe).
+- **Menos troca de programa na CPU:** o three recalculava o programa de shader toda vez que dois objetos com o mesmo material mas "variantes" diferentes (ex.: detrito tingido × não tingido) se alternavam na fila. A fila agora agrupa por essa variante também.
+- **Montagem do jardim sem girar em falso:** pronta e esperando a bola cair na toca, a montagem do próximo jardim queimava o orçamento dela (~2,5 ms) todo quadro chamando `performance.now()`. Agora ela avisa que está ociosa e para.
+
+Ferramentas de medição (descartáveis, em `shots/lead/`, fora do git): `bench.mjs` (tempo de quadro, CPU, GPU e draw calls sem vsync), `passprof.mjs` (GPU por passe), `tris.mjs` (triângulos por passe e objeto), `cpuprof.mjs` (perfil do V8), `progthrash.mjs` (quem força troca de programa).
+
+---
+
 ## 🛠️ Decisões e pegadinhas
 
 - **Física em passo fixo (60 Hz) + render interpolado:** o jogo se comporta igual em monitor de 60 ou 144 Hz.
@@ -261,7 +289,7 @@ src/
 - **Resistência ao rolamento:** o Rapier não tem, então a bola é freada à mão (mais forte quando está devagar, pra não sair rolando sozinha).
 - **Qualidade adaptativa:** se o aparelho não segurar ~40 fps nos primeiros segundos, o jogo desliga a oclusão ambiente e reduz a resolução.
 - **Escala:** 1 unidade ≈ 2 cm. O HUD mostra o diâmetro da bola em centímetros.
-- **Muita coisa, poucos draw calls:** o cenário estático é assado num lote (uma malha por acabamento × pedaço do mapa, cor nos vértices); grama e cobertura do chão são instâncias em pedaços; detritos parados, montinhos e moscas são vagas num `InstancedMesh`. Um detrito só vira `Mesh` de verdade quando gruda na bola.
+- **Muita coisa, poucos draw calls:** o cenário estático é assado num lote (uma malha por acabamento × pedaço do mapa, cor nos vértices); grama e cobertura do chão são instâncias em pedaços; detritos parados, montinhos e moscas são vagas num `InstancedMesh`, e a cada quadro só as vagas na visão da câmera sobem pra GPU (ver ⚡ Desempenho). Um detrito só vira `Mesh` de verdade quando gruda na bola.
 - **LOD sem buraco:** as instâncias de cada pedaço são embaralhadas, então desenhar só os primeiros N (longe da câmera) deixa o gramado mais ralo por igual, sem clarões.
 - **Grama fora do AO:** o passe de oclusão desenha a cena com um material próprio, que não roda o vento da grama — então a vegetação animada é escondida só durante esse passe (senão aparecem "sombras fantasmas" da grama parada).
 - **Contorno de desenho:** um passe de tela cheia logo depois da cena lê a profundidade (a do próprio MSAA, sem draw call a mais) e procura onde a superfície "pula" pra trás, usando profundidade *inversa* (1/z), que num plano varia em linha reta pela tela: o chão visto de raspão não ganha risco, só as silhuetas. A linha fica só do lado do objeto da frente (~2 px em 1080p, escala com a resolução) e some junto com a neblina. A grama grava no alfa um "alcance" menor (só a de perto ganha contorno, senão vira pontilhado) e um FXAA depois alisa a escadinha da linha.
@@ -279,7 +307,7 @@ src/
 - **Margem da poça de graça:** a água é um disco plano no nível atual; o terreno esconde o que fica "embaixo do chão", então a margem se desenha sozinha e a poça cresce de verdade quando enche. A transparência da borda vem da profundidade, calculada no shader com a mesma fórmula da bacia.
 - **Céu com clima:** o fundo virou uma cúpula colada na câmera que mistura dois céus pintados em canvas (sol e chuva). Fica fora do AO e não escreve profundidade.
 - **Molhado em tudo com um uniform só:** `uWetness` é compartilhado por massinha, chão e grama: escurece e tira aspereza em manchas (nunca 100% espelhado, senão vira plástico).
-- **Muito bicho, poucos draw calls:** cada parte de cada espécie (corpo, asa, pata...) é um `InstancedMesh` com as matrizes calculadas na CPU; parte sem ninguém visível desliga sozinha. Antes eram ~26 draw calls de fauna no seco e ~31 na chuva; a fauna nova soma uns +11 no seco (até ~18 com o beija-flor e os bichos de debaixo da pedra) e mais 5 na chuva (lesma e revoada). Medido o quadro inteiro (todos os passes), o jogo foi de ~740–790 pra ~855–895 draw calls com objetos e fauna novos, sem mudar o tempo de quadro no PC de teste.
+- **Muito bicho, poucos draw calls:** cada parte de cada espécie (corpo, asa, pata...) é um `InstancedMesh` com as matrizes calculadas na CPU; parte sem ninguém visível desliga sozinha, e só os indivíduos na visão da câmera são desenhados. Antes eram ~26 draw calls de fauna no seco e ~31 na chuva; a fauna nova soma uns +11 no seco (até ~18 com o beija-flor e os bichos de debaixo da pedra) e mais 5 na chuva (lesma e revoada). Medido o quadro inteiro (todos os passes), o jogo foi de ~740–790 pra ~855–895 draw calls com objetos e fauna novos, sem mudar o tempo de quadro no PC de teste.
 - **Pouso que some:** os pontos de pouso dos insetos formam um array vivo; quando a bola arranca a flor, o ponto sai da lista e a borboleta que estava ali levanta voo.
 - **Idiomas tipados:** o português é o dicionário de referência e o inglês tem o tipo `Messages`, então faltar uma tradução é erro de compilação. No automático, o idioma sai de `navigator.languages` (o primeiro que o jogo fala ganha; qualquer `pt-*` vira pt-BR, o resto cai no inglês) e o evento `languagechange` troca ao vivo.
 - **Plural sem `Intl.PluralRules`:** pro português ele trata o zero como singular ("0 montinho"); na interface o natural é "0 montinhos", então a regra é `n === 1`.

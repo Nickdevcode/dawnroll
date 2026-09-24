@@ -67,6 +67,16 @@ const EDGE_SHADE = luminance('#1c1842') / luminance('#3d3689');
 const LEG_TIP_SHADE = luminance('#1f1830') / luminance('#352a4d');
 const WHITE = new THREE.Color(1, 1, 1);
 
+/** Tempos da piscada (s): a pálpebra desce rápido, segura um instante e sobe sem pressa. */
+const BLINK = { close: 0.06, hold: 0.04, open: 0.13 } as const;
+
+/** Quanto a pálpebra está fechada (0..1) `t` segundos depois do começo da piscada. */
+function blinkClosure(t: number): number {
+  if (t < BLINK.close) return smoothstep(0, BLINK.close, t);
+  if (t < BLINK.close + BLINK.hold) return 1;
+  return 1 - smoothstep(0, BLINK.open, t - BLINK.close - BLINK.hold);
+}
+
 /** Material do casco: furta-cor + verniz; a cor sai do casco escolhido. */
 const shellMaterial = (skin: SkinDef, color: string) =>
   clay(color, { vertexColors: true, roughness: skin.roughness, sheen: 0.55, iridescence: skin.iridescence, clearcoat: 0.55, bump: 0.2, mottle: 0.05, mottleScale: 7 });
@@ -114,7 +124,8 @@ export class BeetleModel {
   private stride = 0;
   private pushStride = 0;
   private blinkTimer = 2.5;
-  private blink = 0;
+  /** Segundos desde o começo da piscada em curso (negativo = olho aberto). */
+  private blinkAge = -1;
   private squash = 1;
   private landingImpulse = 0;
   private wasGrounded = true;
@@ -279,7 +290,7 @@ export class BeetleModel {
     const highlight = new THREE.MeshBasicMaterial({ color: 0xffffff });
     const eyeGeo = claySphere(0.085, 6, 0.015, 2, 1);
     const pupilGeo = new THREE.SphereGeometry(0.046, 24, 16);
-    const glintGeo = new THREE.SphereGeometry(0.013, 10, 8);
+    const glintGeo = new THREE.SphereGeometry(0.011, 10, 8);
     const lidGeo = new THREE.SphereGeometry(0.094, 28, 14, 0, Math.PI * 2, 0, Math.PI / 2);
 
     for (const side of [1, -1] as const) {
@@ -290,15 +301,20 @@ export class BeetleModel {
 
       eye.add(new THREE.Mesh(eyeGeo, white));
 
+      // Pupila: lente achatada cuja borda encosta na superfície do olho (raio 0,085) e
+      // o centro sobressai ~2 mm, acima até das ondulações da massinha. Tudo nela
+      // (e nos brilhos) fica a menos de 0,093 do centro: a pálpebra (0,094) cobre ao piscar.
       const pupilPivot = new THREE.Group();
       const pupil = new THREE.Mesh(pupilGeo, pupilMat);
-      pupil.position.z = 0.058;
-      pupil.scale.set(1, 1.1, 0.55);
+      pupil.position.z = 0.0716;
+      pupil.scale.set(1, 1.1, 0.35);
+      // Brilhos achatados, meio afundados na pupila (de pé eles vazavam pela pálpebra fechada).
       const glint = new THREE.Mesh(glintGeo, highlight);
-      glint.position.set(0.018, 0.022, 0.082);
+      glint.scale.set(1, 1, 0.45);
+      glint.position.set(0.016, 0.02, 0.083);
       const glintSmall = new THREE.Mesh(glintGeo, highlight);
-      glintSmall.scale.setScalar(0.5);
-      glintSmall.position.set(-0.014, -0.016, 0.083);
+      glintSmall.scale.set(0.5, 0.5, 0.225);
+      glintSmall.position.set(-0.013, -0.015, 0.0853);
       pupilPivot.add(pupil, glint, glintSmall);
       eye.add(pupilPivot);
       this.pupils.push(pupilPivot);
@@ -497,13 +513,18 @@ export class BeetleModel {
     this.head.rotation.y = Math.sin(this.time * 0.7) * 0.12 * (1 - moving);
     this.blinkTimer -= dt;
     if (this.blinkTimer <= 0) {
-      this.blink = 1;
+      this.blinkAge = 0;
       this.blinkTimer = 2 + Math.random() * 3.5;
     }
-    this.blink = damp(this.blink, 0, 14, dt);
+    let blink = 0;
+    if (this.blinkAge >= 0) {
+      blink = blinkClosure(this.blinkAge);
+      this.blinkAge += dt;
+      if (this.blinkAge >= BLINK.close + BLINK.hold + BLINK.open) this.blinkAge = -1;
+    }
     // Pálpebra relaxada ~ meio-fechada ("olhar de galã"); força = olho arregalado.
     const lidRest = lerp(-0.35, -0.9, strain);
-    for (const lid of this.eyelids) lid.rotation.x = lerp(lidRest, 0.9, this.blink);
+    for (const lid of this.eyelids) lid.rotation.x = lerp(lidRest, 0.9, blink);
     const look = Math.sin(this.time * 0.5) * 0.25 * (1 - moving);
     for (const pupil of this.pupils) pupil.rotation.y = look;
     this.antennae.forEach((antenna, i) => {
