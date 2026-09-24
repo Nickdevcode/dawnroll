@@ -1,10 +1,14 @@
 import * as THREE from 'three';
 import { clay } from '../render/clayMaterial';
-import { DEFAULT_SKIN, skin, type SkinDef } from '../progression/skins';
+import { DEFAULT_CLUB, DEFAULT_SKIN, skin, type SkinDef } from '../progression/skins';
+import type { Outfit } from '../progression/accessories';
 import { claySphere, clayCapsule, displace, paintVertices, taperedTube } from '../render/geometry';
 import { mergeStaticTree } from '../render/mergeStatic';
+import { SkinPart, applySkinUniforms, createSkinUniforms, installSkinShader, type SkinPartId, type SkinUniforms } from '../render/skinShader';
 import { noise3 } from '../utils/noise';
 import { clamp, damp, lerp, smoothstep } from '../utils/math';
+import { BeetleOutfit } from './outfit/BeetleOutfit';
+import type { OutfitAnchors, OutfitPose } from './outfit/types';
 
 /**
  * Modelo procedural do besouro rola-bosta.
@@ -13,14 +17,17 @@ import { clamp, damp, lerp, smoothstep } from '../utils/math';
  * Não há esqueleto nem arquivo externo: as patas são cadeias de grupos
  * (quadril → fêmur → joelho → tíbia → tarso) animadas por fase, e a pose de
  * "empurrar a bola" é uma segunda pose misturada por `pushBlend`.
+ *
+ * O visual (casco e acessórios) troca na hora: o casco é um material só, com o
+ * desenho no shader (`render/skinShader.ts`); os acessórios encaixam em quatro
+ * pontos (`anchors`) e são montados por `BeetleOutfit`.
  */
 
-/** Cores que não mudam com o casco (olhos, bochecha, antena, boca). */
+/** Cores que não mudam com o casco (olhos, bochecha, boca). */
 const Colors = {
   eyeWhite: '#fbf6ee',
   pupil: '#151019',
   cheek: '#ff9aa8',
-  antennaClub: '#f4a73b',
   mouth: '#1b1424',
 };
 
@@ -53,8 +60,8 @@ export interface BeetlePose {
 
 /**
  * O degradê do casco e das patas é assado nos vértices só como SOMBRA (tons de
- * cinza); a cor vem do material. Assim trocar de casco é só trocar a cor do
- * material, sem repintar malha nenhuma (e as peças fundidas continuam fundidas).
+ * cinza); a cor vem do material (e, no casco, do desenho no shader). Assim
+ * trocar de casco não repinta malha nenhuma (e as peças fundidas continuam fundidas).
  *
  * `EDGE_SHADE` = quanto a borda de baixo é mais escura que o topo: a razão de
  * luminância (linear) entre as duas cores do casco índigo original.
@@ -76,10 +83,6 @@ function blinkClosure(t: number): number {
   if (t < BLINK.close + BLINK.hold) return 1;
   return 1 - smoothstep(0, BLINK.open, t - BLINK.close - BLINK.hold);
 }
-
-/** Material do casco: furta-cor + verniz; a cor sai do casco escolhido. */
-const shellMaterial = (skin: SkinDef, color: string) =>
-  clay(color, { vertexColors: true, roughness: skin.roughness, sheen: 0.55, iridescence: skin.iridescence, clearcoat: 0.55, bump: 0.2, mottle: 0.05, mottleScale: 7 });
 
 /**
  * Esfera com os polos no eixo Z (o comprimento do besouro): os anéis da malha
@@ -103,22 +106,35 @@ function paintShell(geometry: THREE.BufferGeometry, grooveAt?: (p: THREE.Vector3
   });
 }
 
+const tmpMatrix = new THREE.Matrix4();
+const tmpVertex = new THREE.Vector3();
+
 export class BeetleModel {
   readonly root = new THREE.Group();
+  /** Onde os acessórios encaixam (cabeça, rosto, pescoço, costas). */
+  readonly anchors: OutfitAnchors;
+  /** Acessórios vestidos agora. */
+  readonly outfit: BeetleOutfit;
   /** Corpo inteiro (inclina na pose de empurrar). */
   private readonly body = new THREE.Group();
   private readonly head = new THREE.Group();
+  /** Chifre (some quando o chapéu cobre o topo da cabeça). */
+  private readonly horn = new THREE.Group();
   private readonly legs: Leg[] = [];
   private readonly antennae: THREE.Group[] = [];
   private readonly eyelids: THREE.Mesh[] = [];
   private readonly pupils: THREE.Group[] = [];
-  /** Materiais que o casco pinta (élitros; pronoto e cabeça; pálpebras; barriga; patas). */
-  private readonly elytraMat: THREE.MeshPhysicalMaterial;
-  private readonly pronotumMat: THREE.MeshPhysicalMaterial;
-  private readonly lidMat: THREE.MeshPhysicalMaterial;
+  /**
+   * Materiais do visual, próprios deste besouro (fora do cache da massinha):
+   * trocar de casco mexe neles sem repintar mais nada do jardim.
+   */
+  private readonly shellMat: THREE.MeshPhysicalMaterial;
   private readonly bellyMat: THREE.MeshPhysicalMaterial;
   private readonly legMat: THREE.MeshPhysicalMaterial;
   private readonly stalkMat: THREE.MeshPhysicalMaterial;
+  private readonly clubMat: THREE.MeshPhysicalMaterial;
+  private readonly skinUniforms: SkinUniforms = createSkinUniforms();
+  private readonly outfitPose: OutfitPose = { time: 0, dt: 0, speed: 0, pushBlend: 0, airborne: 0, verticalSpeed: 0 };
 
   private time = 0;
   private stride = 0;
@@ -131,13 +147,14 @@ export class BeetleModel {
   private wasGrounded = true;
 
   constructor(initialSkin: SkinDef = skin(DEFAULT_SKIN)) {
-    this.elytraMat = shellMaterial(initialSkin, initialSkin.elytra);
-    this.pronotumMat = shellMaterial(initialSkin, initialSkin.pronotum);
-    // A pálpebra é uma meia-esfera sem cor nos vértices: material de cor chapada (sem `vertexColors`).
-    this.lidMat = clay(initialSkin.pronotum, { roughness: initialSkin.roughness, sheen: 0.55, iridescence: initialSkin.iridescence, clearcoat: 0.55, bump: 0.2, mottleScale: 7 });
-    this.bellyMat = clay(initialSkin.belly, { roughness: 0.5, sheen: 0.5, iridescence: 0.5, bump: 0.25, mottleScale: 8 });
-    this.legMat = clay(initialSkin.leg, { vertexColors: true, roughness: 0.5, sheen: 0.5, bump: 0.15, clearcoat: 0.2, mottleScale: 12 });
-    this.stalkMat = clay(initialSkin.leg, { bump: 0.1, mottleScale: 20 });
+    // Casco inteiro (élitros, pronoto, cabeça, chifre e pálpebras) num material só:
+    // a cor de cada parte e o desenho saem do shader, pelo `skinPos` de cada vértice.
+    this.shellMat = clay('#ffffff', { vertexColors: true, roughness: 0.4, sheen: 0.55, iridescence: 0.85, clearcoat: 0.55, bump: 0.2, mottle: 0.05, mottleScale: 7, unique: true });
+    installSkinShader(this.shellMat, this.skinUniforms);
+    this.bellyMat = clay(initialSkin.belly, { roughness: 0.5, sheen: 0.5, iridescence: 0.5, bump: 0.25, mottleScale: 8, unique: true });
+    this.legMat = clay(initialSkin.leg, { vertexColors: true, roughness: 0.5, sheen: 0.5, bump: 0.15, clearcoat: 0.2, mottleScale: 12, unique: true });
+    this.stalkMat = clay(initialSkin.leg, { bump: 0.1, mottleScale: 20, unique: true });
+    this.clubMat = clay(DEFAULT_CLUB, { roughness: 0.5, sheen: 0.7, bump: 0.12, clearcoat: 0.3, mottleScale: 20, unique: true });
     this.root.name = 'beetle';
     this.root.add(this.body);
     this.buildShell();
@@ -149,24 +166,31 @@ export class BeetleModel {
         o.receiveShadow = true;
       }
     });
+    // Antes de fundir: cada peça do casco guarda onde ela fica no corpo em repouso.
+    this.bakeSkinPositions();
     // ~150 peças viram ~45 draw calls: enfeites presos na mesma junta são fundidos.
     mergeStaticTree(this.root);
+
+    this.anchors = this.buildAnchors();
+    this.outfit = new BeetleOutfit(this.anchors, (visible) => (this.horn.visible = visible));
+    this.setSkin(initialSkin);
   }
 
-  /** Troca o casco: só cor e brilho dos materiais (nada é reconstruído). */
+  /** Troca o casco: cores, brilho e desenho dos materiais (nada é reconstruído nem recompilado). */
   setSkin(def: SkinDef): void {
-    for (const [material, color] of [
-      [this.elytraMat, def.elytra],
-      [this.pronotumMat, def.pronotum],
-      [this.lidMat, def.pronotum],
-    ] as const) {
-      material.color.set(color);
-      material.iridescence = def.iridescence;
-      material.roughness = def.roughness;
-    }
+    applySkinUniforms(this.skinUniforms, def);
+    this.shellMat.iridescence = def.iridescence;
+    this.shellMat.roughness = def.roughness;
+    this.shellMat.metalness = def.metalness ?? 0;
     this.bellyMat.color.set(def.belly);
     this.legMat.color.set(def.leg);
     this.stalkMat.color.set(def.leg);
+    this.clubMat.color.set(def.club ?? DEFAULT_CLUB);
+  }
+
+  /** Veste os acessórios (os que já estavam e não mudaram ficam como estão). */
+  setOutfit(outfit: Readonly<Outfit>): void {
+    this.outfit.set(outfit);
   }
 
   /** Posição de mundo da testa (de onde pinga o suor quando faz força). */
@@ -183,8 +207,56 @@ export class BeetleModel {
     return Math.floor(this.stride / Math.PI + 0.5);
   }
 
+  /** Peça do casco: material do casco e a parte dela (o desenho muda por parte). */
+  private shellMesh(geometry: THREE.BufferGeometry, part: SkinPartId): THREE.Mesh {
+    const mesh = new THREE.Mesh(geometry, this.shellMat);
+    mesh.userData.skinPart = part;
+    return mesh;
+  }
+
+  /**
+   * Grava em cada vértice do casco a posição dele no espaço do corpo em repouso
+   * (e a parte, no `w`). Geometria dividida entre peças (as duas metades do
+   * élitro, os dentes da pá, as pálpebras) vira cópia: cada peça tem a sua.
+   */
+  private bakeSkinPositions(): void {
+    this.root.updateMatrixWorld(true);
+    const toBody = new THREE.Matrix4().copy(this.body.matrixWorld).invert();
+    this.root.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      if (!mesh.isMesh || mesh.userData.skinPart === undefined) return;
+      mesh.geometry = mesh.geometry.clone();
+      const pos = mesh.geometry.getAttribute('position') as THREE.BufferAttribute;
+      const data = new Float32Array(pos.count * 4);
+      tmpMatrix.multiplyMatrices(toBody, mesh.matrixWorld);
+      for (let i = 0; i < pos.count; i++) {
+        tmpVertex.fromBufferAttribute(pos, i).applyMatrix4(tmpMatrix);
+        data[i * 4] = tmpVertex.x;
+        data[i * 4 + 1] = tmpVertex.y;
+        data[i * 4 + 2] = tmpVertex.z;
+        data[i * 4 + 3] = mesh.userData.skinPart;
+      }
+      mesh.geometry.setAttribute('skinPos', new THREE.BufferAttribute(data, 4));
+    });
+  }
+
+  private buildAnchors(): OutfitAnchors {
+    const anchor = (parent: THREE.Object3D, name: string, x: number, y: number, z: number) => {
+      const group = new THREE.Group();
+      group.name = `anchor-${name}`;
+      group.position.set(x, y, z);
+      parent.add(group);
+      return group;
+    };
+    return {
+      head: anchor(this.head, 'head', 0, 0.19, 0.1),
+      face: anchor(this.head, 'face', 0, 0.1, 0.16),
+      neck: anchor(this.head, 'neck', 0, 0, 0),
+      back: anchor(this.body, 'back', 0, 0.58, 0.1),
+    };
+  }
+
   private buildShell(): void {
-    const shell = this.elytraMat;
     const belly = this.bellyMat;
 
     // Élitros: duas metades com estrias longitudinais que se encostam no meio (sutura).
@@ -200,7 +272,7 @@ export class BeetleModel {
     });
     paintShell(elytraGeo, grooveAt);
     for (const side of [1, -1]) {
-      const half = new THREE.Mesh(elytraGeo, shell);
+      const half = this.shellMesh(elytraGeo, SkinPart.elytra);
       half.scale.set(0.205, 0.25, 0.43);
       half.position.set(side * 0.172, 0.36, -0.13);
       half.rotation.set(0.12, side * 0.05, side * -0.08);
@@ -209,7 +281,7 @@ export class BeetleModel {
     // Escutelo: o triangulinho entre os élitros, logo atrás do pronoto.
     const scutellumGeo = claySphere(1, 4, 0.03);
     paintShell(scutellumGeo);
-    const scutellum = new THREE.Mesh(scutellumGeo, shell);
+    const scutellum = this.shellMesh(scutellumGeo, SkinPart.elytra);
     scutellum.scale.set(0.05, 0.03, 0.08);
     scutellum.position.set(0, 0.6, 0.12);
     scutellum.rotation.x = 0.35;
@@ -237,8 +309,7 @@ export class BeetleModel {
       return rim + pits;
     });
     paintShell(pronotumGeo);
-    // Material próprio: tem rola-bosta com o tórax de outra cor (o arco-íris).
-    const pronotum = new THREE.Mesh(pronotumGeo, this.pronotumMat);
+    const pronotum = this.shellMesh(pronotumGeo, SkinPart.pronotum);
     pronotum.scale.set(0.33, 0.2, 0.22);
     pronotum.position.set(0, 0.37, 0.28);
     pronotum.rotation.x = -0.15;
@@ -246,14 +317,13 @@ export class BeetleModel {
   }
 
   private buildHead(): void {
-    const shell = this.pronotumMat;
     this.head.position.set(0, 0.3, 0.46);
     this.body.add(this.head);
 
     // Cabeça em forma de pá (clípeo) — é com ela que o rola-bosta molda a bola.
     const shovelGeo = claySphere(1, 8, 0.03, 2, 17);
     paintShell(shovelGeo);
-    const shovel = new THREE.Mesh(shovelGeo, shell);
+    const shovel = this.shellMesh(shovelGeo, SkinPart.head);
     shovel.scale.set(0.25, 0.1, 0.19);
     shovel.position.set(0, 0, 0.1);
     this.head.add(shovel);
@@ -261,7 +331,7 @@ export class BeetleModel {
     const toothGeo = claySphere(0.035, 3, 0.1, 3, 2);
     paintShell(toothGeo);
     for (let i = -3; i <= 3; i++) {
-      const tooth = new THREE.Mesh(toothGeo, shell);
+      const tooth = this.shellMesh(toothGeo, SkinPart.head);
       const a = i * 0.26;
       tooth.position.set(Math.sin(a) * 0.235, -0.02, 0.1 + Math.cos(a) * 0.175);
       tooth.scale.set(i === 0 ? 1.2 : 0.9, 0.55, 1.1);
@@ -269,6 +339,7 @@ export class BeetleModel {
     }
 
     // Chifre em "topete": o charme do bonitão. Tubo afinando + pontinha arredondada.
+    // Grupo próprio (um draw call a mais): chapéu que cobre o topo da cabeça esconde ele.
     const hornCurve = new THREE.CatmullRomCurve3([
       new THREE.Vector3(0, 0.04, 0.08),
       new THREE.Vector3(0, 0.18, 0.13),
@@ -277,12 +348,14 @@ export class BeetleModel {
     ]);
     const hornGeo = taperedTube(hornCurve, 24, (t) => lerp(0.068, 0.022, Math.pow(t, 0.8)), 14);
     paintShell(hornGeo);
-    this.head.add(new THREE.Mesh(hornGeo, shell));
+    this.horn.name = 'horn';
+    this.horn.add(this.shellMesh(hornGeo, SkinPart.head));
     const hornTipGeo = claySphere(0.023, 3, 0.02);
     paintShell(hornTipGeo);
-    const hornTip = new THREE.Mesh(hornTipGeo, shell);
+    const hornTip = this.shellMesh(hornTipGeo, SkinPart.head);
     hornTip.position.copy(hornCurve.getPoint(1));
-    this.head.add(hornTip);
+    this.horn.add(hornTip);
+    this.head.add(this.horn);
 
     // Olhos grandes com pálpebra meio baixa = olhar confiante.
     const white = clay(Colors.eyeWhite, { roughness: 0.3, sheen: 0.2, bump: 0.05, clearcoat: 0.6, mottle: 0.02 });
@@ -291,7 +364,8 @@ export class BeetleModel {
     const eyeGeo = claySphere(0.085, 6, 0.015, 2, 1);
     const pupilGeo = new THREE.SphereGeometry(0.046, 24, 16);
     const glintGeo = new THREE.SphereGeometry(0.011, 10, 8);
-    const lidGeo = new THREE.SphereGeometry(0.094, 28, 14, 0, Math.PI * 2, 0, Math.PI / 2);
+    // Pálpebra: meia-esfera lisa, com "sombra" branca (a cor e o desenho vêm do casco).
+    const lidGeo = paintVertices(new THREE.SphereGeometry(0.094, 28, 14, 0, Math.PI * 2, 0, Math.PI / 2), (_p, _n, c) => c.copy(WHITE));
 
     for (const side of [1, -1] as const) {
       const eye = new THREE.Group();
@@ -320,7 +394,7 @@ export class BeetleModel {
       this.pupils.push(pupilPivot);
 
       // Pálpebra: meia-esfera que desce (piscar) e fica meio fechada no repouso.
-      const lid = new THREE.Mesh(lidGeo, this.lidMat);
+      const lid = this.shellMesh(lidGeo, SkinPart.head);
       lid.rotation.x = -0.35;
       lid.userData.keep = true; // animada (piscar): não pode ser fundida
       eye.add(lid);
@@ -339,10 +413,9 @@ export class BeetleModel {
       const stalkCurve = new THREE.QuadraticBezierCurve3(new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0.09, -0.02), new THREE.Vector3(0, 0.155, 0.015));
       const stalk = new THREE.Mesh(taperedTube(stalkCurve, 10, (t) => lerp(0.014, 0.009, t), 6), this.stalkMat);
       antenna.add(stalk);
-      const clubMat = clay(Colors.antennaClub, { roughness: 0.5, sheen: 0.7, bump: 0.12, clearcoat: 0.3, mottleScale: 20 });
       const lamellaGeo = claySphere(0.04, 4, 0.05, 2, side);
       for (let i = 0; i < 3; i++) {
-        const lamella = new THREE.Mesh(lamellaGeo, clubMat);
+        const lamella = new THREE.Mesh(lamellaGeo, this.clubMat);
         lamella.scale.set(1, 0.3, 0.85);
         lamella.position.set(0, 0.165 + i * 0.02, 0.018);
         lamella.rotation.set((i - 1) * 0.25, 0, (i - 1) * 0.12);
@@ -511,6 +584,8 @@ export class BeetleModel {
     // --- cabeça, olhos, antenas ---
     this.head.rotation.x = lerp(Math.sin(this.time * 1.3) * 0.04, -0.35, pushBlend);
     this.head.rotation.y = Math.sin(this.time * 0.7) * 0.12 * (1 - moving);
+    // O chapéu desconta boa parte do "levantar a cabeça": senão a aba de trás afunda no pronoto.
+    this.anchors.head.rotation.x = -this.head.rotation.x * 0.75;
     this.blinkTimer -= dt;
     if (this.blinkTimer <= 0) {
       this.blinkAge = 0;
@@ -567,5 +642,15 @@ export class BeetleModel {
       // O tarso "procura" o chão: dobra mais quando a pata desce, estica no ar.
       leg.tarsus.rotation.z = -0.55 + lift * 0.5 - airborne * 0.2;
     }
+
+    // --- acessórios (capa, hélice, asas...) ---
+    const o = this.outfitPose;
+    o.time = this.time;
+    o.dt = dt;
+    o.speed = speed;
+    o.pushBlend = pushBlend;
+    o.airborne = grounded ? 0 : clamp(Math.abs(verticalSpeed) / 3, 0, 1);
+    o.verticalSpeed = verticalSpeed;
+    this.outfit.update(o);
   }
 }

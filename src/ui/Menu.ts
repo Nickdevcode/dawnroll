@@ -19,17 +19,20 @@ import { Icons } from './icons';
 import { GameIcons } from './gameIcons';
 import { segmented, slider, toggle, type Control } from './controls';
 import { BurrowSheet } from './BurrowSheet';
+import { WardrobeSheet } from './WardrobeSheet';
+import { HangerIcon } from './lookIcons';
 import { bindTabs, tabsMarkup } from './tabs';
 import { nearestInDirection } from './spatialNav';
 
 /**
  * Menu de início e de pausa: a "madrugada" por cima do jardim (que continua
  * girando ao vivo atrás). Jogar faz amanhecer; pausar faz a noite voltar.
- * Tem três placas que deslizam por cima: Toca (despensa, catálogo e poderes),
+ * Tem quatro placas que deslizam por cima: Toca (despensa, catálogo, poderes e
+ * conquistas), Guarda-roupa (casco e acessórios, com o besouro no provador),
  * Configurações (com abas) e Como jogar.
  */
 
-type SheetName = 'burrow' | 'settings' | 'help';
+export type SheetName = 'burrow' | 'wardrobe' | 'settings' | 'help';
 type TabName = 'graphics' | 'audio' | 'controls' | 'language';
 
 const TABS: ReadonlyArray<{ name: TabName; icon: string; label: MessageKey }> = [
@@ -67,14 +70,21 @@ export class Menu {
   readonly element: HTMLElement;
   /** Apertou Jogar / Continuar. */
   onPlay: (() => void) | null = null;
+  /** Uma placa abriu (ou fechou, com null): o guarda-roupa liga o provador. */
+  onSheetChange: ((sheet: SheetName | null) => void) | null = null;
+  /** Arrastou no provador (fora da placa): gira o besouro (px na horizontal). */
+  onShowcaseDrag: ((dx: number) => void) | null = null;
 
   private readonly playButton: HTMLButtonElement;
   private readonly playLabel: HTMLElement;
   private readonly record: HTMLElement;
   private readonly burrowMeta: HTMLElement;
   private readonly burrowBadge: HTMLElement;
+  private readonly wardrobeBadge: HTMLElement;
   /** Placa da toca (o jogo liga o `onMeal` dela). */
   readonly burrow: BurrowSheet;
+  /** Guarda-roupa (o jogo liga o provador e o "provar"). */
+  readonly wardrobe: WardrobeSheet;
   private readonly sheets: Record<SheetName, HTMLElement>;
   private readonly openers: Record<SheetName, HTMLButtonElement>;
   private readonly tabButtons = new Map<TabName, HTMLButtonElement>();
@@ -115,6 +125,10 @@ export class Menu {
             <span class="menu__link-icon">${GameIcons.burrow}<span class="menu__link-badge" data-burrow-badge hidden></span></span>
             <span data-t="menu.burrow"></span><span class="menu__link-meta" data-burrow-meta></span>
           </button>
+          <button class="menu__link" type="button" data-open="wardrobe" aria-expanded="false" aria-controls="sheet-wardrobe">
+            <span class="menu__link-icon">${HangerIcon}<span class="menu__link-badge" data-wardrobe-badge hidden></span></span>
+            <span data-t="menu.wardrobe"></span>
+          </button>
           <button class="menu__link" type="button" data-open="settings" aria-expanded="false" aria-controls="sheet-settings">
             <span class="menu__link-icon">${Icons.gear}</span><span data-t="menu.settings"></span>
           </button>
@@ -134,7 +148,8 @@ export class Menu {
     `;
     // A placa da toca entra antes da coleta dos textos (ela também usa data-t).
     this.burrow = new BurrowSheet(progression);
-    this.element.append(this.burrow.element);
+    this.wardrobe = new WardrobeSheet(progression);
+    this.element.append(this.burrow.element, this.wardrobe.element);
     parent.append(this.element);
 
     const $ = <T extends HTMLElement>(sel: string) => this.element.querySelector(sel) as T;
@@ -143,8 +158,14 @@ export class Menu {
     this.record = $('[data-record]');
     this.burrowMeta = $('[data-burrow-meta]');
     this.burrowBadge = $('[data-burrow-badge]');
-    this.sheets = { burrow: this.burrow.element, settings: $('#sheet-settings'), help: $('#sheet-help') };
-    this.openers = { burrow: $('[data-open="burrow"]'), settings: $('[data-open="settings"]'), help: $('[data-open="help"]') };
+    this.wardrobeBadge = $('[data-wardrobe-badge]');
+    this.sheets = { burrow: this.burrow.element, wardrobe: this.wardrobe.element, settings: $('#sheet-settings'), help: $('#sheet-help') };
+    this.openers = {
+      burrow: $('[data-open="burrow"]'),
+      wardrobe: $('[data-open="wardrobe"]'),
+      settings: $('[data-open="settings"]'),
+      help: $('[data-open="help"]'),
+    };
 
     this.element.querySelectorAll<HTMLElement>('[data-t]').forEach((el) => this.texts.push([el, el.dataset.t as MessageKey]));
     this.element.querySelectorAll<HTMLElement>('[data-t-aria]').forEach((el) => this.texts.push([el, el.dataset.tAria as MessageKey, 'aria-label']));
@@ -503,7 +524,7 @@ export class Menu {
 
   private bindEvents(): void {
     this.playButton.addEventListener('click', () => this.onPlay?.());
-    for (const name of ['burrow', 'settings', 'help'] as const) {
+    for (const name of ['burrow', 'wardrobe', 'settings', 'help'] as const) {
       this.openers[name].addEventListener('click', () => (this.openSheet === name ? this.closeSheet() : this.open(name)));
     }
     this.element.querySelectorAll<HTMLButtonElement>('[data-close]').forEach((b) => b.addEventListener('click', () => this.closeSheet()));
@@ -525,6 +546,7 @@ export class Menu {
     });
     // Nada do menu chega na área de arrastar a câmera do toque.
     this.element.addEventListener('pointerdown', (e) => e.stopPropagation());
+    this.bindShowcaseDrag();
     // Voltou pro mouse/toque: o contorno de foco "de controle" sai (senão todo clique ficava com anel).
     window.addEventListener('pointerdown', () => document.documentElement.classList.remove('using-gamepad'), { capture: true });
   }
@@ -538,6 +560,10 @@ export class Menu {
       this.burrow.prepare(intro);
       this.progression.markBurrowSeen();
     }
+    // Guarda-roupa: o menu principal sai de cena e o besouro vira o centro (provador).
+    this.element.classList.toggle('has-wardrobe', name === 'wardrobe');
+    if (name === 'wardrobe') this.wardrobe.prepare();
+    this.onSheetChange?.(name);
     this.openers[name].setAttribute('aria-expanded', 'true');
     this.element.classList.add('has-sheet');
     // Placa com abas: a legenda do controle mostra LB/RB.
@@ -551,10 +577,40 @@ export class Menu {
     const name = this.openSheet;
     if (!name) return;
     this.openSheet = null;
+    if (name === 'wardrobe') this.wardrobe.close();
     this.sheets[name].hidden = true;
     this.openers[name].setAttribute('aria-expanded', 'false');
-    this.element.classList.remove('has-sheet', 'has-tabs');
+    this.element.classList.remove('has-sheet', 'has-tabs', 'has-wardrobe');
+    this.onSheetChange?.(null);
     if (returnFocus) this.openers[name].focus({ preventScroll: true });
+  }
+
+  /**
+   * No provador, arrastar fora da placa gira o besouro (mouse ou dedo). A placa
+   * e os botões continuam com o clique normal.
+   */
+  private bindShowcaseDrag(): void {
+    let pointer: number | null = null;
+    let lastX = 0;
+    this.element.addEventListener('pointerdown', (e) => {
+      if (this.openSheet !== 'wardrobe' || (e.target as HTMLElement).closest('.sheet, button')) return;
+      pointer = e.pointerId;
+      lastX = e.clientX;
+      this.element.setPointerCapture(e.pointerId);
+      this.element.classList.add('is-dragging');
+    });
+    this.element.addEventListener('pointermove', (e) => {
+      if (e.pointerId !== pointer) return;
+      this.onShowcaseDrag?.(e.clientX - lastX);
+      lastX = e.clientX;
+    });
+    const end = (e: PointerEvent) => {
+      if (e.pointerId !== pointer) return;
+      pointer = null;
+      this.element.classList.remove('is-dragging');
+    };
+    this.element.addEventListener('pointerup', end);
+    this.element.addEventListener('pointercancel', end);
   }
 
   private syncControls(s: Readonly<GameSettings>): void {
@@ -568,6 +624,11 @@ export class Menu {
     const count = this.progression.pantry.length;
     this.burrowBadge.hidden = count === 0;
     this.burrowBadge.textContent = String(count);
+    // Guarda-roupa: quantos visuais novos esperam.
+    const fresh = this.progression.newLookCount;
+    this.wardrobeBadge.hidden = fresh === 0;
+    this.wardrobeBadge.textContent = String(fresh);
+    this.wardrobeBadge.parentElement!.parentElement!.setAttribute('aria-label', fresh > 0 ? `${t('menu.wardrobe')}: ${tn('wardrobe.newCount', fresh)}` : t('menu.wardrobe'));
   }
 
   private updatePlayLabel(): void {

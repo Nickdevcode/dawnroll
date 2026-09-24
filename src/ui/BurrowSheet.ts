@@ -4,32 +4,31 @@ import { CATALOG, CATALOG_GROUPS, catalogEntry, isCatalogId, type CatalogEntry, 
 import { PANTRY_CAPACITY, banquetMultiplier } from '../progression/food';
 import { PERKS } from '../progression/perks';
 import type { MealResult, Progression } from '../progression/Progression';
-import { SKINS, isSkinId } from '../progression/skins';
-import { CatalogIcons, GameIcons, PerkIcons, beetleIcon } from './gameIcons';
+import { CatalogIcons, GameIcons, PerkIcons } from './gameIcons';
 import { Icons } from './icons';
 import { escapeHtml } from './html';
 import { bindTabs, tabsMarkup } from './tabs';
 import { achievementDesc, achievementName, isHiddenAchievement } from './achievementText';
+import { looksNotice } from './lookText';
 
-type TabName = 'pantry' | 'catalog' | 'perks' | 'achievements' | 'skins';
+type TabName = 'pantry' | 'catalog' | 'perks' | 'achievements';
 
 const TABS: ReadonlyArray<{ name: TabName; icon: string; label: MessageKey }> = [
   { name: 'pantry', icon: GameIcons.pantry, label: 'burrow.tab.pantry' },
   { name: 'catalog', icon: GameIcons.catalog, label: 'burrow.tab.catalog' },
   { name: 'perks', icon: GameIcons.sparkle, label: 'burrow.tab.perks' },
   { name: 'achievements', icon: Icons.trophy, label: 'burrow.tab.achievements' },
-  { name: 'skins', icon: GameIcons.shell, label: 'burrow.tab.skins' },
 ];
 
 /** Tamanho da bolinha desenhada na despensa (px): cresce rápido nas pequenas, pra 3 e 6 cm não parecerem iguais. */
 const ballPx = (cm: number) => Math.round(16 + 32 * Math.pow(Math.min(Math.max((cm - 3) / 17, 0), 1), 0.6));
 
 /**
- * Placa da toca (dentro do menu): nível e experiência no topo, e cinco abas —
+ * Placa da toca (dentro do menu): nível e experiência no topo, e quatro abas —
  * Despensa (comer o que foi enterrado), Catálogo (figurinhas, com uma
- * curiosidade real de cada uma), Poderes (o que cada nível libera), Conquistas
- * (as secretas aparecem como "???") e Cascos (a aparência do besouro).
- * Tudo lido do `Progression`; comer chama `progression.eat`, vestir chama `setSkin`.
+ * curiosidade real de cada uma), Poderes (o que cada nível libera) e Conquistas
+ * (as secretas aparecem como "???"). O visual do besouro mora no guarda-roupa
+ * (`WardrobeSheet`). Tudo lido do `Progression`; comer chama `progression.eat`.
  */
 export class BurrowSheet {
   readonly element: HTMLElement;
@@ -101,12 +100,6 @@ export class BurrowSheet {
       const id = tile?.dataset.catalog;
       if (id && isCatalogId(id)) this.openCatalogEntry(id);
     });
-    this.panels.get('skins')!.addEventListener('click', (e) => {
-      const button = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-skin]');
-      const id = button?.dataset.skin;
-      if (!id || !isSkinId(id)) return;
-      if (this.progression.setSkin(id)) this.element.querySelector<HTMLElement>(`[data-skin-card="${id}"]`)?.focus({ preventScroll: true });
-    });
 
     progression.subscribe(() => this.refresh());
     onLocaleChange(() => this.refresh());
@@ -132,7 +125,6 @@ export class BurrowSheet {
     this.renderCatalog();
     this.renderPerks();
     this.renderAchievements();
-    this.renderSkins();
   }
 
   private eat(indices: number[] | undefined): void {
@@ -161,6 +153,8 @@ export class BurrowSheet {
     if (meal.unlocked.length > 0) {
       parts.push(t('burrow.unlocked', { names: meal.unlocked.map((id) => t(`perk.${id}.name` as MessageKey)).join(', ') }));
     }
+    // Nível novo que libera casco ou acessório: avisa (o guarda-roupa também ganha a bolinha).
+    if (meal.looks.length > 0) parts.push(looksNotice(meal.looks));
     this.mealNote.textContent = parts.join(' · ');
     this.mealNote.classList.toggle('is-level', meal.levelAfter > meal.levelBefore);
     this.mealNote.classList.remove('is-visible');
@@ -347,35 +341,5 @@ export class BurrowSheet {
         </li>`;
     }).join('');
     panel.innerHTML = /* html */ `<p class="perk-hint">${escapeHtml(t('burrow.perks.hint'))}</p><ul class="perk-list">${rows}</ul>`;
-  }
-
-  /** Cascos: cada um com o besourinho pintado; os presos mostram a conquista que libera. */
-  private renderSkins(): void {
-    const panel = this.panels.get('skins')!;
-    const current = this.progression.skin;
-    const cards = SKINS.map((def) => {
-      const unlocked = this.progression.isSkinUnlocked(def.id);
-      const using = def.id === current;
-      const name = t(`skin.${def.id}.name` as MessageKey);
-      let action: string;
-      if (using) action = `<span class="skin-card__status is-using">${Icons.check}${escapeHtml(t('burrow.skins.using'))}</span>`;
-      else if (unlocked) action = `<button class="skin-card__use" type="button" data-skin="${def.id}">${escapeHtml(t('burrow.skins.use'))}</button>`;
-      else action = `<span class="skin-card__status">${GameIcons.lock}${escapeHtml(t('burrow.skins.locked', { name: achievementName(def.unlock!, isHiddenAchievement(def.unlock!, false)) }))}</span>`;
-      return /* html */ `
-        <li class="skin-card${using ? ' is-using' : ''}${unlocked ? '' : ' is-locked'}" tabindex="0" data-focusable data-skin-card="${def.id}">
-          <span class="skin-card__art" aria-hidden="true">${beetleIcon({ shell: def.elytra, pronotum: def.pronotum, accent: def.leg })}</span>
-          <span class="skin-card__text">
-            <strong>${escapeHtml(name)}</strong>
-            <span>${escapeHtml(t(`skin.${def.id}.desc` as MessageKey))}</span>
-          </span>
-          ${action}
-        </li>`;
-    }).join('');
-    panel.innerHTML = /* html */ `
-      <div class="catalog-progress">
-        <div class="catalog-progress__row"><strong>${escapeHtml(t('burrow.skins.progress', { n: this.progression.unlockedSkinCount, total: SKINS.length }))}</strong></div>
-        <p class="catalog-progress__hint">${escapeHtml(t('burrow.skins.hint'))}</p>
-      </div>
-      <ul class="skin-list">${cards}</ul>`;
   }
 }

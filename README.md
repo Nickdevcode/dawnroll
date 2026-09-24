@@ -24,7 +24,8 @@ Um besouro rola-bosta de massinha num jardim em miniatura. Você rola uma bola d
 | 🗺️ **Três cantinhos** | A **toalha de piquenique** xadrez (morango, bolacha recheada, jujuba, pipoca, cubo de açúcar e uva), o **cantinho dos brinquedos** (bagunça espalhada, com vãos) e o **cantinho do jardineiro** (vasos, pás e luvas). Cada rodada monta cada um de um jeito, e às vezes alguma coisa "fugiu" pro meio do jardim (o morango que as formigas levaram, o soldadinho esquecido) |
 | 🩴 **Soltos pelo jardim** | O **anão de jardim** fica num canto qualquer, longe do começo (é o chefão), e o **chinelo** tem **um pé em cada canto** do mapa |
 | ☀️ **Sol nascente** | O teto da bola subiu pra **30 cm**. Chegando perto, a massinha acende dourada, como o solzinho do nome |
-| 🕳️ **A toca** | Buraco de terra fofa com bandeirinha de folha no monte escavado. Um anel tracejado pulsa quando a bola já pode ser enterrada. Lá embaixo tem **despensa, catálogo, poderes, conquistas e cascos** (ver abaixo) |
+| 🕳️ **A toca** | Buraco de terra fofa com bandeirinha de folha no monte escavado. Um anel tracejado pulsa quando a bola já pode ser enterrada. Lá embaixo tem **despensa, catálogo, poderes e conquistas** (ver abaixo) |
+| 👗 **Guarda-roupa** | **23 cascos** (alguns vivos, com brilho e partículas) e **33 acessórios** pra personalizar o besouro: chapéu, óculos, gravata, capa, asas... Tudo liberado jogando (e às vezes um acessório aparece brilhando no jardim), dá pra provar antes, e o besouro aparece de frente num provador (ver abaixo) |
 | 💩 **Montinho fresquinho** | Mais ou menos 1 em cada 10 montinhos nasce fresquinho: mais claro e dourado, com três moscas e um brilho de vez em quando. Vale o dobro de bola e conta como raro |
 | 🌧️ **Clima** | Nada muda de supetão: nuvenzinhas passando no sol → o céu fecha devagar → **garoa que vai engrossando** → chuva que "respira" (trechos fracos e rajadas) → amaina aos poucos → abre. Cada chuva é sorteada: **pancada** curta e fraca ou **tempestade** longa com raio, trovoada ao longe antes de chegar e depois de ir embora. O céu fecha, a luz fica difusa, tudo fica molhado e brilhante |
 | 💧 **Poças** | Seis bacias rasas (uma de lama no meio da trilha) que enchem na chuva, com anéis de gota, reflexo do céu e borda rasa transparente. Secam devagar |
@@ -69,7 +70,7 @@ Um besouro rola-bosta de massinha num jardim em miniatura. Você rola uma bola d
 - **Chuva e poças:** a água das poças **derrete a bola** (bola pequena derrete rápido; gigante quase nada) e freia; o besouro anda mais devagar com água na canela. Em compensação, rolar na **terra molhada** gruda lama na bola: engorda um pouco, mas pesa.
 - **Peso de verdade:** bola maior = mais pesada, mais lenta pra acelerar, mais difícil de virar e de subir ladeira (a partir de ~12 cm a velocidade estabiliza, pra bola gigante não virar lesma).
 
-### 🕳️ A toca: despensa, nível, poderes, pedidos, conquistas e cascos
+### 🕳️ A toca: despensa, nível, poderes, pedidos e conquistas
 
 | | |
 |---|---|
@@ -79,8 +80,8 @@ Um besouro rola-bosta de massinha num jardim em miniatura. Você rola uma bola d
 | 🃏 **Poderes da rodada** | Quando a bola chega a **5, 10 e 16 cm**, o jogo congela e você escolhe **1 entre 3**. Se um poder que você já pegou aparecer de novo, a carta vem dourada: pegar de novo deixa ele **★★** (a versão mais forte). Vale até enterrar aquela bola |
 | 📋 **Pedidos** | Três metas opcionais por rodada, **cada uma pedida por um bicho do jardim** (a abelha quer flores, o caracol quer cogumelos, a formiga-rainha quer folhas, a joaninha quer coisas de uma cor, o Vovô Escaravelho quer tamanho...). São 17 tipos: coleta, tamanho, variedade, **cor** ("grude 3 coisas vermelhas"), bichos, objetos perdidos, cantinhos e **desafios** que só valem no enterro ("enterre sem molhar a bola", "enterre debaixo de chuva"). Sempre tem um fácil. Do nível 3 em diante, às vezes o **Sol** faz um **pedido dourado**: mais difícil, paga o triplo |
 | 📖 **Catálogo** | **58 figurinhas** em 6 grupos (bosta, jardim, tralha do chão, achados e perdidos, piquenique e bichos). As raras ganham estrelinha, e tocar numa descoberta mostra uma **curiosidade real** sobre ela ("o tatuzinho é um crustáceo", "nenhuma lacraia tem exatamente cem pernas"). O que ainda não desceu pra toca aparece só como silhueta |
-| 🏆 **Conquistas** | **46 feitos** em 6 grupos: tamanho (até o Sol nascente de 30 cm), toca, jardim (levar o anão, a chinelada, o trevo de quatro folhas, a revoada, o beija-flor...), coleção (buquê, zoológico, bola arco-íris, piquenique completo...), poderes e pedidos, e **4 secretas** que aparecem como "???" até você fazer. **Cada uma paga XP uma vez só.** Save antigo ganha retroativo o que já tinha feito |
-| 🪲 **Cascos** | Sete cascos pro besouro, de rola-bostas de verdade (e um do mito): Índigo, Escaravelho-sagrado, Bronze (Kheper), Arco-íris (Phanaeus), Azul da Amazônia (Coprophanaeus), Lua e Khepri dourado. Cada um é liberado por uma conquista e só muda a aparência |
+| 🏆 **Conquistas** | **51 feitos** em 6 grupos: tamanho (até o Sol nascente de 30 cm), toca, jardim (levar o anão, a chinelada, o trevo de quatro folhas, a revoada, o beija-flor...), coleção (buquê, zoológico, bola arco-íris, piquenique completo...), poderes e pedidos, e **4 secretas** que aparecem como "???" até você fazer. **Cada uma paga XP uma vez só.** Save antigo ganha retroativo o que já tinha feito |
+| 👗 **Visual** | Muitas conquistas e níveis liberam cascos e acessórios pro besouro: tudo mora no **Guarda-roupa** (seção abaixo) |
 
 | Poder | O que faz | ★★ | Libera no nível |
 |---|---|---|---|
@@ -97,6 +98,28 @@ Um besouro rola-bosta de massinha num jardim em miniatura. Você rola uma bola d
 | 🐜 **Formigueiro amigo** | As formigas perto da bola trazem pra ela a folhinha que estão carregando | De mais longe, mais folhas | 6 |
 | 🤢 **Fedor irresistível** | Os bichos que grudam vêm até a bola em vez de fugir | De muito mais longe, correndo | 7 |
 | 🌧️ **Cheiro de chuva** | Chama a chuva na hora (sem pular etapas: o céu fecha, garoa, chove): mais lama e mais bicho, mas a poça derrete | Tempestade, e a lama engorda o dobro | 8 |
+
+### 👗 Guarda-roupa: cascos e acessórios
+
+Um botão novo no menu (com bolinha contando o que chegou). O besouro vira o centro da tela num **provador**: a câmera vai pra frente dele e enquadra a parte do corpo da aba (cabeça pros chapéus, rosto pros óculos, costas pra capa...), balança devagar pros lados, desvia sozinha da bola e de pedra no caminho, e **dá pra girar arrastando**. O capim em volta da lente deita, pra nada tapar o close. No celular em pé a placa vira uma gaveta embaixo e o besouro fica em cima.
+
+| | |
+|---|---|
+| 🪲 **23 cascos** | Os 7 de antes + 16 novos: espécies de verdade (Esmeralda, Touro, Pérola), **fantasias pintadas** (joaninha, abelha, toalha de piquenique, melancia, camuflagem, onça-pintada) e os **vivos**, com o desenho se mexendo e brilho próprio: Cristal, Abissal, Magma, Aurora, Holográfico, **Khepri** (agora com um brilho que corre pelo ouro), **Via Láctea** e **Amanhecer** |
+| ✨ **Partículas** | Os cascos vivos soltam o "clima" deles: faísca subindo do magma, estrelinha da galáxia, bolha do abissal, brilho do ouro e do cristal, poeirinha colorida da aurora e do amanhecer |
+| 🎩 **33 acessórios** | Um por lugar: **16 chapéus** (festa, boné, gorro de lã, palha, coroa de flores, cowboy, cartola, chef, gorro de anão, capacete de mineiro com lanterna acesa, viking, **boné de hélice** que gira, mago com estrela que cintila, **auréola** flutuando, **chapéu de cangaceiro** e coroa), **6 de rosto** (óculos escuros, redondos, de coração, de estrela, bigode e monóculo com correntinha), **6 de pescoço** (gravata-borboleta, bandana, cachecol com as pontas voando, sininho que balança, colar havaiano e medalha) e **5 de costas** (bandeirinha tremulando, mochilinha com chaveiro, **capa de herói** que esvoaça correndo, asas de borboleta batendo e o **foguete de garrafa** com fogo de mentirinha) |
+| 💎 **Raridade** | Comum, raro, épico e lendário: cor na faixinha de cada quadradinho, selo no cartão e borda dourada nos lendários |
+| 🔓 **Como libera** | Cada visual vem de uma **conquista que combina** (o chapéu de cowboy é do rodeio em cima da bola, o monóculo é do museu completo, o gorro é de levar o anão, a camuflagem é do bicho-pau...) ou de um **nível** (do 2 ao 12 quase todo nível dá um visual novo; o Amanhecer é do nível 20). O aviso da conquista e o resultado do enterro dizem o que chegou |
+| 👀 **Provar** | Os trancados dá pra **provar**: o besouro veste enquanto a placa está aberta e o cartão mostra como liberar. Fechou, volta pro que estava |
+| ✨ **Achado raro** | De vez em quando (mais ou menos 1 jardim em 5) um **acessório que você ainda não tem** aparece girando num canto do jardim, dentro de um **facho de luz dourado** que se vê de longe. Passou por cima (ou rolou a bola nele), pegou: libera na hora, com confete e aviso. Comum aparece mais, lendário quase nunca, e se a bola for enterrada antes, ele vai embora junto com o jardim. **Cascos não aparecem:** eles continuam só por conquista e nível |
+| 🏅 **5 conquistas novas** | **Peão de rodeio** (1 minuto em cima da bola, somando), **Febre** (Sangue quente no máximo), **Fashionista** (chapéu, rosto, pescoço e costas ao mesmo tempo), **Maratonista** (100 m de bola rolada, na escala do jardim) e **Escaravelho lendário** (nível 20) |
+
+| Raridade | Cascos | Acessórios |
+|---|---|---|
+| Comum | Índigo, Escaravelho-sagrado, Bronze, Esmeralda, Touro | chapéu de festa, boné, gorro de lã, chapéu de palha, óculos escuros, óculos redondos, gravata-borboleta, bandana, bandeirinha |
+| Raro | Arco-íris, Azul da Amazônia, Pérola, Joaninha, Abelha, Toalha de piquenique, Melancia, Camuflagem | coroa de flores, cowboy, cartola, chef, gorro de anão, mineiro, viking, óculos de coração e de estrela, bigode, cachecol, sininho, colar havaiano, mochilinha, capa de herói |
+| Épico | Onça-pintada, Lua, Cristal, Abissal, Magma, Aurora, Holográfico | boné de hélice, mago, auréola, cangaceiro, medalha de ouro, asas de borboleta, foguete de garrafa |
+| Lendário | Khepri, Via Láctea, Amanhecer | coroa, monóculo |
 
 ---
 
@@ -160,7 +183,7 @@ src/
 ├── main.ts                 # entrada: idioma, checa WebGL 2 e sobe o jogo
 ├── Game.ts                 # laço de jogo, rodadas, clima, água/lama, dicas, qualidade adaptativa
 ├── progression/            # a toca e tudo que atravessa as rodadas (sem Three.js, sem DOM)
-│   ├── Progression.ts      # estado: nível/XP, despensa, poderes (★★), pedidos, conquistas, casco
+│   ├── Progression.ts      # estado: nível/XP, despensa, poderes (★★), pedidos, conquistas, visual (casco + acessórios)
 │   ├── catalog.ts          # as 58 figurinhas (grupos, cantinhos, raras)
 │   ├── perks.ts            # os 13 poderes, o ★★ e os multiplicadores que eles aplicam
 │   ├── ability.ts          # relógio do poder de apertar (Equilibrista: uso e recarga)
@@ -168,30 +191,39 @@ src/
 │   ├── food.ts             # o que a bola engoliu na rodada (e de que cores), quanto rende e o banquete
 │   ├── colors.ts           # cor da coisa → família (pedidos de cor e bola arco-íris)
 │   ├── requests.ts         # pedidos: quem pede, 17 tipos, desafios do enterro e o dourado do Sol
-│   ├── achievements.ts     # as 46 conquistas (4 secretas) e as recompensas
-│   └── skins.ts            # os 7 cascos e a conquista que libera cada um
+│   ├── achievements.ts     # as 51 conquistas (4 secretas) e as recompensas
+│   ├── skins.ts            # os 23 cascos: cores, desenho do shader, brilho, aura, raridade e como libera
+│   ├── accessories.ts      # os 33 acessórios (lugar, raridade, como libera) e o conjunto vestido
+│   ├── looks.ts            # "visual" = casco ou acessório (chave, "Novo", o que cada conquista/nível libera)
+│   ├── rareFinds.ts        # achado raro: chance por jardim e sorteio por raridade (só acessório trancado)
+│   └── unlocks.ts          # raridade e regra de liberação (conquista ou nível)
 ├── core/
 │   ├── Physics.ts          # mundo Rapier, passo fixo 60 Hz, grupos de colisão
 │   ├── Input.ts            # teclado + mouse (pointer lock) + toque + controle; último dispositivo usado
 │   ├── GamepadInput.ts     # Gamepad API: analógicos, gatilhos, menu, vibração, Xbox x PlayStation
 │   ├── settings.ts         # configurações salvas e validadas, predefinições de qualidade
 │   ├── device.ts           # perfis de qualidade (PC x celular)
-│   ├── save.ts             # progresso no localStorage (recorde, XP, despensa, catálogo, conquistas), validado
-│   └── ThirdPersonCamera.ts # órbita, colisão com o cenário e tremidinha de impacto
+│   ├── save.ts             # progresso no localStorage (recorde, XP, despensa, catálogo, conquistas, visual), validado
+│   ├── ThirdPersonCamera.ts # órbita, colisão com o cenário e tremidinha de impacto
+│   └── ShowcaseCamera.ts   # provador do guarda-roupa: enquadra de frente, desvia da bola, gira arrastando
 ├── render/
 │   ├── Graphics.ts         # renderer, cúpula do céu (sol x chuva), luzes, pós (contorno, GTAO, DOF, bloom, FXAA, grading)
 │   ├── OutlinePass.ts      # contorno preto de desenho animado (lido da profundidade da cena)
 │   ├── clayMaterial.ts     # material de massinha (digitais, mosqueado, manchas úmidas, vento, chuva)
+│   ├── skinShader.ts       # desenho do casco no shader (pintas, listras, onça, xadrez... e os vivos)
 │   ├── shaderChunks.ts     # GLSL e uniforms globais (ruído, vento, grama que deita, molhado)
 │   ├── StaticBatch.ts      # funde milhares de peças em poucos draw calls (e apaga as arrancadas)
 │   ├── ChunkedInstances.ts # instâncias em pedaços do mapa com LOD por distância
 │   ├── InstancePool.ts     # vagas de instância (detritos, montinhos, moscas), só as na visão vão pra GPU
 │   ├── frameView.ts        # a visão da câmera do quadro (quem instancia pelo mapa todo desenha só o que cabe nela)
 │   ├── noiseTexture.ts     # o ruído do chão pré-calculado numa textura que se repete
-│   ├── mergeStatic.ts      # funde enfeites presos na mesma junta (besouro)
+│   ├── mergeStatic.ts      # funde enfeites presos na mesma junta (besouro e acessórios)
 │   └── geometry.ts         # "amassa" primitivas, pinta vértices, tubos afinando
 ├── entities/
-│   ├── BeetleModel.ts      # o besouro bonitão + animação procedural das 6 patas
+│   ├── BeetleModel.ts      # o besouro bonitão + animação procedural das 6 patas + encaixes do visual
+│   ├── outfit/             # acessórios: BeetleOutfit (veste, esconde o chifre, anima), registry,
+│   │                       # hats / faceWear / neckWear / backWear (os modelos), parts (peças e materiais),
+│   │                       # skinned (capa e pontas de pano com osso)
 │   ├── Beetle.ts           # controle: andar, pular, agarrar e empurrar
 │   └── DungBall.ts         # a bola: física, crescimento, itens grudados (com voo), derreter, enterro
 ├── world/
@@ -208,6 +240,7 @@ src/
 │   ├── objects/            # objetos perdidos: frutas, piquenique, brinquedos, jardineiro, anão, detritos novos
 │   │                       # + compose.ts (montagem procedural de um cantinho sem sobrepor nada)
 │   ├── Burrow.ts           # a toca: bandeirinha, anel, enterro da bola
+│   ├── RareFind.ts         # o achado raro no chão: acessório girando no facho de luz, coleta por cima
 │   ├── Weather.ts          # ciclo do tempo (nublado, chuva, relâmpago, molhado, poças enchendo)
 │   ├── Puddles.ts          # água das poças (shader com profundidade e anéis de gota)
 │   ├── Grass.ts            # grama instanciada com vento, translucidez e LOD
@@ -215,6 +248,7 @@ src/
 │   └── Collectibles.ts     # montinhos (espiral), moscas e 10 tipos de detrito grudável
 ├── fx/
 │   ├── Effects.ts          # central de efeitos (eventos do jogo -> partículas)
+│   ├── BeetleAura.ts       # partículas dos cascos vivos (faísca, estrela, bolha, brilho)
 │   ├── SoftParticles.ts    # poeira/fedor/brilho (pool num THREE.Points só)
 │   ├── ChunkParticles.ts   # pedacinhos com física (respingo, torrão, confete, folha)
 │   ├── BallTrail.ts        # rastro da bola no chão
@@ -238,14 +272,17 @@ src/
     ├── Hud.ts              # HUD em jogo, dicas, marcador da toca, resultado, toque
     ├── RoundPanel.ts       # nível, pedidos (recolhíveis) e poderes da rodada no HUD
     ├── PerkPicker.ts       # as cartas de "escolha um poder"
-    ├── BurrowSheet.ts      # placa da toca: despensa, catálogo (com curiosidades), poderes, conquistas e cascos
+    ├── BurrowSheet.ts      # placa da toca: despensa, catálogo (com curiosidades), poderes e conquistas
+    ├── WardrobeSheet.ts    # placa do guarda-roupa: abas por lugar, vestir, provar, selo "Novo"
+    ├── lookIcons.ts        # besourinho de cada casco (com desenho e animação) e figurinha de cada acessório
+    ├── lookText.ts         # nome, descrição, raridade e "como libera" de cada visual
     ├── AchievementToast.ts # aviso de conquista (em fila, por cima até do menu)
     ├── BootScreen.ts       # avança a tela de carregamento (o desenho mora no index.html)
     ├── gameIcons.ts        # figurinhas do catálogo e ícones dos poderes (SVG)
     ├── screenMarker.ts     # marcador preso na borda da tela (toca e Faro)
     ├── tabs.ts             # abas acessíveis compartilhadas pelas placas
     ├── spatialNav.ts       # navegação do controle no menu: vizinho na direção apertada (grade e lista)
-    ├── Menu.ts             # menu de início/pausa, configurações (abas) e como jogar
+    ├── Menu.ts             # menu de início/pausa: toca, guarda-roupa, configurações (abas) e como jogar
     ├── controls.ts         # seletor, chave e slider acessíveis (teclado, leitor de tela)
     ├── icons.ts            # ícones SVG
     ├── styles.css          # design tokens + HUD
@@ -276,7 +313,9 @@ O que mudou:
 - **Menos troca de programa na CPU:** o three recalculava o programa de shader toda vez que dois objetos com o mesmo material mas "variantes" diferentes (ex.: detrito tingido × não tingido) se alternavam na fila. A fila agora agrupa por essa variante também.
 - **Montagem do jardim sem girar em falso:** pronta e esperando a bola cair na toca, a montagem do próximo jardim queimava o orçamento dela (~2,5 ms) todo quadro chamando `performance.now()`. Agora ela avisa que está ociosa e para.
 
-Ferramentas de medição (descartáveis, em `shots/lead/`, fora do git): `bench.mjs` (tempo de quadro, CPU, GPU e draw calls sem vsync), `passprof.mjs` (GPU por passe), `tris.mjs` (triângulos por passe e objeto), `cpuprof.mjs` (perfil do V8), `progthrash.mjs` (quem força troca de programa).
+**Guarda-roupa:** o besouro todo vestido (casco Via Láctea + chapéu de mago + óculos escuros + cachecol + capa) custa ~45 draw calls a mais por quadro (~590 → ~635, todos os passes somados) e fica dentro do ruído da medição na GPU (±0,5 ms em Alto 1080p). Casco sem desenho custa o mesmo de antes; os desenhos vivos só rodam nos pixels do besouro.
+
+Ferramentas de medição (descartáveis, em `shots/lead/`, fora do git): `bench.mjs` (tempo de quadro, CPU, GPU e draw calls sem vsync; aceita um visual pra vestir antes), `passprof.mjs` (GPU por passe), `tris.mjs` (triângulos por passe e objeto), `cpuprof.mjs` (perfil do V8), `progthrash.mjs` (quem força troca de programa), `lookbook.mjs` (folha de fotos dos cascos e acessórios), `wardrobe.mjs` / `padwardrobe.mjs` (guarda-roupa de ponta a ponta, no mouse e no controle), `meshcount.mjs` (draw calls e triângulos de cada acessório).
 
 ---
 
@@ -323,7 +362,11 @@ Ferramentas de medição (descartáveis, em `shots/lead/`, fora do git): `bench.
 - **Xbox antes de PlayStation:** "Xbox Wireless Controller" contém "Wireless Controller", que é o nome do controle de PS4 em vários navegadores, então o teste por Xbox (e pelo fabricante `045e`) vem primeiro.
 - **O limite real da bola é o jardim, não o número:** antes, todos os arrancáveis somavam ~755 de volume e a bola de 24 cm pedia ~905 (o teto era promessa vazia). Os objetos perdidos somam mais ~945 (o anão sozinho, 195), o jardim inteiro vai a ~1680 e aí sim o teto subiu pra 30 cm (1767): 24 cm fica alcançável e 30 cm só varrendo quase tudo e ainda comendo bosta.
 - **Bola que "nunca chegava":** o raio anda até o alvo com suavização exponencial, que nunca encosta nele. No teto a bola ficava em 29,9996 cm e o marco de 30 (e antes o de 24) nunca disparava. Agora o raio encaixa no alvo quando fica a menos de 0,0005, e o diâmetro é arredondado na terceira casa.
-- **Casco sem repintar malha:** o degradê do casco e das patas é assado nos vértices só como sombra (cinza); a cor vem do material. Trocar de casco é trocar a cor de 6 materiais, e as peças fundidas continuam fundidas. A pálpebra é uma meia-esfera sem cor nos vértices: material com `vertexColors` ali deixaria ela preta.
+- **Casco sem repintar malha:** o degradê do casco e das patas é assado nos vértices só como sombra (cinza); a cor vem do material. Trocar de casco é mexer em uniforms e na cor de 5 materiais, e as peças fundidas continuam fundidas. A pálpebra ganhou cor branca nos vértices pra dividir o material do casco.
+- **Desenho do casco no shader:** cada vértice do casco guarda `skinPos` = a posição dele no corpo **em repouso** + a parte (élitro, pronoto, cabeça). O desenho fica grudado no casco quando o corpo amassa, inclina ou a pálpebra pisca, e sai espelhado dos dois lados. Um programa só pra todos os 15 desenhos (o tipo vai por uniform): trocar de casco não recompila nada.
+- **Materiais do besouro fora do cache:** o `clay()` devolve o mesmo material pra mesma cor. O besouro nascia índigo, então élitro e pronoto dividiam **um** material e o casco Arco-íris saía todo cobre (bug antigo, corrigido: agora o besouro tem materiais próprios, `unique: true`).
+- **Acessório barato:** peças paradas saem dos grupos de montagem e fundem por material (`flattenStatic` + `mergeStaticTree`): quase todo acessório fica em 1 a 4 draw calls. O que mexe (hélice, asa, sino) é junta própria; capa, pontas do cachecol e bandeirinha são malha com **osso** (skinning na GPU vale em sombra, oclusão e contorno). Material novo compila em segundo plano (`compileAsync`) antes da peça aparecer.
+- **Provador sem mexer no jogo:** a câmera do guarda-roupa só "puxa" a câmera normal (mistura suave) e centraliza o besouro no pedaço livre da tela deslocando a **projeção** (`setViewOffset`), não a câmera. Um terceiro "empurrador" na lente deita o capim perto dela.
 - **Equilibrista sem física nova:** em cima da bola o besouro não usa o controlador de personagem. Ele fica colado no topo dela e aplica na bola a mesma força limitada do empurrar, na direção do analógico. Subir e descer são pulinhos animados que giram em volta do centro da bola (a linha reta entre o chão e o topo passa por dentro dela, e numa bola grande isso é bem no meio), e o ponto de pouso da descida é conferido com um raio pra baixo (cai em cima da pedra, se tiver pedra).
 - **Equilibrista arremessando a bola (corrigido):** a regra de grupos do solver do Rapier vale dos dois lados, e a bola usa o grupo padrão ("tudo", inclusive `WORLD`). Então o contato besouro–bola gera força com a massa infinita do corpo cinemático. No pulinho de subir, o besouro atravessava a bola a ~40 un/s e, com bola grande, arremessava ela (e ele junto) a ~80 de altura, pra fora do jardim. Agora, subindo, em cima e descendo, o solver do besouro fica desligado; no chão nada mudou (empurrar medido igual antes e depois).
 - **Uma carta selecionada só:** o destaque da escolha de poder vinha de `:hover` + `:focus-visible`. Com o cursor parado em cima de uma carta e o controle em outra, apareciam duas cartas levantadas. Agora existe uma seleção (`is-selected`) que setas, controle e mouse (só movimento de verdade) movem juntos. A direção que já estava apertada quando um menu abre (o analógico de andar) não vale até ser solta, e no analógico ganha o eixo dominante (antes, "direita e um pouco pra cima" virava cima).

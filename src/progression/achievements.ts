@@ -1,7 +1,8 @@
 /**
  * Conquistas: feitos permanentes que ficam na toca e pagam experiência uma vez
  * só (o XP da recompensa ajuda a subir de nível — é a "aplicação" delas). Várias
- * também liberam um casco novo pro besouro (ver `skins.ts`).
+ * também liberam um visual novo pro besouro (casco em `skins.ts`, acessório em
+ * `accessories.ts`).
  *
  * Os marcos de tamanho são os mesmos avisos da rodada ("Bola respeitável",
  * "Terror do jardim"...): na rodada eles voltam toda vez, mas a primeira vez
@@ -31,6 +32,7 @@ export type AchievementId =
   | 'level5'
   | 'level10'
   | 'level15'
+  | 'level20'
   // Jardim
   | 'allRequests'
   | 'log'
@@ -44,6 +46,7 @@ export type AchievementId =
   | 'stickInsect'
   | 'underRock'
   | 'web10'
+  | 'marathon'
   // Coleção (o que vai dentro de UMA bola)
   | 'bouquet'
   | 'zoo'
@@ -53,6 +56,7 @@ export type AchievementId =
   | 'catalog10'
   | 'catalog30'
   | 'catalogAll'
+  | 'fashion'
   // Poderes e pedidos
   | 'fullPower'
   | 'allPerks'
@@ -60,6 +64,8 @@ export type AchievementId =
   | 'riderBury'
   | 'golden'
   | 'requests50'
+  | 'rodeo'
+  | 'fever'
   // Secretas
   | 'melted'
   | 'purist'
@@ -99,6 +105,7 @@ export const ACHIEVEMENTS: readonly AchievementDef[] = [
   { id: 'level5', group: 'burrow', reward: 50 },
   { id: 'level10', group: 'burrow', reward: 100 },
   { id: 'level15', group: 'burrow', reward: 150 },
+  { id: 'level20', group: 'burrow', reward: 250 },
   { id: 'allRequests', group: 'garden', reward: 30 },
   { id: 'log', group: 'garden', reward: 30 },
   { id: 'fresh10', group: 'garden', reward: 40 },
@@ -111,6 +118,7 @@ export const ACHIEVEMENTS: readonly AchievementDef[] = [
   { id: 'stickInsect', group: 'garden', reward: 50 },
   { id: 'underRock', group: 'garden', reward: 30 },
   { id: 'web10', group: 'garden', reward: 40 },
+  { id: 'marathon', group: 'garden', reward: 80 },
   { id: 'bouquet', group: 'collection', reward: 40 },
   { id: 'zoo', group: 'collection', reward: 60 },
   { id: 'rainbow', group: 'collection', reward: 50 },
@@ -119,12 +127,15 @@ export const ACHIEVEMENTS: readonly AchievementDef[] = [
   { id: 'catalog10', group: 'collection', reward: 30 },
   { id: 'catalog30', group: 'collection', reward: 60 },
   { id: 'catalogAll', group: 'collection', reward: 250 },
+  { id: 'fashion', group: 'collection', reward: 40 },
   { id: 'fullPower', group: 'mastery', reward: 30 },
   { id: 'allPerks', group: 'mastery', reward: 80 },
   { id: 'doubleStar', group: 'mastery', reward: 30 },
   { id: 'riderBury', group: 'mastery', reward: 50 },
   { id: 'golden', group: 'mastery', reward: 60 },
   { id: 'requests50', group: 'mastery', reward: 80 },
+  { id: 'rodeo', group: 'mastery', reward: 60 },
+  { id: 'fever', group: 'mastery', reward: 40 },
   { id: 'melted', group: 'secret', reward: 30 },
   { id: 'purist', group: 'secret', reward: 40 },
   { id: 'onTop', group: 'secret', reward: 30 },
@@ -157,6 +168,7 @@ export const LEVEL_GOALS: ReadonlyArray<[AchievementId, number]> = [
   ['level5', 5],
   ['level10', 10],
   ['level15', 15],
+  ['level20', 20],
 ];
 
 /** Figurinhas descobertas → conquista (o total vem do catálogo). */
@@ -172,6 +184,10 @@ export const FEAST_GOAL = 6;
 export const WEB_GOAL = 10;
 /** Pedidos cumpridos no total. */
 export const REQUESTS_GOAL = 50;
+/** Segundos em cima da bola (Equilibrista), somando todas as rodadas. */
+export const RODEO_SECONDS = 60;
+/** Distância que a bola rolou no total, em unidades do mundo (1 u ≈ 2 cm: 5000 u = 100 m). */
+export const MARATHON_UNITS = 5000;
 /** Tipos de bicho diferentes numa bola só. */
 export const ZOO_GOAL = 5;
 /** Cores diferentes numa bola só. */

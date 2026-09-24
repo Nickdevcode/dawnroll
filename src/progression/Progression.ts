@@ -7,9 +7,11 @@ import {
   FEAST_GOAL,
   FRESH_GOAL,
   LEVEL_GOALS,
+  MARATHON_UNITS,
   PURIST_CM,
   RAINBOW_GOAL,
   REQUESTS_GOAL,
+  RODEO_SECONDS,
   SIZE_MILESTONES,
   TOYS_GOAL,
   WEB_GOAL,
@@ -38,7 +40,10 @@ import {
   type PerkRank,
 } from './perks';
 import { drawRequests, failDryChallenge, resolveChallenges, updateRequest, type RoundRequest } from './requests';
-import { SKINS, skin, skinsUnlockedBy, type SkinId } from './skins';
+import { SKINS, skin, type SkinId } from './skins';
+import { ACCESSORIES, ACCESSORY_SLOTS, accessory, type AccessoryId, type AccessorySlot, type Outfit } from './accessories';
+import { ALL_LOOKS, lookKey, lookUnlock, looksUnlockedBy, looksUnlockedByLevels, type Look } from './looks';
+import { isUnlockMet, type UnlockProgress } from './unlocks';
 
 /** O que aconteceu ao comer da despensa. */
 export interface MealResult {
@@ -51,6 +56,8 @@ export interface MealResult {
   levelAfter: number;
   /** Poderes que entraram no sorteio por causa dos níveis ganhos. */
   unlocked: PerkId[];
+  /** Visuais (cascos e acessórios) liberados pelos níveis ganhos. */
+  looks: Look[];
 }
 
 /** Conquista feita agora (o XP da recompensa já entrou). */
@@ -61,8 +68,8 @@ export interface AchievementUnlock {
   levelAfter: number;
   /** Poderes liberados pelos níveis que a recompensa deu. */
   unlocked: PerkId[];
-  /** Cascos que essa conquista liberou. */
-  skins: SkinId[];
+  /** Visuais que essa conquista liberou (e os dos níveis que ela deu). */
+  looks: Look[];
 }
 
 /** Subida de nível causada por um ganho de XP. */
@@ -70,6 +77,8 @@ interface XpGain {
   levelBefore: number;
   levelAfter: number;
   unlocked: PerkId[];
+  /** Visuais liberados pelos níveis ganhos. */
+  looks: Look[];
 }
 
 /** O que aconteceu ao enterrar uma bola. */
@@ -113,12 +122,13 @@ export interface CollectResult {
 /**
  * Progressão entre rodadas e dentro delas: nível e experiência, despensa,
  * catálogo, poderes da rodada (1 de 3 nos marcos de tamanho, ★★ se repetir),
- * o poder de apertar (Equilibrista), pedidos, conquistas e cascos.
+ * o poder de apertar (Equilibrista), pedidos, conquistas e o visual (casco e
+ * acessórios, com o selo de "Novo" do guarda-roupa).
  *
  * Não sabe de Three.js nem de DOM: o `Game` avisa o que a bola pegou e pergunta
- * os multiplicadores do passo; a interface lê o estado e chama `eat`/`setSkin`.
+ * os multiplicadores do passo; a interface lê o estado e chama `eat`/`setSkin`/`setAccessory`.
  */
-export class Progression {
+export class Progression implements UnlockProgress {
   readonly ledger = new RoundLedger();
   /** Poderes escolhidos nesta rodada, na ordem em que vieram (o ★★ atualiza o nível no lugar). */
   readonly roundPerks: RoundPerk[] = [];
@@ -202,12 +212,44 @@ export class Progression {
   }
 
   isSkinUnlocked(id: SkinId): boolean {
-    const unlock = skin(id).unlock;
-    return !unlock || this.hasAchievement(unlock);
+    return isUnlockMet(skin(id).unlock, this);
   }
 
   get unlockedSkinCount(): number {
     return SKINS.filter((s) => this.isSkinUnlocked(s.id)).length;
+  }
+
+  /** O que o besouro está vestindo (um acessório ou nada por lugar). */
+  get outfit(): Readonly<Outfit> {
+    return this.save.outfit;
+  }
+
+  /** Liberado pela conquista/nível dele ou achado no jardim. */
+  isAccessoryUnlocked(id: AccessoryId): boolean {
+    return this.save.found.includes(id) || isUnlockMet(accessory(id).unlock, this);
+  }
+
+  /** Foi achado no jardim (e não liberado pelo caminho normal)? */
+  wasFound(id: AccessoryId): boolean {
+    return this.save.found.includes(id) && !isUnlockMet(accessory(id).unlock, this);
+  }
+
+  get unlockedAccessoryCount(): number {
+    return ACCESSORIES.filter((a) => this.isAccessoryUnlocked(a.id)).length;
+  }
+
+  isLookUnlocked(look: Look): boolean {
+    return look.kind === 'acc' ? this.isAccessoryUnlocked(look.id) : this.isSkinUnlocked(look.id);
+  }
+
+  /** Liberado e ainda não visto no guarda-roupa (os livres desde o começo não contam). */
+  isLookNew(look: Look): boolean {
+    return lookUnlock(look) !== undefined && this.isLookUnlocked(look) && !this.save.seenLooks.includes(lookKey(look));
+  }
+
+  /** Quantos visuais novos esperam no guarda-roupa (a bolinha do menu). */
+  get newLookCount(): number {
+    return ALL_LOOKS.filter((look) => this.isLookNew(look)).length;
   }
 
   /** Avisa quem mostra o estado (HUD, painel da toca) quando algo mudou. */
@@ -301,7 +343,7 @@ export class Progression {
     return rank;
   }
 
-  /** Sangue quente: esquenta empurrando com vontade, esfria parado. */
+  /** Sangue quente: esquenta empurrando com vontade, esfria parado. No máximo, conquista "Febre". */
   updateHeat(dt: number, pushingHard: boolean): void {
     const rank = this.ranks.get('hotBlood');
     if (!rank) {
@@ -309,6 +351,24 @@ export class Progression {
       return;
     }
     this.heat = pushingHard ? Math.min(1, this.heat + dt / heatRiseSeconds(rank)) : Math.max(0, this.heat - dt * HEAT_DECAY_PER_SECOND);
+    if (this.heat >= 1) this.unlock('fever');
+  }
+
+  /**
+   * Contadores contínuos do passo: tempo em cima da bola e quanto ela rolou.
+   * Só na memória (gravar a cada passo pesaria); vão pro disco junto do próximo
+   * salvamento (enterro, refeição, conquista).
+   */
+  noteMotion(rideSeconds: number, rollUnits: number): void {
+    const stats = this.save.stats;
+    if (rideSeconds > 0) {
+      stats.rideSeconds = Math.min(1e7, stats.rideSeconds + rideSeconds);
+      if (stats.rideSeconds >= RODEO_SECONDS) this.unlock('rodeo');
+    }
+    if (rollUnits > 0) {
+      stats.rollUnits = Math.min(1e9, stats.rollUnits + rollUnits);
+      if (stats.rollUnits >= MARATHON_UNITS) this.unlock('marathon');
+    }
   }
 
   /** Multiplicadores do passo (o objeto é reaproveitado: não guarde a referência entre passos). */
@@ -387,6 +447,45 @@ export class Progression {
     return true;
   }
 
+  /**
+   * Veste um acessório no lugar dele (`null` = tira o que estiver lá). Só os
+   * liberados. Com os quatro lugares ocupados, conquista "Fashionista".
+   */
+  setAccessory(slot: AccessorySlot, id: AccessoryId | null): boolean {
+    if (id !== null && (accessory(id).slot !== slot || !this.isAccessoryUnlocked(id))) return false;
+    if (this.save.outfit[slot] === id) return false;
+    this.save.outfit[slot] = id;
+    this.persist();
+    if (ACCESSORY_SLOTS.every((s) => this.save.outfit[s] !== null)) this.unlock('fashion');
+    this.emit();
+    return true;
+  }
+
+  /**
+   * Achado raro: o besouro passou por cima de um acessório brilhando no jardim.
+   * Libera na hora (e aparece como "Novo" no guarda-roupa). Devolve se era novo.
+   */
+  findAccessory(id: AccessoryId): boolean {
+    if (this.isAccessoryUnlocked(id)) return false;
+    this.save.found.push(id);
+    this.persist();
+    this.emit();
+    return true;
+  }
+
+  /** O jogador viu esses visuais no guarda-roupa: saem do "Novo". */
+  markLooksSeen(looks: readonly Look[]): void {
+    let changed = false;
+    for (const look of looks) {
+      if (!this.isLookNew(look)) continue;
+      this.save.seenLooks.push(lookKey(look));
+      changed = true;
+    }
+    if (!changed) return;
+    this.persist();
+    this.emit();
+  }
+
   /** O painel da toca já foi apresentado. */
   markBurrowSeen(): void {
     if (this.save.seenBurrow) return;
@@ -411,7 +510,7 @@ export class Progression {
     const unlocked: PerkId[] = [];
     for (let level = levelBefore + 1; level <= levelAfter; level++) unlocked.push(...perksUnlockedAt(level));
     for (const [id, goal] of LEVEL_GOALS) if (levelAfter >= goal) this.unlock(id, silent);
-    return { levelBefore, levelAfter, unlocked };
+    return { levelBefore, levelAfter, unlocked, looks: looksUnlockedByLevels(levelBefore, levelAfter) };
   }
 
   /**
@@ -425,7 +524,9 @@ export class Progression {
     const gain = this.grantXp(reward, silent);
     this.persist();
     this.emit();
-    if (!silent) this.onAchievement?.({ id, reward, ...gain, skins: skinsUnlockedBy(id) });
+    // O que já tinha sido achado no jardim não é "visual novo" de novo.
+    const looks = [...looksUnlockedBy(id), ...gain.looks].filter((look) => look.kind !== 'acc' || !this.save.found.includes(look.id));
+    if (!silent) this.onAchievement?.({ id, reward, ...gain, looks });
   }
 
   /** Conquistas do que foi dentro DESTA bola (buquê, zoológico, arco-íris...). */
@@ -458,6 +559,8 @@ export class Progression {
     if (has('earwig') || has('centipede')) this.unlock('underRock', silent);
     if (save.stats.websTorn >= WEB_GOAL) this.unlock('web10', silent);
     if (save.stats.requestsDone >= REQUESTS_GOAL) this.unlock('requests50', silent);
+    if (save.stats.rideSeconds >= RODEO_SECONDS) this.unlock('rodeo', silent);
+    if (save.stats.rollUnits >= MARATHON_UNITS) this.unlock('marathon', silent);
   }
 
   /** Save de antes das conquistas: o que já foi feito conta (sem aviso na tela). */

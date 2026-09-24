@@ -165,6 +165,12 @@ export interface ClayOptions {
    */
   flex?: number;
   side?: THREE.Side;
+  /**
+   * Material próprio, fora do cache: pra quem vai mudar cor/brilho depois
+   * (o casco do besouro). Mexer num material do cache repintaria todo mundo que
+   * divide ele. O programa de GPU continua o mesmo dos outros de massinha.
+   */
+  unique?: boolean;
 }
 
 /**
@@ -280,6 +286,7 @@ export function clay(color: THREE.ColorRepresentation, options: ClayOptions = {}
     sway = false,
     flex = 0,
     side = THREE.FrontSide,
+    unique = false,
   } = options;
 
   const key = [
@@ -299,7 +306,7 @@ export function clay(color: THREE.ColorRepresentation, options: ClayOptions = {}
     flex,
     side,
   ].join('|');
-  const cached = cache.get(key);
+  const cached = unique ? undefined : cache.get(key);
   if (cached) return cached;
 
   const base = new THREE.Color(color);
@@ -329,6 +336,6 @@ export function clay(color: THREE.ColorRepresentation, options: ClayOptions = {}
   }
   installClayShader(material, mottle, mottleScale, wet, sway, flex);
 
-  cache.set(key, material);
+  if (!unique) cache.set(key, material);
   return material;
 }

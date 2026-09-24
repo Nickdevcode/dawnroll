@@ -6,8 +6,11 @@ import * as THREE from 'three';
  * todos os shaders: atualizar aqui uma vez por frame atualiza todo mundo.
  */
 
-/** Quantos "empurradores" (besouro + bola) amassam a vegetação ao passar. */
-export const MAX_PUSHERS = 2;
+/**
+ * Quantos "empurradores" amassam a vegetação: besouro, bola e a lente do
+ * provador do guarda-roupa (a câmera chega perto e o capim não pode tapar).
+ */
+export const MAX_PUSHERS = 3;
 
 export const globalUniforms = {
   uTime: { value: 0 },

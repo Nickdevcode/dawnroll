@@ -3,6 +3,8 @@ import { isCatalogId, type CatalogId } from '../progression/catalog';
 import { PANTRY_CAPACITY } from '../progression/food';
 import { isPerkId, type PerkId } from '../progression/perks';
 import { DEFAULT_SKIN, isSkinId, type SkinId } from '../progression/skins';
+import { ACCESSORY_SLOTS, accessory, emptyOutfit, isAccessoryId, type AccessoryId, type Outfit } from '../progression/accessories';
+import { isLookKey, type LookKey } from '../progression/looks';
 
 /**
  * Progresso salvo no próprio navegador (localStorage): recorde, bolas
@@ -10,8 +12,9 @@ import { DEFAULT_SKIN, isSkinId, type SkinId } from '../progression/skins';
  * leitura — dado corrompido ou editado à mão vira zero, nunca quebra o jogo.
  * Em aba anônima/bloqueada, só não salva.
  *
- * Os campos da toca entraram depois do recorde, e o casco e os contadores
- * depois deles: save antigo (sem esses campos) abre normal, com o que faltar zerado.
+ * Os campos da toca entraram depois do recorde, o casco e os contadores depois
+ * deles, e os acessórios por último: save antigo (sem esses campos) abre normal,
+ * com o que faltar zerado.
  */
 
 /** Contadores que atravessam as rodadas (conquistas de "N vezes"). */
@@ -20,6 +23,10 @@ export interface SaveStats {
   requestsDone: number;
   /** Teias de aranha rasgadas no total. */
   websTorn: number;
+  /** Segundos em cima da bola (Equilibrista) no total. */
+  rideSeconds: number;
+  /** Quanto a bola já rolou no total (unidades do mundo). */
+  rollUnits: number;
 }
 
 /** Bola guardada na despensa, esperando ser comida. */
@@ -51,6 +58,12 @@ export interface SaveData {
   perksUsed: PerkId[];
   /** Casco do besouro em uso (só aparência). */
   skin: SkinId;
+  /** Acessórios vestidos (um por lugar). */
+  outfit: Outfit;
+  /** Visuais liberados que o jogador já viu no guarda-roupa (o resto ganha o selo "Novo"). */
+  seenLooks: LookKey[];
+  /** Acessórios achados no jardim (achado raro): liberados mesmo sem a conquista/nível. */
+  found: AccessoryId[];
   stats: SaveStats;
 }
 
@@ -70,7 +83,10 @@ export function emptySave(): SaveData {
     achievements: [],
     perksUsed: [],
     skin: DEFAULT_SKIN,
-    stats: { requestsDone: 0, websTorn: 0 },
+    outfit: emptyOutfit(),
+    seenLooks: [],
+    found: [],
+    stats: { requestsDone: 0, websTorn: 0, rideSeconds: 0, rollUnits: 0 },
   };
 }
 
@@ -114,7 +130,21 @@ function readStats(value: unknown): SaveStats {
   return {
     requestsDone: Math.floor(sane(data.requestsDone, 1e7)),
     websTorn: Math.floor(sane(data.websTorn, 1e7)),
+    rideSeconds: sane(data.rideSeconds, 1e7),
+    rollUnits: sane(data.rollUnits, 1e9),
   };
+}
+
+/** Um acessório válido por lugar (id desconhecido ou no lugar errado vira "nada"). */
+function readOutfit(value: unknown): Outfit {
+  const outfit = emptyOutfit();
+  if (!value || typeof value !== 'object') return outfit;
+  const data = value as Record<string, unknown>;
+  for (const slot of ACCESSORY_SLOTS) {
+    const id = data[slot];
+    if (typeof id === 'string' && isAccessoryId(id) && accessory(id).slot === slot) outfit[slot] = id;
+  }
+  return outfit;
 }
 
 export function loadSave(): SaveData {
@@ -142,6 +172,9 @@ export function loadSave(): SaveData {
       achievements: readIds(data.achievements, isAchievementId),
       perksUsed: readIds(data.perksUsed, isPerkId),
       skin: typeof data.skin === 'string' && isSkinId(data.skin) ? data.skin : DEFAULT_SKIN,
+      outfit: readOutfit(data.outfit),
+      seenLooks: readIds(data.seenLooks, isLookKey),
+      found: readIds(data.found, isAccessoryId),
       stats: readStats(data.stats),
     };
   } catch {

@@ -2,12 +2,13 @@ import * as THREE from 'three';
 import { Physics, FIXED_DT, RAPIER, Groups, interactionGroups } from './core/Physics';
 import { Input } from './core/Input';
 import { ThirdPersonCamera, CAMERA_PROBE_RADIUS, type CameraBall } from './core/ThirdPersonCamera';
+import { ShowcaseCamera } from './core/ShowcaseCamera';
 import { loadSave, writeSave, type SaveData } from './core/save';
 import { settings, nativePixelRatio, type GameSettings } from './core/settings';
 import { Graphics, type RenderOptions } from './render/Graphics';
 import { globalUniforms } from './render/shaderChunks';
 import { clearFrameView, updateFrameView } from './render/frameView';
-import { Terrain, terrainHeight, terrainNormal, dirtAmount, BURROW } from './world/Terrain';
+import { Terrain, terrainHeight, terrainNormal, dirtAmount, BURROW, PLAY_RADIUS } from './world/Terrain';
 import { Scenery } from './world/Scenery';
 import { Grass } from './world/Grass';
 import { GroundCover } from './world/GroundCover';
@@ -22,6 +23,9 @@ import { sphereVolume } from './world/scenery/context';
 import { DungBall, START_RADIUS } from './entities/DungBall';
 import { Beetle } from './entities/Beetle';
 import { Effects, type CritterEvent, type EffectsFrame } from './fx/Effects';
+import { BeetleAura } from './fx/BeetleAura';
+import { RareFind } from './world/RareFind';
+import { rollRareFind } from './progression/rareFinds';
 import type { Critters } from './fx/critters/Critters';
 import type { ChunkedInstances } from './render/ChunkedInstances';
 import { disposeReplaced } from './render/dispose';
@@ -51,9 +55,11 @@ import {
 } from './progression/perks';
 import type { RoundRequest } from './progression/requests';
 import { skin, type SkinId } from './progression/skins';
+import { accessory, isAccessoryId, type Outfit } from './progression/accessories';
+import type { Look } from './progression/looks';
 import { quality } from './core/device';
 import { GRAVITY } from './core/Physics';
-import { clamp, mixSeed, randomSeed } from './utils/math';
+import { clamp, createRng, mixSeed, randomSeed } from './utils/math';
 
 /** Evita "espiral da morte" quando a aba volta do segundo plano. */
 const MAX_FRAME_TIME = 0.1;
@@ -90,7 +96,12 @@ const GardenBudget = { playing: 2.5, burying: 8, paused: 10 } as const;
 /** Quadros até descartar o que saiu de cena (o substituto já foi desenhado: nada recompila). */
 const DISPOSE_AFTER_FRAMES = 3;
 /** Sorteios derivados da semente do jardim (grama, cobertura e bichos de cada jardim). */
-const GardenSalt = { grass: 11, cover: 12, critters: 13 } as const;
+const GardenSalt = { grass: 11, cover: 12, critters: 13, find: 14 } as const;
+/** Achado raro: longe assim do besouro quando nasce (tem que explorar pra achar). */
+const RARE_FIND_MIN_DISTANCE = 15;
+/** Até que distância do besouro o achado solta brilhinhos (o facho se vê de mais longe). */
+const RARE_FIND_GLINT_RANGE = 45;
+const RARE_FIND_GOLD = new THREE.Color('#ffc94a');
 /** O que cada passo da montagem do jardim devolve: `idle` = nada a fazer até a bola cair na toca. */
 type GardenStep = 'idle' | void;
 
@@ -189,7 +200,19 @@ export class Game {
   private antFriendTimer = 0;
   /** Maior raio da bola nesta rodada (segredo "Derreteu tudo"). */
   private roundPeakRadius = START_RADIUS;
+  /** Visual vestido agora no besouro (casco + acessórios), pra só mexer quando muda. */
   private currentSkin: SkinId | null = null;
+  private currentOutfit: Outfit | null = null;
+  /** Partículas dos cascos vivos (magma, galáxia...). */
+  private readonly aura = new BeetleAura();
+  /** Câmera do provador (guarda-roupa aberto) e o visual que está sendo provado. */
+  private readonly showcase = new ShowcaseCamera();
+  private lookPreview: Look | null = null;
+  private readonly freeArea = { x: 0, y: 0, width: 1, height: 1 };
+  private readonly viewport = { width: 1, height: 1 };
+  /** Achado raro do jardim atual (um acessório brilhando em algum canto). */
+  private readonly rareFind = new RareFind();
+  private readonly achievementToast: AchievementToast;
   /** O aviso de pedido dourado já saiu nesta rodada. */
   private goldenAnnounced = false;
 
@@ -228,7 +251,7 @@ export class Game {
     this.hud = new Hud(uiRoot, this.input);
     this.menu = new Menu(uiRoot, this.hud.isTouch, this.progression);
     // Depois do menu: o aviso de conquista fica por cima dele (dá pra conquistar comendo na toca).
-    const achievementToast = new AchievementToast(uiRoot);
+    const achievementToast = (this.achievementToast = new AchievementToast(uiRoot));
     this.progression.onAchievement = (unlock) => {
       achievementToast.show(unlock);
       this.audio.achievement();
@@ -274,6 +297,17 @@ export class Game {
 
     this.menu.onPlay = () => this.start();
     this.menu.burrow.onMeal = (meal) => this.onMeal(meal);
+    // Guarda-roupa: provador (câmera de frente), provar os trancados, girar arrastando.
+    this.menu.onSheetChange = (sheet) => {
+      const wardrobe = sheet === 'wardrobe';
+      if (wardrobe && !this.showcase.active) this.showcase.resetSpin();
+      this.showcase.active = wardrobe;
+      if (wardrobe) this.showcase.setFrame(this.menu.wardrobe.currentTab);
+      else this.setLookPreview(null);
+    };
+    this.menu.wardrobe.onPreview = (look) => this.setLookPreview(look);
+    this.menu.wardrobe.onTabChange = (tab) => this.showcase.setFrame(tab);
+    this.menu.onShowcaseDrag = (dx) => this.showcase.drag(dx);
     this.hud.onOpenMenu = () => this.pause();
     this.hud.onOpenBurrow = () => this.openBurrow();
     this.hud.perkPicker.onChoose = (perk) => this.choosePerk(perk);
@@ -355,6 +389,8 @@ export class Game {
     scene.add(this.looseObjects.group);
     this.burrow = new Burrow();
     scene.add(this.burrow.group);
+    scene.add(this.rareFind.group);
+    this.rareFind.compile = (object) => this.graphics.renderer.compileAsync(object, this.graphics.camera, scene).then(() => undefined);
     this.puddles = new Puddles();
     scene.add(this.puddles.group);
     this.frameInfo.puddles = this.puddles.states;
@@ -366,7 +402,11 @@ export class Game {
 
     this.beetle = new Beetle(this.physics, this.spawn, this.ball);
     scene.add(this.beetle.model.root);
-    this.applySkin();
+    this.placeRareFind();
+    scene.add(this.aura.points);
+    // Acessório com material novo compila em segundo plano antes de aparecer (sem engasgo).
+    this.beetle.model.outfit.compile = (object) => this.graphics.renderer.compileAsync(object, this.graphics.camera, scene).then(() => undefined);
+    this.applyLook();
 
     const surface: SurfaceProbe = (x, z) => {
       const water = this.puddles.surfaceAt(x, z);
@@ -546,12 +586,28 @@ export class Game {
     }
   }
 
-  /** Casco escolhido na toca → besouro (só quando mudou). */
-  private applySkin(): void {
-    const id = this.progression.skin;
-    if (id === this.currentSkin) return;
-    this.currentSkin = id;
-    this.beetle.model.setSkin(skin(id));
+  /** Provando um visual trancado no guarda-roupa (null = volta pro que está salvo). */
+  private setLookPreview(look: Look | null): void {
+    this.lookPreview = look;
+    if (this.beetle) this.applyLook();
+  }
+
+  /** Visual escolhido no guarda-roupa (ou sendo provado) → besouro (só o que mudou). */
+  private applyLook(): void {
+    const preview = this.lookPreview;
+    const id = preview?.kind === 'skin' ? preview.id : this.progression.skin;
+    if (id !== this.currentSkin) {
+      this.currentSkin = id;
+      const def = skin(id);
+      this.beetle.model.setSkin(def);
+      this.aura.setKind(def.aura ?? null, def.auraColors);
+    }
+    const outfit: Outfit = preview?.kind === 'acc' ? { ...this.progression.outfit, [accessory(preview.id).slot]: preview.id } : this.progression.outfit;
+    const current = this.currentOutfit;
+    if (!current || current.head !== outfit.head || current.face !== outfit.face || current.neck !== outfit.neck || current.back !== outfit.back) {
+      this.currentOutfit = { ...outfit };
+      this.beetle.model.setOutfit(outfit);
+    }
   }
 
   /**
@@ -581,6 +637,10 @@ export class Game {
   private updateRider(dt: number): void {
     const ability = this.progression.rider;
     if (ability.update(dt) && this.beetle.riding) this.beetle.dismount();
+    // Contadores do rodeio (tempo em cima da bola) e da maratona (quanto a bola rolou).
+    const v = this.ball.body.linvel();
+    const rolled = this.ball.isSolid ? Math.hypot(v.x, v.z) * dt : 0;
+    this.progression.noteMotion(this.beetle.riding ? dt : 0, rolled);
     // Desceu sozinho (pulou, bola caiu na toca): o poder começa a recarregar.
     if (ability.active && !this.beetle.riding) ability.stop();
     const ready = ability.ready;
@@ -649,7 +709,7 @@ export class Game {
       const hit = world.castShape(origin, rotation, dir, shape, 0, maxDistance, false, undefined, groups);
       return hit ? hit.time_of_impact : null;
     };
-    this.cameraRig.collision = {
+    this.cameraRig.collision = this.showcase.collision = {
       cast: cast(solid),
       castSoft: cast(soft),
       insideSoft: (point) => {
@@ -1114,6 +1174,8 @@ export class Game {
   /** Rodada nova: um jardim novo (outro sorteio) e uma bola pequena brota do lado do besouro. */
   private startNewRound(): void {
     this.swapGarden();
+    // O achado do jardim antigo (se ninguém pegou) foi embora junto; o novo jardim sorteia o dele.
+    this.placeRareFind();
     // Teias voltam, bichos param de ser atraídos (o Fedor irresistível era da rodada).
     this.effects.newRound();
     this.effects.setAttract(0);
@@ -1153,6 +1215,9 @@ export class Game {
   private renderFrame(alpha: number, dt: number): void {
     this.ball.render(alpha, dt);
     this.beetle.render(alpha, dt);
+    this.beetle.model.root.updateMatrixWorld();
+    this.aura.update(dt, this.beetle.model.root, this.graphics.pixelScale);
+    this.updateRareFind(dt);
 
     const player = this.beetle.renderPosition(alpha, this.tmpPlayer);
     const ballPos = this.ball.root.position;
@@ -1163,7 +1228,9 @@ export class Game {
     this.cameraBall.center.copy(ballPos);
     this.cameraBall.radius = this.ball.radius;
     this.cameraRig.ball = burying ? null : this.cameraBall;
+    this.showcase.ball = this.cameraRig.ball;
     this.cameraRig.update(dt, player, cameraBall, this.ball.radius, this.beetle.pushing || burying);
+    const showcaseFocus = this.updateShowcase(dt);
     this.graphics.followFocus(player);
     // Jogando, o que é instanciado pelo mapa todo (montinhos, detritos, bichos) só desenha o que
     // cabe nesta visão; no menu vai tudo (é lá que cada shader compila, antes de o jogo começar).
@@ -1174,11 +1241,14 @@ export class Game {
     globalUniforms.uTime.value = this.elapsed;
     const pushers = globalUniforms.uPushers.value;
     // Raio generoso: com a grama densa, o besouro precisa de uma clareira para aparecer.
-    pushers[0].set(player.x, player.y, player.z, 0.95);
+    // No provador a clareira abre mais (a câmera chega perto e a grama não pode tapar a lente).
+    pushers[0].set(player.x, player.y, player.z, 0.95 + this.showcase.blend * 1.6);
     pushers[1].set(ballPos.x, ballPos.y - this.ball.radius, ballPos.z, this.ball.isSolid ? this.ball.radius * 1.05 : 0);
+    // Provador: o capim em volta da lente deita (senão uma folha tapa o close).
+    pushers[2].set(camera.position.x, camera.position.y - 1, camera.position.z, this.showcase.blend > 0.01 ? 1.3 * this.showcase.blend : 0);
     this.grass.update(camera);
     this.groundCover.update(camera);
-    this.graphics.setFocusDistance(camera.position.distanceTo(player));
+    this.graphics.setFocusDistance(this.showcase.blend > 0.5 ? showcaseFocus : camera.position.distanceTo(player));
     this.scenery.update(dt);
     this.collectibles.update(dt);
     this.burrow.update(dt, this.elapsed, this.ball.radius);
@@ -1195,6 +1265,78 @@ export class Game {
     this.updateAudio(dt, player);
 
     this.graphics.render(this.elapsed);
+  }
+
+  /**
+   * Sorteia o achado raro do jardim atual (um acessório ainda trancado, às vezes)
+   * e põe num lugar livre, longe do besouro. Em desenvolvimento, `?find=<id>`
+   * força um acessório (pra testar).
+   */
+  private placeRareFind(): void {
+    this.rareFind.clear();
+    const rng = createRng(mixSeed(this.scenery.seed, GardenSalt.find));
+    let id = rollRareFind((acc) => this.progression.isAccessoryUnlocked(acc), rng.next);
+    if (import.meta.env.DEV) {
+      const forced = new URLSearchParams(location.search).get('find');
+      if (forced && isAccessoryId(forced)) id = forced;
+    }
+    if (!id) return;
+    const beetle = this.beetle.center;
+    for (let i = 0; i < 120; i++) {
+      const a = rng.next() * Math.PI * 2;
+      const d = 12 + Math.sqrt(rng.next()) * (PLAY_RADIUS - 16);
+      const x = Math.cos(a) * d;
+      const z = Math.sin(a) * d;
+      if (Math.hypot(x - beetle.x, z - beetle.z) < RARE_FIND_MIN_DISTANCE) continue;
+      if (!this.scenery.isFree(x, z, 1.2) || this.scenery.isInsideSolid(x, z, 1.2) || this.scenery.isDug(x, z) || this.scenery.isCovered(x, z, 0.8)) continue;
+      this.rareFind.place(id, x, z);
+      return;
+    }
+  }
+
+  /** Achado raro: anima, solta brilhinho de vez em quando e confere se o besouro (ou a bola) passou por cima. */
+  private updateRareFind(dt: number): void {
+    if (!this.rareFind.active) return;
+    const player = this.beetle.renderPosition(1, this.tmpFocus);
+    const at = this.rareFind.position!;
+    if (this.rareFind.update(dt) && player.distanceTo(at) < RARE_FIND_GLINT_RANGE) this.effects.sparkle(at, RARE_FIND_GOLD);
+    if (this.paused || this.choosing || this.burrow.isBusy) return;
+    const ball = this.ball.root.position;
+    const id = this.rareFind.collect(player, ball, this.ball.isSolid ? this.ball.radius : 0);
+    if (!id) return;
+    const where = at.clone();
+    if (!this.progression.findAccessory(id)) return;
+    this.effects.celebrate(where.setY(where.y - 0.8), 0.6);
+    this.effects.sparkle(where.setY(where.y + 0.8), RARE_FIND_GOLD);
+    this.audio.achievement();
+    this.achievementToast.showFind({ kind: 'acc', id });
+    this.rumble(0.5, 0.8, 350);
+  }
+
+  /**
+   * Provador: enquadra o besouro no pedaço da tela que a placa do guarda-roupa
+   * não cobre (à esquerda no computador, em cima no celular). Devolve a
+   * distância da câmera até o alvo (foco do desfoque).
+   */
+  private updateShowcase(dt: number): number {
+    if (!this.showcase.active && this.showcase.blend === 0) return 0;
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    this.viewport.width = w;
+    this.viewport.height = h;
+    const free = this.freeArea;
+    free.x = 0;
+    free.y = 0;
+    free.width = w;
+    free.height = h;
+    const sheet = this.menu.wardrobe.element;
+    if (!sheet.hidden) {
+      const rect = sheet.getBoundingClientRect();
+      // Placa do lado (computador): livre à esquerda dela. Placa embaixo (celular): livre em cima.
+      if (rect.left > w * 0.25) free.width = rect.left;
+      else if (rect.top > h * 0.2) free.height = rect.top;
+    }
+    return this.showcase.apply(this.graphics.camera, this.beetle.model.root, dt, this.viewport, free);
   }
 
   private updateEffects(dt: number, player: THREE.Vector3): void {
@@ -1385,8 +1527,8 @@ export class Game {
       perks: this.progression.roundPerks,
     });
     this.hud.setPantryCount(this.progression.pantry.length);
-    // Trocou de casco na toca: o besouro veste na hora (aparece por trás do menu).
-    if (this.beetle) this.applySkin();
+    // Trocou de visual no guarda-roupa: o besouro veste na hora (aparece por trás do menu).
+    if (this.beetle) this.applyLook();
   }
 
   /**

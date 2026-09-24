@@ -1397,6 +1397,15 @@ body {
   width: 26px;
   height: 26px;
 }
+/* Achado raro: a figurinha do acessório num medalhão creme com aro de sol. */
+.achievement-toast__icon--find {
+  background: radial-gradient(circle at 50% 35%, #fffaf0 0%, #f3e3c7 100%);
+  box-shadow: 0 0 0 3px var(--color-accent), 0 3px 0 3px #d98424;
+}
+.achievement-toast__icon--find svg {
+  width: 36px;
+  height: 36px;
+}
 .achievement-toast__text {
   display: grid;
   min-width: 0;

@@ -1730,34 +1730,111 @@ button.catalog-tile.is-selected {
 }
 
 /* ==========================================================================
-   Cascos do besouro
+   Guarda-roupa (casco e acessórios do besouro)
+
+   A placa fica à direita (embaixo no celular) e o besouro vira o centro da
+   tela: o menu principal sai de cena e a noite do céu clareia, pro provador
+   aparecer. Cada raridade tem a sua cor (comum, raro, épico, lendário); os
+   lendários brilham na borda.
    ========================================================================== */
-.skin-list {
-  display: grid;
-  gap: var(--space-2);
-  margin: var(--space-3) 0 0;
-  padding: 0;
-  list-style: none;
+.menu {
+  --rarity-common: #a3927f;
+  --rarity-rare: #3f7fd8;
+  --rarity-epic: #8a4fd6;
+  --rarity-legendary: #e69a1e;
 }
-.skin-card {
+.menu.has-wardrobe .menu__main {
+  opacity: 0;
+  transform: translateX(-18px);
+  pointer-events: none;
+}
+.menu.has-wardrobe .menu__sky {
+  opacity: 0.28;
+  /* Arrastar o dedo gira o besouro: o navegador não pode tomar o gesto pra si. */
+  touch-action: none;
+}
+/* Fora da placa, arrastar gira o besouro. */
+.menu.has-wardrobe {
+  cursor: grab;
+}
+.menu.has-wardrobe.is-dragging {
+  cursor: grabbing;
+}
+.menu.has-wardrobe .sheet {
+  cursor: auto;
+}
+
+.wardrobe-summary {
+  margin: 0 var(--space-6) var(--space-3);
+}
+.wardrobe-summary .catalog-progress__hint {
+  font-size: 12.5px;
+}
+
+/* Cinco abas: só a ativa mostra o nome (as outras no ícone, com o nome pro leitor de tela). */
+.sheet--wardrobe .tabs__tab {
+  position: relative;
+  flex: 1 1 0;
+}
+.sheet--wardrobe .tabs__tab[aria-selected="true"] {
+  flex: 2.4 1 auto;
+}
+.sheet--wardrobe .tabs__tab:not([aria-selected="true"]) span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+/* Aba com visual novo: bolinha de sol no canto. */
+.sheet--wardrobe .tabs__tab.has-new::after {
+  content: "";
+  position: absolute;
+  top: 5px;
+  right: 9px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--dawn-sun);
+  box-shadow: 0 0 0 2px #fbf1e2;
+}
+
+/* Cartão do visual escolhido */
+.look-detail {
   display: grid;
-  grid-template-columns: 64px 1fr auto;
-  align-items: center;
+  grid-template-columns: 64px 1fr;
+  align-items: start;
   gap: var(--space-3);
-  padding: 10px 12px 10px 10px;
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.65);
-  box-shadow: 0 2px 0 rgba(43, 42, 94, 0.06);
-}
-.skin-card:focus-visible {
-  outline: 3px solid var(--dawn-sun-deep);
-  outline-offset: 2px;
-}
-.skin-card.is-using {
+  margin: var(--space-3) 0 var(--space-3);
+  padding: var(--space-3) var(--space-4) var(--space-3) var(--space-3);
+  border-radius: 20px;
   background: #fff;
-  box-shadow: 0 0 0 2px var(--dawn-sun), 0 4px 0 rgba(217, 132, 36, 0.3);
+  box-shadow: 0 2px 0 rgba(43, 42, 94, 0.08), inset 0 0 0 1.5px var(--look-accent, rgba(255, 181, 71, 0.45));
+  animation: pop-in var(--dur-med) var(--ease-out);
 }
-.skin-card__art {
+.look-detail.is-common { --look-accent: rgba(163, 146, 127, 0.45); }
+.look-detail.is-rare { --look-accent: rgba(63, 127, 216, 0.45); }
+.look-detail.is-epic { --look-accent: rgba(138, 79, 214, 0.5); }
+.look-detail.is-legendary {
+  --look-accent: rgba(230, 154, 30, 0.7);
+  background: linear-gradient(135deg, #fffaf0 0%, #fff 45%, #fff6e0 100%);
+}
+.look-detail.is-none {
+  --look-accent: rgba(43, 42, 94, 0.12);
+  background: rgba(255, 255, 255, 0.7);
+}
+/* No controle, o cartão fica preso no topo enquanto a grade rola (igual ao catálogo). */
+.using-gamepad .look-detail {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  box-shadow: 0 2px 0 rgba(43, 42, 94, 0.08), inset 0 0 0 1.5px var(--look-accent, rgba(255, 181, 71, 0.45)), 0 10px 18px -8px rgba(43, 42, 94, 0.35);
+}
+.using-gamepad .sheet--wardrobe .look-tile {
+  scroll-margin-top: 190px;
+}
+.look-detail__art {
   display: grid;
   place-items: center;
   width: 64px;
@@ -1765,34 +1842,81 @@ button.catalog-tile.is-selected {
   border-radius: 50%;
   background: radial-gradient(circle at 50% 35%, #fffaf0 0%, #f3e3c7 100%);
   box-shadow: inset 0 -3px 0 rgba(58, 42, 34, 0.08);
+  color: var(--dawn-violet);
 }
-.skin-card__art svg {
+.look-detail__art svg {
   width: 50px;
   height: 50px;
 }
-.skin-card.is-locked .skin-card__art svg {
-  filter: grayscale(1) brightness(0.4);
-  opacity: 0.35;
+.look-detail.is-locked .look-detail__art svg {
+  filter: saturate(0.55);
 }
-.skin-card__text {
+.look-detail__text {
   display: grid;
-  gap: 2px;
+  gap: 5px;
   min-width: 0;
+}
+.look-detail__text p {
+  margin: 0;
   font-size: 13px;
   font-weight: 600;
-  line-height: 1.35;
+  line-height: 1.4;
   color: var(--color-ink-soft);
 }
-.skin-card__text strong {
-  font-size: 15px;
+.look-detail__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px var(--space-2);
+}
+.look-detail__row strong {
+  font-size: 16px;
   font-weight: 900;
   color: var(--color-ink);
 }
-.skin-card.is-locked .skin-card__text {
-  opacity: 0.75;
+.look-detail__footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  margin-top: 2px;
 }
-.skin-card__use {
-  padding: 7px 16px;
+p.look-detail__unlock {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12.5px;
+  font-weight: 800;
+  color: var(--dawn-indigo);
+}
+.look-detail__unlock svg {
+  flex-shrink: 0;
+  width: 15px;
+  height: 15px;
+}
+.look-detail__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px 3px 8px;
+  border-radius: var(--radius-pill);
+  font-size: 12px;
+  font-weight: 900;
+}
+.look-detail__status svg {
+  width: 13px;
+  height: 13px;
+}
+.look-detail__status.is-worn {
+  background: rgba(95, 184, 74, 0.16);
+  color: #2f5a1c;
+}
+.look-detail__status.is-trying {
+  background: rgba(138, 79, 214, 0.12);
+  color: #5b2fa4;
+}
+.look-detail__action {
+  padding: 6px 15px;
   border: 0;
   border-radius: var(--radius-pill);
   background: var(--dawn-indigo);
@@ -1804,53 +1928,345 @@ button.catalog-tile.is-selected {
   box-shadow: 0 3px 0 rgba(15, 12, 40, 0.35);
   transition: transform var(--dur-fast) var(--ease-out);
 }
-.skin-card__use:hover {
+.look-detail__action:hover {
   transform: translateY(-1px);
 }
-.skin-card__use:active {
+.look-detail__action:active {
   transform: translateY(2px);
   box-shadow: 0 1px 0 rgba(15, 12, 40, 0.35);
 }
-.skin-card__use:focus-visible {
+.look-detail__action:focus-visible {
   outline: 3px solid var(--dawn-sun-deep);
   outline-offset: 2px;
 }
-.skin-card__status {
+
+/* Acessório trancado: também dá pra achar no jardim. */
+p.look-detail__find {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  max-width: 170px;
+  gap: 5px;
   font-size: 12px;
-  font-weight: 800;
-  line-height: 1.3;
-  color: var(--dawn-indigo);
-  text-align: right;
+  font-weight: 700;
+  color: #8a5a12;
 }
-.skin-card__status svg {
+.look-detail__find svg {
   flex-shrink: 0;
   width: 14px;
   height: 14px;
 }
-.skin-card__status.is-using {
+
+/* Selos de raridade e de "animado" */
+.rarity-chip,
+.anim-chip,
+.found-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  font-size: 10.5px;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.rarity-chip.is-common { background: rgba(163, 146, 127, 0.18); color: #6b5a48; }
+.rarity-chip.is-rare { background: rgba(63, 127, 216, 0.14); color: #1f5bb0; }
+.rarity-chip.is-epic { background: rgba(138, 79, 214, 0.14); color: #6a33b8; }
+.rarity-chip.is-legendary {
+  background: linear-gradient(90deg, #ffd66b, #ffb547, #ffd66b);
+  background-size: 200% 100%;
+  color: #6b3c00;
+  animation: legendary-shine 3.2s linear infinite;
+}
+.found-chip {
+  background: rgba(95, 184, 74, 0.16);
   color: #2f5a1c;
 }
-@media (max-width: 520px) {
-  .skin-card {
-    grid-template-columns: 52px 1fr;
+.anim-chip {
+  padding-left: 5px;
+  background: rgba(255, 181, 71, 0.2);
+  color: #8a5a12;
+}
+.anim-chip svg {
+  width: 12px;
+  height: 12px;
+}
+
+/* Grade de visuais */
+.look-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0 0 var(--space-2);
+  list-style: none;
+}
+.look-grid__cell {
+  display: flex;
+}
+.look-tile {
+  --tile-rarity: var(--rarity-common);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  padding: 10px 6px 12px;
+  border: 0;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.66);
+  box-shadow: 0 2px 0 rgba(43, 42, 94, 0.08);
+  color: inherit;
+  font: inherit;
+  text-align: center;
+  cursor: pointer;
+  transition:
+    transform var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out);
+}
+/* Faixinha da raridade embaixo do quadradinho. */
+.look-tile::after {
+  content: "";
+  position: absolute;
+  left: 30%;
+  right: 30%;
+  bottom: 5px;
+  height: 3px;
+  border-radius: var(--radius-pill);
+  background: var(--tile-rarity);
+  opacity: 0.8;
+}
+.look-tile.is-rare { --tile-rarity: var(--rarity-rare); }
+.look-tile.is-epic { --tile-rarity: var(--rarity-epic); }
+.look-tile.is-legendary { --tile-rarity: linear-gradient(90deg, #ffd66b, #e69a1e, #ffd66b); }
+.look-tile.is-none::after { display: none; }
+.look-tile:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 0 rgba(43, 42, 94, 0.1);
+}
+.look-tile:active {
+  transform: translateY(1px);
+}
+.look-tile:focus-visible {
+  outline: 3px solid var(--dawn-sun-deep);
+  outline-offset: 2px;
+}
+.look-tile.is-selected {
+  background: #fff;
+  box-shadow: 0 0 0 2px var(--dawn-violet), 0 4px 0 rgba(75, 63, 134, 0.25);
+}
+.look-tile.is-worn {
+  background: #fff;
+  box-shadow: 0 0 0 2px var(--dawn-sun), 0 4px 0 rgba(217, 132, 36, 0.3);
+}
+.look-tile.is-trying {
+  background: #fff;
+  box-shadow: 0 0 0 2px var(--rarity-epic), 0 4px 0 rgba(138, 79, 214, 0.25);
+}
+/* Lendário: borda que brilha de leve. */
+.look-tile.is-legendary:not(.is-locked) {
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.82), rgba(255, 255, 255, 0.82)) padding-box,
+    linear-gradient(120deg, #ffe7a3, #f2a93b, #fff4d0, #e69a1e) border-box;
+  border: 2px solid transparent;
+  padding: 8px 4px 10px;
+}
+.look-tile__art {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 35%, #fffaf0 0%, #f3e3c7 100%);
+  box-shadow: inset 0 -3px 0 rgba(58, 42, 34, 0.08);
+  color: var(--dawn-violet);
+}
+.look-tile__art svg {
+  width: 42px;
+  height: 42px;
+}
+.look-tile.is-locked .look-tile__art svg {
+  filter: grayscale(1) brightness(0.55);
+  opacity: 0.38;
+}
+.look-tile.is-locked.is-trying .look-tile__art svg,
+.look-tile.is-locked.is-selected .look-tile__art svg {
+  filter: grayscale(0.4);
+  opacity: 0.8;
+}
+.look-tile__name {
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.2;
+  color: var(--color-ink);
+}
+.look-tile.is-locked .look-tile__name {
+  color: var(--color-ink-soft);
+}
+.look-tile__state {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: rgba(43, 42, 94, 0.08);
+  color: var(--dawn-indigo);
+}
+.look-tile__state svg {
+  width: 12px;
+  height: 12px;
+}
+.look-tile.is-worn .look-tile__state {
+  background: var(--dawn-sun);
+  color: #2a1706;
+}
+.look-tile__new {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  padding: 2px 7px;
+  border-radius: var(--radius-pill);
+  background: var(--dawn-sun);
+  color: #2a1706;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.03em;
+  box-shadow: 0 2px 0 var(--dawn-sun-deep);
+  animation: pop-in var(--dur-med) var(--ease-out);
+}
+
+/* Ícones vivos (cascos animados e acessórios que se mexem) */
+.look-anim-twinkle {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: look-twinkle 2.4s ease-in-out infinite;
+}
+.look-anim-late {
+  animation-delay: -1.2s;
+}
+.look-anim-pulse {
+  animation: look-pulse 1.8s ease-in-out infinite;
+}
+.look-anim-shift {
+  animation: look-shift 4.5s ease-in-out infinite alternate;
+}
+.look-anim-hue {
+  animation: look-hue 6s linear infinite;
+}
+.look-anim-sweep {
+  animation: look-sweep 3.4s ease-in-out infinite;
+}
+@keyframes look-twinkle {
+  0%,
+  100% {
+    opacity: 0.25;
+    transform: scale(0.6) rotate(0deg);
   }
-  .skin-card__art {
-    width: 52px;
-    height: 52px;
+  50% {
+    opacity: 1;
+    transform: scale(1.1) rotate(45deg);
   }
-  .skin-card__use,
-  .skin-card__status {
-    grid-column: 2;
-    justify-self: start;
-    text-align: left;
+}
+@keyframes look-pulse {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+@keyframes look-shift {
+  to {
+    transform: translateX(-2.5px);
+  }
+}
+@keyframes look-hue {
+  to {
+    filter: hue-rotate(360deg);
+  }
+}
+@keyframes look-sweep {
+  0%,
+  35% {
+    transform: translateX(-4px);
+    opacity: 0;
+  }
+  50% {
+    opacity: 1;
+  }
+  75%,
+  100% {
+    transform: translateX(16px);
+    opacity: 0;
+  }
+}
+@keyframes legendary-shine {
+  to {
+    background-position: -200% 0;
   }
 }
 
-/* Toca com cinco abas: no computador também não cabe o nome de todas. Só a
+/* Celular em pé: a placa vira uma gaveta embaixo e o besouro fica em cima. */
+@media (max-width: 720px) {
+  .sheet--wardrobe {
+    top: auto;
+    height: min(62vh, 620px);
+    border-radius: 26px 26px 0 0;
+    animation: wardrobe-up 380ms var(--ease-out);
+  }
+  .wardrobe-summary {
+    margin-inline: var(--space-5);
+  }
+  .look-grid {
+    grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+  }
+  .look-detail {
+    grid-template-columns: 52px 1fr;
+  }
+  .look-detail__art {
+    width: 52px;
+    height: 52px;
+  }
+  .look-detail__art svg {
+    width: 42px;
+    height: 42px;
+  }
+}
+/* Celular deitado: a placa fica do lado (mais estreita) e o besouro à esquerda. */
+@media (max-height: 520px) and (max-width: 900px) {
+  .sheet--wardrobe {
+    inset: 0 0 0 auto;
+    width: min(56%, 470px);
+    height: auto;
+    border-radius: 0;
+  }
+  .wardrobe-summary .catalog-progress__hint {
+    display: none;
+  }
+}
+@media (max-height: 520px) {
+  .wardrobe-summary {
+    margin-bottom: var(--space-2);
+  }
+  .look-detail {
+    margin-block: var(--space-2);
+    padding-block: var(--space-2);
+  }
+}
+@keyframes wardrobe-up {
+  from {
+    opacity: 0;
+    transform: translateY(40px);
+  }
+}
+
+/* Toca com quatro abas: no computador também não cabe o nome de todas. Só a
    ativa mostra o nome (as outras ficam no ícone, com o nome ainda lido pelo
    leitor de tela e no title), igual ao celular. */
 .sheet--burrow .tabs__tab {

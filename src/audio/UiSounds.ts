@@ -64,6 +64,8 @@ export class UiSounds {
     else if (el.hasAttribute('data-open')) this.play(uiSheet(el.getAttribute('aria-expanded') === 'true'), 'sheet');
     else if (el.hasAttribute('data-close')) this.play(uiSheet(false), 'sheet');
     else if (el.hasAttribute('data-reset')) this.play(uiReset, 'reset');
+    // Guarda-roupa: vestir (ou provar) tem o "tic" de escolher, não o clique comum.
+    else if (el.hasAttribute('data-pick')) this.play(uiSelect, 'select');
     else this.play(uiClick, 'click');
   };
 

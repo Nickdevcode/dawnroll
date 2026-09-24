@@ -8,6 +8,7 @@ import type { PerkOffer } from '../progression/perks';
 import { Icons } from './icons';
 import { GameIcons, PerkIcons } from './gameIcons';
 import { escapeHtml } from './html';
+import { looksNotice } from './lookText';
 import { PerkPicker } from './PerkPicker';
 import { RoundPanel, type RoundView } from './RoundPanel';
 import { placeMarker, type ProjectedPoint, type ScreenMargins } from './screenMarker';
@@ -505,6 +506,7 @@ export class Hud {
     if (outcome.stored) lines.push([GameIcons.food, escapeHtml(t('result.food', { n: outcome.food.total }))]);
     else if (meal) lines.push([GameIcons.food, escapeHtml(t('result.ate', { xp: meal.xp }))]);
     if (meal && meal.levelAfter > meal.levelBefore) lines.push([GameIcons.star, `<strong>${escapeHtml(t('burrow.levelUp', { n: meal.levelAfter }))}</strong>`]);
+    if (meal && meal.looks.length > 0) lines.push([GameIcons.sparkle, escapeHtml(looksNotice(meal.looks))]);
     if (outcome.goldenDone) lines.push([GameIcons.star, `<strong>${escapeHtml(t('result.golden'))}</strong>`]);
     if (outcome.requestsDone > 0) lines.push([Icons.check, escapeHtml(tn('result.requests', outcome.requestsDone))]);
     if (outcome.discovered.length > 0) {
