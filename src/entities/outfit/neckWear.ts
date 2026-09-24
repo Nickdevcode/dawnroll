@@ -106,16 +106,16 @@ export function bandana(): AccessoryModel {
   object.add(part(paintVertices(collarTube(0.022, 0.55), (p, _n, c) => print(p, c)), cloth));
   // Triângulo caindo na frente, curvado acompanhando o queixo.
   const tri = new THREE.Shape();
-  tri.moveTo(-0.17, 0);
-  tri.lineTo(0.17, 0);
-  tri.quadraticCurveTo(0.03, -0.12, 0, -0.16);
-  tri.quadraticCurveTo(-0.03, -0.12, -0.17, 0);
+  tri.moveTo(-0.14, 0);
+  tri.lineTo(0.14, 0);
+  tri.quadraticCurveTo(0.03, -0.11, 0, -0.145);
+  tri.quadraticCurveTo(-0.03, -0.11, -0.14, 0);
   const flap = extrude(tri, 0.012, 0.005, 12);
   const pos = flap.getAttribute('position') as THREE.BufferAttribute;
   for (let i = 0; i < pos.count; i++) pos.setZ(i, pos.getZ(i) - pos.getX(i) ** 2 * 2.2 + pos.getY(i) * 0.3);
   flap.computeVertexNormals();
   const chin = collarPoint(CHIN_ANGLE);
-  object.add(part(paintVertices(flap, (p, _n, c) => print(p, c)), cloth, [chin.x, chin.y + 0.035, chin.z + 0.015], [-0.4, 0, 0]));
+  object.add(part(paintVertices(flap, (p, _n, c) => print(p, c)), cloth, [chin.x, chin.y + 0.035, chin.z + 0.02], [-0.5, 0, 0]));
   // Nó atrás: duas pontinhas saindo da gola, no alto.
   const knot = collarPoint(Math.PI / 2, 0.012);
   object.add(part(claySphere(0.026, 2, 0.06), Mat.fabric('#d8403c'), knot.toArray() as [number, number, number]));
@@ -142,7 +142,8 @@ export function scarf(): AccessoryModel {
     return c.copy(teal).lerp(cream, Math.sin(a * 9) > 0.35 ? 1 : 0);
   });
   object.add(part(around, knit));
-  const knotAngle = -0.55;
+  // Nó perto do queixo: as pontas pendem na frente do peito, entre as patas da frente.
+  const knotAngle = -1.15;
   const knotAt = collarPoint(knotAngle, 0.02);
   const knot = paintVertices(claySphere(0.04, 2, 0.08, 3, 7), (_p, _n, c) => c.copy(teal));
   object.add(part(knot, knit, knotAt.toArray() as [number, number, number], [0, 0, 0], [1, 1, 0.8]));
@@ -162,7 +163,7 @@ export function scarf(): AccessoryModel {
     paintVertices(merged, (p, _n, c) => c.copy(teal).lerp(cream, p.y < -length ? 1 : Math.sin(-p.y * 70) > 0.2 ? 1 : 0));
     const joints = [0, 0.33, 0.66, 1].map((t) => new THREE.Vector3(0, -length * t, 0));
     const chain = chainSkin(merged, knit, joints, (p) => -p.y / length);
-    const hang = joint(knotAt.toArray() as [number, number, number], [0.2, spread, 0.25 + i * 0.25], true);
+    const hang = joint(knotAt.toArray() as [number, number, number], [0.2, spread, 0.12 + i * 0.2], true);
     hang.add(chain.mesh);
     object.add(hang);
     tails.push(chain.bones);
@@ -173,10 +174,14 @@ export function scarf(): AccessoryModel {
       const run = Math.min(pose.speed / 5, 1);
       tails.forEach((bones, t) => {
         bones.forEach((bone, i) => {
-          if (i === 0) return;
-          // Correndo, as pontas voam pra trás (rotação em X) e tremulam; paradas, balançam de leve.
+          // A raiz desconta a inclinação da cabeça: a ponta cai pra baixo mesmo empurrando a bola.
+          if (i === 0) {
+            bone.rotation.x = -pose.headPitch * 0.8;
+            return;
+          }
+          // Correndo, as pontas voam pra trás (X positivo leva a ponta pra -Z) e tremulam; paradas, balançam de leve.
           const flutter = Math.sin(pose.time * (7 + t) - i * 1.3) * (0.05 + run * 0.18);
-          bone.rotation.x = -(run * 0.35 + pose.airborne * 0.25) * (0.5 + i * 0.25) + flutter;
+          bone.rotation.x = (run * 0.3 + pose.airborne * 0.25) * (0.5 + i * 0.25) + flutter;
           bone.rotation.z = Math.sin(pose.time * 2.1 + t * 1.7 + i) * 0.06;
         });
       });
@@ -242,7 +247,7 @@ export function cowbell(): AccessoryModel {
       const push = Math.sin(pose.time * (4 + pose.speed * 2.2)) * Math.min(pose.speed / 3, 1) * 6 + pose.airborne * 3;
       velocity += (push - swing * 60 - velocity * 4) * pose.dt;
       swing += velocity * pose.dt;
-      pivot.rotation.x = swing * 0.6;
+      pivot.rotation.x = swing * 0.6 - pose.headPitch;
       pivot.rotation.z = Math.sin(pose.time * 2.3) * 0.05 + swing * 0.3;
     },
   };
@@ -293,7 +298,7 @@ export function medal(): AccessoryModel {
   return {
     object,
     update: (pose: OutfitPose) => {
-      pivot.rotation.x = -0.25 + Math.sin(pose.time * (3 + pose.speed * 2)) * 0.08 * Math.min(pose.speed / 2, 1);
+      pivot.rotation.x = -0.25 - pose.headPitch * 0.8 + Math.sin(pose.time * (3 + pose.speed * 2)) * 0.08 * Math.min(pose.speed / 2, 1);
       pivot.rotation.z = Math.sin(pose.time * 1.7) * 0.04;
     },
   };

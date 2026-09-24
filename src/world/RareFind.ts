@@ -91,7 +91,7 @@ export class RareFind {
   private readonly haloMat: THREE.SpriteMaterial;
   private readonly ring: THREE.Mesh;
   private readonly ringMat = ringMaterial();
-  private readonly pose: OutfitPose = { time: 0, dt: 0, speed: 0, pushBlend: 0, airborne: 0, verticalSpeed: 0 };
+  private readonly pose: OutfitPose = { time: 0, dt: 0, speed: 0, pushBlend: 0, airborne: 0, verticalSpeed: 0, headPitch: 0 };
   private time = 0;
   /** Quanto o brilho está aparecendo agora (0 longe, 1 perto). */
   private fade = 0;

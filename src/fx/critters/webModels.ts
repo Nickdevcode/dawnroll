@@ -7,9 +7,9 @@ import { ball, glintEye, limb, mergeParts } from './models';
 /**
  * Teia orbicular e a aranha-de-jardim (Argiope): o desenho da teia num canvas
  * (raios, espiral de captura, o miolo e o "X" em zigue-zague que a Argiope
- * tece no meio — o estabilimento), a aranha em três poses (na teia e duas de
- * corrida), o fio de seda, a gotinha de orvalho e o chumaço de teia que gruda
- * na bola.
+ * tece no meio — o estabilimento), a aranha (parada na teia, ou o corpo de
+ * corrida com as patas articuladas à parte), o fio de seda, a gotinha de
+ * orvalho e o chumaço de teia que gruda na bola.
  */
 
 // ---------------------------------------------------------------------------
@@ -162,7 +162,7 @@ export function webTuft(): THREE.BufferGeometry {
 // ---------------------------------------------------------------------------
 // Aranha-de-jardim (Argiope)
 
-export type SpiderPose = 'web' | 'runA' | 'runB';
+export type SpiderPose = 'web' | 'run';
 
 const Spider = {
   silver: new THREE.Color('#e4e2d8'),
@@ -176,21 +176,24 @@ const Spider = {
 };
 
 /** Pares de patas: ângulo (graus, da frente para o lado) na teia e correndo, comprimento e onde nasce. */
-const LEGS = [
+export const SPIDER_LEGS = [
   { web: 20, run: 38, length: 0.56, z: 0.1 },
   { web: 32, run: 68, length: 0.52, z: 0.08 },
   { web: 118, run: 108, length: 0.3, z: 0.055 },
   { web: 142, run: 142, length: 0.5, z: 0.03 },
-];
+] as const;
+/** Altura do corpo correndo (acima do chão) e afastamento lateral das coxas. */
+export const SPIDER_RUN_HEIGHT = 0.11;
+export const SPIDER_HIP_X = 0.05;
 
 /**
  * Aranha numa pose. Na teia (`web`): o corpo no plano da teia (dorso +Y) e as
  * patas em pares formando o "X" da Argiope (a teia fica no plano XZ local).
- * Correndo (`runA`/`runB`): corpo levantado, joelhos altos e as patas
- * alternando (stop-motion); origem no chão.
+ * Correndo (`run`): só o corpo, levantado a `SPIDER_RUN_HEIGHT` do chão (origem
+ * no chão) — as patas são peças à parte, articuladas quadro a quadro.
  */
 export function spiderBody(pose: SpiderPose): THREE.BufferGeometry {
-  const by = pose === 'web' ? 0 : 0.11;
+  const by = pose === 'web' ? 0 : SPIDER_RUN_HEIGHT;
   const thorax = claySphere(1, 3, 0.03);
   paintVertices(thorax, (p, _n, c) => c.copy(Spider.silver).lerp(Spider.hair, smoothstep(0.1, 0.6, noise3(p.x * 9, p.y * 9, p.z * 9)) * 0.6));
   thorax.scale(0.075, 0.042, 0.085);
@@ -213,27 +216,38 @@ export function spiderBody(pose: SpiderPose): THREE.BufferGeometry {
   const eyes = [1, -1].flatMap((s) => [glintEye(0.017, s * 0.022, by + 0.03, 0.135, '#0a0908'), ball(0.008, s * 0.04, by + 0.034, 0.118, '#0a0908', 1)]);
   const palps = [1, -1].map((s) => limb([new THREE.Vector3(s * 0.025, by - 0.005, 0.13), new THREE.Vector3(s * 0.045, by + 0.01, 0.17), new THREE.Vector3(s * 0.04, by - 0.01, 0.2)], 0.01, 0.007, Spider.shin, 6, 4));
 
-  const legs: THREE.BufferGeometry[] = [];
-  LEGS.forEach((leg, i) => {
-    for (const side of [1, -1]) {
-      let angle = pose === 'web' ? leg.web : leg.run;
-      if (pose !== 'web') {
-        // Marcha alternada: numa pose, I e III da direita vão para a frente; na outra, II e IV.
-        const forward = (i + (side > 0 ? 0 : 1) + (pose === 'runA' ? 0 : 1)) % 2 === 0;
-        angle += forward ? -12 : 12;
+  const parts = [thorax, abdomen, spinnerets, ...eyes, ...palps];
+  if (pose === 'web') {
+    for (const leg of SPIDER_LEGS) {
+      for (const side of [1, -1]) {
+        const a = THREE.MathUtils.degToRad(leg.web);
+        const dir = new THREE.Vector3(Math.sin(a) * side, 0, Math.cos(a));
+        const hip = new THREE.Vector3(side * SPIDER_HIP_X, by, leg.z);
+        const L = leg.length;
+        const knee = hip.clone().addScaledVector(dir, L * 0.4).setY(by + 0.05);
+        const ankle = hip.clone().addScaledVector(dir, L * 0.78).setY(by + 0.02);
+        const tip = hip.clone().addScaledVector(dir, L).setY(by);
+        parts.push(limb([hip, hip.clone().lerp(knee, 0.5).setY(by + 0.04), knee], 0.013, 0.011, Spider.femur, 6, 4));
+        parts.push(limb([knee, ankle, tip], 0.011, 0.005, Spider.shin, 10, 4));
+        parts.push(ball(0.014, knee.x, knee.y, knee.z, Spider.knee, 1, 0.02));
       }
-      const a = THREE.MathUtils.degToRad(angle);
-      const dir = new THREE.Vector3(Math.sin(a) * side, 0, Math.cos(a));
-      const hip = new THREE.Vector3(side * 0.05, by, leg.z);
-      const L = leg.length;
-      const kneeUp = pose === 'web' ? 0.05 : 0.15;
-      const knee = hip.clone().addScaledVector(dir, L * 0.4).setY(by + kneeUp);
-      const ankle = hip.clone().addScaledVector(dir, L * 0.78).setY(pose === 'web' ? by + 0.02 : 0.04);
-      const tip = hip.clone().addScaledVector(dir, L).setY(pose === 'web' ? by : 0);
-      legs.push(limb([hip, hip.clone().lerp(knee, 0.5).setY(by + kneeUp * 0.8), knee], 0.013, 0.011, Spider.femur, 6, 4));
-      legs.push(limb([knee, ankle, tip], 0.011, 0.005, Spider.shin, 10, 4));
-      legs.push(ball(0.014, knee.x, knee.y, knee.z, Spider.knee, 1, 0.02));
     }
-  });
-  return mergeParts([thorax, abdomen, spinnerets, ...eyes, ...palps, ...legs]);
+  }
+  return mergeParts(parts);
+}
+
+/**
+ * Pedaço de pata da aranha correndo, de comprimento 1 da origem para +Y (a
+ * instância estica só em Y, a grossura não muda): a coxa (`femur`, laranja) ou
+ * a canela (`shin`, preta, afinando até a ponta, com um tiquinho de curva
+ * para baixo no fim, onde o pé encosta).
+ */
+export function spiderLegSegment(part: 'femur' | 'shin'): THREE.BufferGeometry {
+  if (part === 'femur') return mergeParts([limb([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0.5, 0), new THREE.Vector3(0, 1, 0)], 0.013, 0.011, Spider.femur, 4, 5)]);
+  return mergeParts([limb([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0.55, 0.012), new THREE.Vector3(0, 1, 0)], 0.011, 0.005, Spider.shin, 8, 5)]);
+}
+
+/** Joelho amarelo (a bolinha entre coxa e canela), com origem no centro. */
+export function spiderKnee(): THREE.BufferGeometry {
+  return mergeParts([ball(0.015, 0, 0, 0, Spider.knee, 1, 0.02)]);
 }

@@ -1223,6 +1223,7 @@ export class Game {
   private renderFrame(alpha: number, dt: number): void {
     this.ball.render(alpha, dt);
     this.beetle.render(alpha, dt);
+    this.looseObjects.render(alpha);
     this.beetle.model.root.updateMatrixWorld();
     this.aura.update(dt, this.beetle.model.root, this.graphics.pixelScale);
     this.updateRareFind(dt);

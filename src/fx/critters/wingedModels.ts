@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { claySphere, paintVertices, solidColor, taperedTube } from '../../render/geometry';
 import { leafGeometry } from '../../world/scenery/shapes';
 import { noise3 } from '../../utils/noise';
@@ -91,85 +92,363 @@ export function flyingAntWings(): THREE.BufferGeometry {
 // ---------------------------------------------------------------------------
 // Beija-flor
 
+/**
+ * Estrelinha-ametista (Calliphlox amethystina), beija-flor miudinho de jardim
+ * brasileiro: costas verde-esmeralda (bronzeando no sobre), garganta ametista
+ * furta-cor, colar branco no peito, flancos verde-acinzentados e rabo escuro
+ * em forquilha.
+ */
 const Hummer = {
-  back: new THREE.Color('#2f9e5a'),
-  crown: new THREE.Color('#1f7a4a'),
-  gorget: new THREE.Color('#1fb6a4'),
-  chest: new THREE.Color('#f1efe6'),
-  flank: new THREE.Color('#9fc9a0'),
-  tail: new THREE.Color('#1c2a3a'),
-  bill: '#141214',
+  back: new THREE.Color('#1f9a58'),
+  rump: new THREE.Color('#728f3c'),
+  crown: new THREE.Color('#12805a'),
+  gorget: new THREE.Color('#a8166a'),
+  glitter: new THREE.Color('#f05aa8'),
+  collar: new THREE.Color('#f6f3ec'),
+  belly: new THREE.Color('#e2e5da'),
+  flank: new THREE.Color('#78a071'),
+  tail: new THREE.Color('#212428'),
+  tailBase: new THREE.Color('#3d6b3c'),
+  tailTip: new THREE.Color('#9a9d94'),
+  bill: '#151214',
+  wing: new THREE.Color('#47423f'),
+  wingEdge: new THREE.Color('#8d8883'),
+  /** O borrão pega a luz: bem mais claro que a asa parada. */
+  blur: new THREE.Color('#b9b3aa'),
+  blurEdge: new THREE.Color('#dedad2'),
 };
 
-/** Ombro direito (onde a asa bate) e a ponta do bico do beija-flor, em escala 1. */
-export const HUMMINGBIRD_SHOULDER = new THREE.Vector3(0.2, 0.22, 0.06);
-export const HUMMINGBIRD_BILL_TIP = new THREE.Vector3(0, 0.4, 1.62);
+/** Ombro direito (onde a asa bate), ponta do bico e base do rabo do beija-flor, em escala 1. */
+export const HUMMINGBIRD_SHOULDER = new THREE.Vector3(0.15, 0.25, 0.02);
+export const HUMMINGBIRD_BILL_TIP = new THREE.Vector3(0, 0.43, 1.62);
+export const HUMMINGBIRD_TAIL = new THREE.Vector3(0, -0.37, -0.27);
+
+/** Espinha do corpo, do sobre (rabo) até a testa: sobe inclinada e deita na cabeça. */
+const SPINE = [
+  [0, -0.42, -0.25],
+  [0, -0.22, -0.1],
+  [0, 0.02, 0.05],
+  [0, 0.24, 0.17],
+  [0, 0.39, 0.29],
+  [0, 0.46, 0.42],
+  [0, 0.47, 0.6],
+] as const;
 
 /**
- * Beija-flor já na postura de pairar: corpo inclinado (cabeça em cima, rabo
- * para baixo), cabeça dobrada para o bico ficar quase na horizontal. Costas e
- * coroa verdes (o material é furta-cor), garganta verde-azulada, peito
- * branco, rabinho escuro em leque, olho preto com pintinha branca atrás.
- * Origem no meio do corpo.
+ * Seção do corpo ao longo da espinha (t = fração do comprimento): meia
+ * largura, altura para as costas e para o peito. Peito estufado, pescoço
+ * curtinho e cabeça redonda um tico mais larga que ele.
  */
-export function hummingbirdBody(): THREE.BufferGeometry {
-  const axis = new THREE.Vector3(0, 0.75, 0.66).normalize();
-  const body = claySphere(1, 4, 0.02, 2, 3);
-  // Corpo curto e redondo (peito estufado), sem pescoço: a cabeça encaixa direto nele.
-  body.scale(0.27, 0.28, 0.42);
-  // Deita o eixo comprido do corpo na diagonal (rabo embaixo-atrás, peito em cima-na-frente).
-  body.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), axis));
-  paintVertices(body, (p, n, c) => {
-    // "Costas" = o lado de trás/de cima da diagonal; "peito" = o da frente.
-    const front = n.dot(new THREE.Vector3(0, -0.66, 0.75));
-    c.copy(Hummer.back).lerp(Hummer.chest, smoothstep(-0.05, 0.45, front));
-    // Manchinhas verdes no flanco branco.
-    if (front > 0.1 && Math.abs(n.x) > 0.5) c.lerp(Hummer.flank, smoothstep(0.2, 0.6, noise3(p.x * 30, p.y * 30, p.z * 30)) * 0.6);
-    return c;
-  });
+const PROFILE: ReadonlyArray<readonly [t: number, width: number, back: number, belly: number]> = [
+  [0, 0.06, 0.06, 0.06],
+  [0.1, 0.15, 0.14, 0.15],
+  [0.3, 0.235, 0.21, 0.25],
+  [0.47, 0.245, 0.22, 0.26],
+  [0.62, 0.19, 0.17, 0.2],
+  [0.72, 0.168, 0.165, 0.17],
+  [0.84, 0.19, 0.2, 0.165],
+  [0.93, 0.15, 0.15, 0.11],
+  [0.985, 0.07, 0.07, 0.05],
+  [1, 0.02, 0.02, 0.015],
+];
 
-  const head = claySphere(0.25, 4, 0.02);
-  paintVertices(head, (_p, n, c) => {
-    c.copy(Hummer.crown);
-    // Garganta furta-cor embaixo do bico.
-    return c.lerp(Hummer.gorget, smoothstep(0.0, -0.55, n.y) * smoothstep(-0.3, 0.4, n.z));
-  });
-  head.translate(0, 0.42, 0.34);
-  const eyes = [1, -1].flatMap((s) => [glintEye(0.06, s * 0.18, 0.49, 0.46, '#0b0a0c'), ball(0.032, s * 0.21, 0.52, 0.32, '#f4f2ec', 1, 0.02)]);
-  const bill = solidColor(
-    taperedTube(new THREE.CatmullRomCurve3([new THREE.Vector3(0, 0.42, 0.52), new THREE.Vector3(0, 0.42, 1.05), new THREE.Vector3(0, 0.4, 1.62)]), 16, (t) => 0.045 * (1 - t) + 0.011, 6),
-    Hummer.bill,
-  );
-  const tail: THREE.BufferGeometry[] = [];
-  for (let k = -2; k <= 2; k++) {
-    // Rabo em forquilha: as penas de fora mais compridas.
-    const feather = leafGeometry(0.62 + Math.abs(k) * 0.07, 0.16, { fold: 0.08, curl: 0.05, widest: 0.7, roundTip: 0.7, segmentsL: 5, segmentsW: 1, vein: false });
-    paintVertices(feather, (p, _n, c) => c.copy(Hummer.tail).lerp(Hummer.back, (1 - smoothstep(0, 0.25, p.z)) * 0.6));
-    // Leque apontando para trás e para baixo.
-    feather.rotateX(Math.PI * 0.76);
-    feather.rotateY(k * 0.2);
-    feather.translate(k * 0.025, -0.24, -0.28);
-    tail.push(feather);
-  }
-  const feet = [1, -1].map((s) => limb([new THREE.Vector3(s * 0.07, -0.16, 0.06), new THREE.Vector3(s * 0.08, -0.26, 0.1), new THREE.Vector3(s * 0.08, -0.28, 0.17)], 0.018, 0.012, '#2a2224', 5, 4));
-  return mergeParts([body, head, ...eyes, bill, ...tail, ...feet]);
+/** Interpola a tabela `PROFILE` (Catmull-Rom: sem os degraus de um smoothstep por trecho). */
+function profileAt(t: number, column: 1 | 2 | 3): number {
+  let i = 0;
+  while (i < PROFILE.length - 2 && PROFILE[i + 1][0] < t) i++;
+  const a = PROFILE[Math.max(0, i - 1)][column];
+  const b = PROFILE[i][column];
+  const c = PROFILE[i + 1][column];
+  const d = PROFILE[Math.min(PROFILE.length - 1, i + 2)][column];
+  const u = (t - PROFILE[i][0]) / (PROFILE[i + 1][0] - PROFILE[i][0]);
+  return 0.5 * (2 * b + (c - a) * u + (2 * a - 5 * b + 4 * c - d) * u * u + (3 * b - a - 3 * c + d) * u * u * u);
 }
 
-const tmpWing = new THREE.Color();
+/**
+ * Corpo inteiro numa peça só (sobre, barriga, peito, pescoço e cabeça), feito
+ * de anéis ao longo da `SPINE`: silhueta contínua, sem a emenda de bolas
+ * encaixadas. `paint(t, dorsal, p, cor)` pinta cada vértice pela posição no
+ * corpo (dorsal = 1 nas costas, -1 no peito e na garganta).
+ */
+function bodyLoft(stations: number, radial: number, paint: (t: number, dorsal: number, p: THREE.Vector3, target: THREE.Color) => THREE.Color): THREE.BufferGeometry {
+  const spine = new THREE.CatmullRomCurve3(SPINE.map(([x, y, z]) => new THREE.Vector3(x, y, z)));
+  const positions: number[] = [];
+  const colors: number[] = [];
+  const indices: number[] = [];
+  const center = new THREE.Vector3();
+  const tangent = new THREE.Vector3();
+  const up = new THREE.Vector3();
+  const side = new THREE.Vector3(1, 0, 0);
+  const p = new THREE.Vector3();
+  const color = new THREE.Color();
+  const push = (t: number, dorsal: number) => {
+    positions.push(p.x, p.y, p.z);
+    paint(t, dorsal, p, color);
+    colors.push(color.r, color.g, color.b);
+  };
+  // Anéis mais juntos nas pontas (onde a curva do corpo fecha).
+  for (let j = 0; j <= stations; j++) {
+    const t = 0.5 - 0.5 * Math.cos((Math.PI * j) / stations);
+    spine.getPointAt(t, center);
+    spine.getTangentAt(t, tangent);
+    up.crossVectors(tangent, side).normalize();
+    const w = profileAt(t, 1);
+    const hBack = profileAt(t, 2);
+    const hBelly = profileAt(t, 3);
+    for (let i = 0; i < radial; i++) {
+      const a = (i / radial) * Math.PI * 2;
+      const sin = Math.sin(a);
+      p.copy(center).addScaledVector(side, w * Math.cos(a)).addScaledVector(up, (sin > 0 ? hBack : hBelly) * sin);
+      push(t, sin);
+    }
+  }
+  const ring = (j: number, i: number) => j * radial + (i % radial);
+  for (let j = 0; j < stations; j++) {
+    for (let i = 0; i < radial; i++) indices.push(ring(j, i), ring(j, i + 1), ring(j + 1, i), ring(j, i + 1), ring(j + 1, i + 1), ring(j + 1, i));
+  }
+  // Tampas nas duas pontas: um vértice cada, um tiquinho para fora.
+  for (const end of [0, 1]) {
+    spine.getPointAt(end, center);
+    spine.getTangentAt(end, tangent);
+    p.copy(center).addScaledVector(tangent, end === 0 ? -0.012 : 0.012);
+    const tip = positions.length / 3;
+    push(end, 0);
+    const j = end * stations;
+    for (let i = 0; i < radial; i++) {
+      if (end === 0) indices.push(tip, ring(j, i + 1), ring(j, i));
+      else indices.push(tip, ring(j, i), ring(j, i + 1));
+    }
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
+const tmpUnder = new THREE.Color();
+const tmpThroat = new THREE.Color();
 
 /**
- * Asa direita do beija-flor: lâmina comprida e estreita (quase só "mão"),
- * articulada no ombro e estendendo para +X. Vai com material translúcido: em
- * voo ela bate tão rápido que só se vê o borrão.
+ * Beija-flor já na postura de pairar: corpo inclinado (cabeça em cima, sobre
+ * para baixo) e a cabeça deitada para o bico ficar quase na horizontal. O
+ * material é furta-cor: o verde das costas e a garganta ametista mudam de tom
+ * com o ângulo. Olhão preto com brilho e a pintinha branca atrás dele, bico
+ * fino e comprido, pezinhos recolhidos. Asas e rabo são peças à parte (batem e
+ * abanam). Origem no meio do corpo.
+ */
+export function hummingbirdBody(): THREE.BufferGeometry {
+  const body = bodyLoft(46, 22, (t, dorsal, p, c) => {
+    const speckle = noise3(p.x * 34, p.y * 34, p.z * 34);
+    // Costas: esmeralda, bronzeando no sobre, mais fechado na coroa.
+    c.copy(Hummer.back).lerp(Hummer.rump, 1 - smoothstep(0.06, 0.38, t));
+    c.lerp(Hummer.crown, smoothstep(0.68, 0.82, t) * 0.8);
+    c.multiplyScalar(0.9 + 0.16 * speckle);
+    const under = smoothstep(0.1, -0.4, dorsal);
+    if (under <= 0) return c;
+    // Por baixo: barriga clara com os flancos verdes, colar branco e a garganta ametista até o queixo.
+    const flank = smoothstep(-0.95, -0.35, dorsal) * (1 - smoothstep(0.42, 0.52, t));
+    const below = tmpUnder.copy(Hummer.belly).lerp(Hummer.flank, flank * (0.55 + 0.3 * speckle));
+    below.lerp(Hummer.collar, smoothstep(0.48, 0.54, t) * (1 - smoothstep(0.6, 0.64, t)));
+    const throat = smoothstep(0.6, 0.66, t) * (1 - smoothstep(0.97, 1, t));
+    if (throat > 0) below.lerp(tmpThroat.copy(Hummer.gorget).lerp(Hummer.glitter, smoothstep(0.35, 0.8, speckle) * 0.6), throat);
+    return c.lerp(below, under);
+  });
+
+  const eyes = [1, -1].flatMap((s) => {
+    const spot = solidColor(claySphere(0.03, 2, 0.02), '#f6f4ee');
+    spot.scale(0.7, 1, 1.2);
+    spot.translate(s * 0.172, 0.515, 0.345);
+    return [glintEye(0.052, s * 0.163, 0.5, 0.445, '#0b0a0c'), spot];
+  });
+  // Bico reto, fino e comprido: grosso na base (entra na testa) e quase agulha na ponta.
+  const bill = solidColor(
+    taperedTube(
+      new THREE.CatmullRomCurve3([new THREE.Vector3(0, 0.47, 0.5), new THREE.Vector3(0, 0.466, 0.9), new THREE.Vector3(0, 0.452, 1.3), HUMMINGBIRD_BILL_TIP.clone()]),
+      18,
+      (t) => 0.05 * Math.pow(1 - t, 1.3) + 0.009,
+      7,
+    ),
+    Hummer.bill,
+  );
+  const feet = [1, -1].map((s) => limb([new THREE.Vector3(s * 0.07, -0.2, 0.0), new THREE.Vector3(s * 0.08, -0.27, 0.05), new THREE.Vector3(s * 0.08, -0.28, 0.11)], 0.016, 0.01, '#2a2224', 5, 4));
+  return mergeParts([body, ...eyes, bill, ...feet]);
+}
+
+/**
+ * Rabo em forquilha (as penas de fora mais compridas), em leque para trás e
+ * para baixo, com origem na base (`HUMMINGBIRD_TAIL`): a instância abana e
+ * abre o leque enquanto o beija-flor paira.
+ */
+export function hummingbirdTail(): THREE.BufferGeometry {
+  const feathers: THREE.BufferGeometry[] = [];
+  for (let k = -3; k <= 3; k++) {
+    const outer = Math.abs(k);
+    const length = 0.5 + outer * 0.075;
+    const feather = leafGeometry(length, 0.13, { fold: 0.05, curl: 0.05, widest: 0.62, roundTip: 0.3, segmentsL: 6, segmentsW: 1, vein: false });
+    paintVertices(feather, (p, _n, c) => {
+      c.copy(Hummer.tail).lerp(Hummer.tailBase, 1 - smoothstep(0.05, 0.3, p.z));
+      // Pontinhas claras nas penas de fora.
+      if (outer >= 2) c.lerp(Hummer.tailTip, smoothstep(length * 0.8, length * 0.95, p.z) * 0.8);
+      return c;
+    });
+    // As de fora ficam por baixo das do meio (sem brigar pela mesma profundidade).
+    feather.translate(0, -outer * 0.006, 0);
+    feather.rotateY(k * 0.14);
+    feather.rotateX(Math.PI * 0.73);
+    feathers.push(feather);
+  }
+  return mergeParts(feathers);
+}
+
+/**
+ * Asa direita do beija-flor, estendendo para +X a partir do ombro: lâmina
+ * comprida e estreita em foice (quase só "mão"), a borda de trás recortada
+ * pelas pontas das primárias. Escura na borda da frente, clareando atrás.
  */
 export function hummingbirdWing(): THREE.BufferGeometry {
-  const w = leafGeometry(1.2, 0.34, { fold: 0.02, curl: -0.06, widest: 0.42, roundTip: 0.55, segmentsL: 10, segmentsW: 2, vein: false });
-  paintVertices(w, (p, _n, c) => {
-    // Mais escura perto do ombro, clareando para a ponta (onde o borrão é mais largo).
-    c.setRGB(0.42, 0.45, 0.46).lerp(tmpWing.setRGB(0.72, 0.76, 0.78), smoothstep(0.1, 1.1, p.z));
-    // Penas de voo: riscas finas no comprimento.
-    return c.multiplyScalar(0.85 + 0.25 * Math.pow(Math.abs(Math.sin(p.x * 70 + p.z * 4)), 6));
-  });
-  w.rotateY(Math.PI / 2);
-  return mergeParts([w]);
+  const length = 1.15;
+  const along = 16;
+  const across = 3;
+  const positions: number[] = [];
+  const colors: number[] = [];
+  const indices: number[] = [];
+  const c = new THREE.Color();
+  for (let i = 0; i <= along; i++) {
+    const s = i / along;
+    // Estreita no ombro, larga no meio, fechando numa ponta arredondada; a borda de trás
+    // recortada pelas pontas das penas.
+    let chord = wingChord(s);
+    if (s > 0.3) chord *= 1 - 0.08 * Math.pow(Math.abs(Math.sin(s * Math.PI * 7)), 0.6);
+    const lead = 0.035 - 0.14 * s * s;
+    for (let k = 0; k <= across; k++) {
+      const v = k / across;
+      positions.push(s * length, 0.025 * Math.sin(v * Math.PI) * (1 - s), lead - chord * v);
+      c.copy(Hummer.wing).lerp(Hummer.wingEdge, smoothstep(0.2, 1, v) * 0.7 + s * 0.15);
+      colors.push(c.r, c.g, c.b);
+    }
+  }
+  const row = across + 1;
+  for (let i = 0; i < along; i++) {
+    for (let k = 0; k < across; k++) {
+      const a = i * row + k;
+      indices.push(a, a + 1, a + row, a + 1, a + row + 1, a + row);
+    }
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
+/** Varredura da asa (rotação em Y no ombro): de `[0]` (para a frente) a `[1]` (para trás). */
+export const HUMMINGBIRD_SWEEP = [-1.0, 0.95] as const;
+
+/** Largura da asa (corda) a `s` (0 = ombro, 1 = ponta), do mesmo desenho de `hummingbirdWing`. */
+function wingChord(s: number): number {
+  let chord = 0.12 + 0.2 * Math.sin(Math.min(s / 0.42, 1) * Math.PI * 0.5);
+  if (s > 0.42) chord *= Math.pow(Math.max(0, Math.cos(((s - 0.42) / 0.58) * Math.PI * 0.5)), 0.55);
+  return chord + 0.012;
+}
+
+/**
+ * O borrão da batida (lado direito), com a transparência na vertex color
+ * (RGBA): o leque que a asa varre no ar, mais denso nas duas pontas da
+ * varredura, e as duas "asas fantasma" em pé onde ela freia e vira (lá na
+ * frente e lá atrás) — é assim que um beija-flor pairando sai na foto, e é o
+ * que ainda aparece quando a câmera vê o leque de raspão.
+ */
+export function hummingbirdWingBlur(): THREE.BufferGeometry {
+  return mergeBlur([wingFan(), wingGhost(HUMMINGBIRD_SWEEP[0] - 0.02), wingGhost(HUMMINGBIRD_SWEEP[1] + 0.12)]);
+}
+
+/** Junta as peças do borrão (todas RGBA e indexadas; `mergeParts` só conhece RGB). */
+function mergeBlur(parts: THREE.BufferGeometry[]): THREE.BufferGeometry {
+  const merged = mergeGeometries(parts)!;
+  parts.forEach((g) => g.dispose());
+  return merged;
+}
+
+/** A asa parada em pé na direção `angle` (rotação em Y no ombro), desfiada nas bordas. */
+function wingGhost(angle: number): THREE.BufferGeometry {
+  const length = 1.1;
+  const along = 12;
+  const across = 4;
+  const positions: number[] = [];
+  const colors: number[] = [];
+  const indices: number[] = [];
+  const c = new THREE.Color();
+  const dirX = Math.cos(angle);
+  const dirZ = -Math.sin(angle);
+  for (let i = 0; i <= along; i++) {
+    const s = i / along;
+    const chord = wingChord(s) * 1.15;
+    const r = 0.08 + s * length;
+    for (let k = 0; k <= across; k++) {
+      const v = k / across;
+      // Borda da frente em cima, a corda pendurada para baixo (e um tico para fora).
+      const y = 0.03 - chord * v + 0.02 * r;
+      positions.push(dirX * r, y, dirZ * r);
+      c.copy(Hummer.blur).lerp(Hummer.blurEdge, v);
+      const edge = Math.sin(v * Math.PI);
+      // Some perto do ombro: a raiz da asa quase não se move (e não vela o corpo).
+      colors.push(c.r, c.g, c.b, 0.42 * Math.pow(edge, 0.7) * smoothstep(0.15, 0.5, s) * (1 - 0.45 * smoothstep(0.8, 1, s)));
+    }
+  }
+  const row = across + 1;
+  for (let i = 0; i < along; i++) {
+    for (let k = 0; k < across; k++) {
+      const a = i * row + k;
+      indices.push(a, a + 1, a + row, a + 1, a + row + 1, a + row);
+    }
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 4));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
+/** O leque que a ponta da asa varre (plano do ombro). */
+function wingFan(): THREE.BufferGeometry {
+  // A corda da asa fica atrás da borda da frente: o leque vai um pouco além da varredura para trás.
+  const from = HUMMINGBIRD_SWEEP[0] - 0.05;
+  const to = HUMMINGBIRD_SWEEP[1] + 0.28;
+  const steps = 30;
+  const rings = 6;
+  const inner = 0.1;
+  const outer = 1.1;
+  const positions: number[] = [];
+  const colors: number[] = [];
+  const indices: number[] = [];
+  const c = new THREE.Color();
+  for (let j = 0; j <= steps; j++) {
+    const a = from + ((to - from) * j) / steps;
+    const u = (2 * j) / steps - 1;
+    const dwell = 0.5 + 0.5 * Math.pow(u, 4);
+    for (let i = 0; i <= rings; i++) {
+      const rn = i / rings;
+      const r = inner + (outer - inner) * rn;
+      positions.push(Math.cos(a) * r, 0.02 * r, -Math.sin(a) * r);
+      c.copy(Hummer.blur).lerp(Hummer.blurEdge, rn);
+      colors.push(c.r, c.g, c.b, 0.5 * dwell * smoothstep(0.1, 0.45, rn) * (1 - 0.5 * smoothstep(0.82, 1, rn)));
+    }
+  }
+  const row = rings + 1;
+  for (let j = 0; j < steps; j++) {
+    for (let i = 0; i < rings; i++) {
+      const a = j * row + i;
+      indices.push(a, a + row, a + 1, a + 1, a + row, a + row + 1);
+    }
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 4));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  return geometry;
 }

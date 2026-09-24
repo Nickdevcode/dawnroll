@@ -1,9 +1,22 @@
 import * as THREE from 'three';
-import { clamp } from '../../utils/math';
+import { clamp, damp } from '../../utils/math';
 import { BURROW, terrainHeight } from '../../world/Terrain';
 import { InstancedPart } from './InstancedPart';
 import { critterMaterials } from './materials';
-import { dewDrop, silkThread, spiderBody, webPattern, webQuad, webTuft, type WebPattern } from './webModels';
+import {
+  SPIDER_HIP_X,
+  SPIDER_LEGS,
+  SPIDER_RUN_HEIGHT,
+  dewDrop,
+  silkThread,
+  spiderBody,
+  spiderKnee,
+  spiderLegSegment,
+  webPattern,
+  webQuad,
+  webTuft,
+  type WebPattern,
+} from './webModels';
 import { collectedMesh, insideBasin, spotAlive, threatAt } from './common';
 import { GroundWalker } from './walker';
 import type { CritterContext, Species } from './types';
@@ -24,6 +37,20 @@ const DEW = 26;
 const THREADS = 4;
 const TUFT_SIZE = 0.3;
 const SEEN_RANGE = 45;
+/** Patas (8) de cada aranha correndo. */
+const LEG_COUNT = SPIDER_LEGS.length * 2;
+/**
+ * Passada: quanto o corpo anda num ciclo inteiro da marcha. No apoio (meio
+ * ciclo) o pé recua um quarto disso de cada lado do ponto de descanso, na
+ * mesma velocidade do corpo: fica fincado no chão, sem patinar.
+ */
+const STRIDE = 0.28;
+/** Até onde o pé alcança, em fração do comprimento da pata; coxa e canela, idem. */
+const FOOT_REACH = 0.84;
+const FEMUR = 0.46;
+const SHIN = 0.6;
+/** Altura que o pé sobe no meio do passo. */
+const STEP_LIFT = 0.07;
 
 type SpiderState = 'web' | 'drop' | 'run' | 'hide' | 'gone';
 
@@ -45,6 +72,10 @@ interface Web {
   slot: number;
   spider: SpiderState;
   walker: GroundWalker;
+  /** 0..1: o quanto as patas estão marchando (some quando ela para e o pé assenta). */
+  stride: number;
+  /** Primeira vaga das patas desta aranha (coxas, canelas e joelhos usam a mesma). */
+  legSlot: number;
   /** Onde a aranha fica na teia (mundo) e a orientação dela lá (dorso para um lado, cabeça para baixo). */
   readonly rest: THREE.Matrix4;
   timer: number;
@@ -61,6 +92,13 @@ const vA = new THREE.Vector3();
 const vB = new THREE.Vector3();
 const vAway = new THREE.Vector3();
 const vScale = new THREE.Vector3();
+const vHip = new THREE.Vector3();
+const vKnee = new THREE.Vector3();
+const vFoot = new THREE.Vector3();
+const vReach = new THREE.Vector3();
+const vBend = new THREE.Vector3();
+const mBody = new THREE.Matrix4();
+const mLocal = new THREE.Matrix4();
 const Y_AXIS = new THREE.Vector3(0, 1, 0);
 const DOWN = new THREE.Vector3(0, -1, 0);
 
@@ -69,8 +107,10 @@ export class Spiders implements Species {
   private readonly dewPart: InstancedPart;
   private readonly threads: InstancedPart;
   private readonly spiderWeb: InstancedPart;
-  private readonly spiderA: InstancedPart;
-  private readonly spiderB: InstancedPart;
+  private readonly spiderRun: InstancedPart;
+  private readonly femurs: InstancedPart;
+  private readonly shins: InstancedPart;
+  private readonly knees: InstancedPart;
   private readonly parts: readonly InstancedPart[];
   private readonly pattern: WebPattern;
   private readonly webs: Web[] = [];
@@ -98,9 +138,11 @@ export class Spiders implements Species {
     this.dewPart = new InstancedPart(dewDrop(), water, count * DEW, { name: 'web-dew', castShadow: false, skipAO: true });
     this.threads = new InstancedPart(silkThread(), thread, count * THREADS, { name: 'web-threads', castShadow: false, skipAO: true });
     this.spiderWeb = new InstancedPart(spiderBody('web'), mats.body, count, { name: 'spider-web' });
-    this.spiderA = new InstancedPart(spiderBody('runA'), mats.body, count, { name: 'spider-run-a' });
-    this.spiderB = new InstancedPart(spiderBody('runB'), mats.body, count, { name: 'spider-run-b' });
-    this.parts = [this.webPart, this.dewPart, this.threads, this.spiderWeb, this.spiderA, this.spiderB];
+    this.spiderRun = new InstancedPart(spiderBody('run'), mats.body, count, { name: 'spider-run' });
+    this.femurs = new InstancedPart(spiderLegSegment('femur'), mats.body, count * LEG_COUNT, { name: 'spider-femurs', skipAO: true });
+    this.shins = new InstancedPart(spiderLegSegment('shin'), mats.body, count * LEG_COUNT, { name: 'spider-shins', skipAO: true });
+    this.knees = new InstancedPart(spiderKnee(), mats.body, count * LEG_COUNT, { name: 'spider-knees', castShadow: false, skipAO: true });
+    this.parts = [this.webPart, this.dewPart, this.threads, this.spiderWeb, this.spiderRun, this.femurs, this.shins, this.knees];
     for (const part of this.parts) {
       part.mesh.receiveShadow = part !== this.webPart && part !== this.threads;
       parent.add(part.mesh);
@@ -174,8 +216,15 @@ export class Spiders implements Species {
     for (let k = 0; k < DEW; k++) this.dewPart.allocate();
     for (let k = 0; k < THREADS; k++) this.threads.allocate();
     this.spiderWeb.allocate();
-    this.spiderA.allocate();
-    this.spiderB.allocate();
+    this.spiderRun.allocate();
+    const legSlot = this.femurs.allocate();
+    this.shins.allocate();
+    this.knees.allocate();
+    for (let k = 1; k < LEG_COUNT; k++) {
+      this.femurs.allocate();
+      this.shins.allocate();
+      this.knees.allocate();
+    }
     this.webs.push({
       spotA: a,
       spotB: b,
@@ -191,6 +240,8 @@ export class Spiders implements Species {
       slot,
       spider: 'web',
       walker: new GroundWalker(1.5),
+      stride: 0,
+      legSlot,
       rest,
       timer: 0,
       gait: 0,
@@ -297,8 +348,8 @@ export class Spiders implements Species {
   private updateSpider(web: Web, dt: number, ctx: CritterContext, near: boolean): void {
     const slot = web.slot;
     const dropSlot = slot * THREADS + 3;
-    this.spiderA.hide(slot);
-    this.spiderB.hide(slot);
+    this.spiderRun.hide(slot);
+    this.hideLegs(web);
     this.threads.hide(dropSlot);
     if (web.spider === 'web') {
       if (web.alive && near) {
@@ -329,6 +380,8 @@ export class Spiders implements Species {
         web.spider = 'run';
         web.timer = ctx.rng.range(2.5, 4);
         web.steer = 0;
+        web.gait = 0;
+        web.stride = 0;
       }
       return;
     }
@@ -343,7 +396,8 @@ export class Spiders implements Species {
         walker.flee(vAway, 1.5);
       }
       walker.step(dt, ctx, 1.1, 8);
-      web.gait += walker.moved * 30;
+      web.gait += walker.moved / STRIDE;
+      web.stride = damp(web.stride, walker.moved > 0 ? 1 : 0, 10, dt);
       if (web.timer <= 0) {
         web.spider = 'hide';
         web.timer = 0;
@@ -352,13 +406,64 @@ export class Spiders implements Species {
       // Some no capim.
       web.timer = Math.min(1, web.timer + dt / 0.5);
       sink = web.timer * 0.16;
+      web.stride = damp(web.stride, 0, 10, dt);
       if (web.timer >= 1) {
         web.spider = 'gone';
         return;
       }
     }
-    walker.matrix(mOut, 1, -sink);
-    (Math.floor(web.gait) % 2 === 0 ? this.spiderA : this.spiderB).set(slot, mOut);
+    this.drawRunner(web, sink);
+  }
+
+  /**
+   * Aranha correndo: corpo e as 8 patas articuladas. Marcha alternada de
+   * quatro em quatro (I e III de um lado com II e IV do outro); no apoio o pé
+   * fica parado no chão enquanto o corpo passa, no balanço ele sobe e vai
+   * para a frente. O joelho sai de uma IK de dois ossos, sempre para cima.
+   */
+  private drawRunner(web: Web, sink: number): void {
+    const cycle = web.gait * Math.PI * 2;
+    const k = web.stride;
+    // O corpo desce um tiquinho a cada troca de apoio (duas por ciclo) e rebola de leve.
+    const bob = -Math.abs(Math.sin(cycle)) * 0.012 * k;
+    web.walker.matrix(mBody, 1, bob - sink);
+    // O rebolado é só do corpo: as patas ficam no quadro do chão (os pés não afundam).
+    this.spiderRun.set(web.slot, mOut.multiplyMatrices(mBody, mLocal.makeRotationZ(Math.sin(cycle) * 0.05 * k)));
+    const height = SPIDER_RUN_HEIGHT;
+    let slot = web.legSlot;
+    SPIDER_LEGS.forEach((leg, pair) => {
+      const angle = THREE.MathUtils.degToRad(leg.run);
+      for (const side of [1, -1]) {
+        const group = (pair + (side > 0 ? 0 : 1)) % 2;
+        const t = (web.gait + group * 0.5) % 1;
+        // Apoio (primeira metade): o pé recua de +1/4 a -1/4 da passada. Balanço: sobe e volta para a frente.
+        let slide: number;
+        let lift = 0;
+        if (t < 0.5) slide = 1 - 4 * t;
+        else {
+          const u = (t - 0.5) * 2;
+          slide = -1 + 2 * u * u * (3 - 2 * u);
+          lift = Math.sin(Math.PI * u);
+        }
+        const reach = leg.length * FOOT_REACH;
+        vHip.set(side * SPIDER_HIP_X, height, leg.z);
+        // O pé fica no chão (o corpo balança por cima dele).
+        vFoot.set(side * Math.sin(angle) * reach, lift * STEP_LIFT * k - bob, leg.z + Math.cos(angle) * reach + slide * (STRIDE / 4) * k);
+        legBend(vHip, vFoot, leg.length * FEMUR, leg.length * SHIN, vKnee);
+        this.femurs.set(slot, mOut.multiplyMatrices(mBody, threadMatrix(vHip, vKnee, mLocal)));
+        this.shins.set(slot, mOut.multiplyMatrices(mBody, threadMatrix(vKnee, vFoot, mLocal)));
+        this.knees.set(slot, mOut.multiplyMatrices(mBody, mLocal.makeTranslation(vKnee.x, vKnee.y, vKnee.z)));
+        slot++;
+      }
+    });
+  }
+
+  private hideLegs(web: Web): void {
+    for (let i = 0; i < LEG_COUNT; i++) {
+      this.femurs.hide(web.legSlot + i);
+      this.shins.hide(web.legSlot + i);
+      this.knees.hide(web.legSlot + i);
+    }
   }
 
   startle(position: THREE.Vector3, radius: number): void {
@@ -376,7 +481,22 @@ export class Spiders implements Species {
   }
 }
 
-/** Matriz do fio de seda (cilindro de altura 1 em +Y) indo de `a` até `b`. */
+/**
+ * IK de dois ossos no plano vertical da pata: o joelho fica a `femur` do
+ * quadril e a `shin` do pé, dobrado para cima (pata de aranha). Pé longe
+ * demais: estica a pata na direção dele.
+ */
+function legBend(hip: THREE.Vector3, foot: THREE.Vector3, femur: number, shin: number, knee: THREE.Vector3): THREE.Vector3 {
+  vReach.copy(foot).sub(hip);
+  const d = clamp(vReach.length(), 1e-4, (femur + shin) * 0.999);
+  vReach.normalize();
+  // "Para cima" perpendicular à linha quadril-pé.
+  vBend.copy(Y_AXIS).addScaledVector(vReach, -vReach.y).normalize();
+  const cos = clamp((femur * femur + d * d - shin * shin) / (2 * femur * d), -1, 1);
+  return knee.copy(hip).addScaledVector(vReach, femur * cos).addScaledVector(vBend, femur * Math.sqrt(1 - cos * cos));
+}
+
+/** Matriz do fio de seda (cilindro de altura 1 em +Y) indo de `a` até `b` (também serve para os pedaços de pata). */
 function threadMatrix(a: THREE.Vector3, b: THREE.Vector3, target: THREE.Matrix4): THREE.Matrix4 {
   vTmp.copy(b).sub(a);
   const length = vTmp.length();

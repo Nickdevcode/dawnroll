@@ -28,6 +28,12 @@ export interface OutfitPose {
   /** 1 = no ar. */
   airborne: number;
   verticalSpeed: number;
+  /**
+   * Quanto a cabeça está de nariz pra baixo em relação ao chão (rad, + = pra
+   * baixo): o que pende do pescoço desconta isso pra continuar caindo "pra
+   * baixo" (empurrando a bola, o besouro fica de cara no chão).
+   */
+  headPitch: number;
 }
 
 export interface AccessoryModel {

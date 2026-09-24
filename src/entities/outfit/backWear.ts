@@ -228,7 +228,10 @@ export function cape(): AccessoryModel {
     const trim = Math.max(smoothstep(0.93, 0.955, v), smoothstep(0.035, 0.012, u), smoothstep(0.965, 0.988, u));
     return c.copy(red).lerp(gold, trim);
   });
-  const joints = [0, 0.25, 0.5, 0.75, 1].map((v) => surface(0, v, new THREE.Vector3()));
+  const JOINTS = [0, 0.25, 0.5, 0.75, 1];
+  const joints = JOINTS.map((v) => surface(0, v, new THREE.Vector3()));
+  /** Primeiro osso da parte solta (onde o pano sai do casco, atrás da traseira). */
+  const FREE_BONE = JOINTS.findIndex((v) => v >= ON_SHELL - 0.05);
   const chain = chainSkin(geometry, Mat.painted(0.8), joints, (_p, i) => uv.getY(i));
   object.add(chain.mesh);
   // Fecho: dois botões de ouro no ombro.
@@ -245,9 +248,12 @@ export function cape(): AccessoryModel {
       lift += ((run * 0.55 + pose.airborne * 0.35) - lift) * Math.min(1, pose.dt * 4);
       chain.bones.forEach((bone, i) => {
         if (i === 0) return;
-        const flutter = Math.sin(pose.time * (6 + run * 6) - i * 1.2) * (0.03 + lift * 0.12);
+        // O tremular só levanta o pano (rotação pra cima e pra trás): pra baixo ele entraria no casco.
+        const flutter = (0.5 + 0.5 * Math.sin(pose.time * (6 + run * 6) - i * 1.2)) * (0.02 + lift * 0.12);
         bone.rotation.x = lift * (0.12 + i * 0.08) + flutter;
-        bone.rotation.z = Math.sin(pose.time * 2.4 + i * 0.9) * 0.025 * (1 + run);
+        // Balanço de lado só na barra solta: no casco o pano escorregaria de lado (capa torta,
+        // atravessando o élitro).
+        bone.rotation.z = i >= FREE_BONE ? Math.sin(pose.time * 2.4 + i * 0.9) * 0.06 * (1 + run) : 0;
       });
     },
   };

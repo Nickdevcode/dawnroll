@@ -3,7 +3,7 @@ import { dampAngle } from '../../utils/math';
 import { clay } from '../../render/clayMaterial';
 import { terrainHeight } from '../../world/Terrain';
 import { InstancedPart } from './InstancedPart';
-import { HUMMINGBIRD_BILL_TIP, HUMMINGBIRD_SHOULDER, hummingbirdBody, hummingbirdWing } from './wingedModels';
+import { HUMMINGBIRD_BILL_TIP, HUMMINGBIRD_SHOULDER, HUMMINGBIRD_SWEEP, HUMMINGBIRD_TAIL, hummingbirdBody, hummingbirdTail, hummingbirdWing, hummingbirdWingBlur } from './wingedModels';
 import { farPoint, inView, spotAlive, threatAt } from './common';
 import { jointMatrix, rootMatrix } from './flyers';
 import type { CritterContext, Species } from './types';
@@ -29,12 +29,21 @@ const mOut = new THREE.Matrix4();
 const vTmp = new THREE.Vector3();
 const vAway = new THREE.Vector3();
 const vShoulder = new THREE.Vector3();
+/** Passo da sequência de fases da asa (razão áurea): cada quadro cai longe do anterior. */
+const GOLDEN = 0.6180339887;
+/** Inclinação das asas para cima, a partir do ombro (rad). */
+const WING_DIHEDRAL = 0.3;
 const ease = (t: number) => t * t * (3 - 2 * t);
 
 export class Hummingbird implements Species {
   private readonly body: InstancedPart;
-  /** Duas lâminas por lado em fases diferentes: o borrão da batida. */
+  private readonly tail: InstancedPart;
+  /** Uma lâmina por lado, cada quadro numa fase da batida. */
   private readonly wings: InstancedPart;
+  /** O leque borrado que a asa varre (um por lado). */
+  private readonly blur: InstancedPart;
+  /** Fase da lâmina no quadro (0..1). */
+  private flutter = 0;
   private state: BirdState = 'away';
   private readonly position = new THREE.Vector3();
   private readonly from = new THREE.Vector3();
@@ -57,12 +66,20 @@ export class Hummingbird implements Species {
   constructor(ctx: CritterContext, parent: THREE.Group) {
     // Penas furta-cor: o verde das costas muda de tom com o ângulo (o peito branco fica perolado).
     const plumage = clay(0xffffff, { vertexColors: true, roughness: 0.42, sheen: 0.6, iridescence: 0.9, bump: 0, mottle: 0.05, mottleScale: 9, side: THREE.DoubleSide });
-    const blur = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, transparent: true, opacity: 0.5, depthWrite: false, side: THREE.DoubleSide });
+    const wing = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.55, transparent: true, opacity: 0.6, depthWrite: false, side: THREE.DoubleSide });
+    // A transparência do borrão vem da vertex color (RGBA).
+    const blur = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.7, transparent: true, depthWrite: false, side: THREE.DoubleSide });
     this.body = new InstancedPart(hummingbirdBody(), plumage, 1, { name: 'hummingbird-body' });
-    this.wings = new InstancedPart(hummingbirdWing(), blur, 4, { name: 'hummingbird-wings', castShadow: false, skipAO: true });
-    parent.add(this.body.mesh, this.wings.mesh);
+    this.tail = new InstancedPart(hummingbirdTail(), plumage, 1, { name: 'hummingbird-tail' });
+    this.wings = new InstancedPart(hummingbirdWing(), wing, 2, { name: 'hummingbird-wings', castShadow: false, skipAO: true });
+    this.blur = new InstancedPart(hummingbirdWingBlur(), blur, 2, { name: 'hummingbird-wing-blur', castShadow: false, skipAO: true });
+    parent.add(this.body.mesh, this.tail.mesh, this.blur.mesh, this.wings.mesh);
     this.body.allocate();
-    for (let i = 0; i < 4; i++) this.wings.allocate();
+    this.tail.allocate();
+    for (let i = 0; i < 2; i++) {
+      this.wings.allocate();
+      this.blur.allocate();
+    }
     this.nextVisit = ctx.rng.range(90, 200);
   }
 
@@ -203,26 +220,43 @@ export class Hummingbird implements Species {
   private draw(t: number, pitch: number): void {
     rootMatrix(mRoot, this.position, this.yaw, pitch, Math.sin(t * 1.9) * 0.04, SCALE);
     this.body.set(0, mRoot);
-    // Batida em "8" quase na horizontal (~50 por segundo): duas lâminas por lado em fases
-    // diferentes mostram o borrão, como na foto de verdade.
-    for (let k = 0; k < 2; k++) {
-      const phase = t * 50 * Math.PI * 2 + k * 2.1;
-      const sweep = Math.sin(phase) * 1.05 - 0.15;
-      const twist = Math.cos(phase) * 0.5;
-      this.wings.set(k * 2, jointMatrix(mRoot, HUMMINGBIRD_SHOULDER, twist, sweep, 0.12, mOut));
-      vShoulder.set(-HUMMINGBIRD_SHOULDER.x, HUMMINGBIRD_SHOULDER.y, HUMMINGBIRD_SHOULDER.z);
-      this.wings.set(k * 2 + 1, jointMatrix(mRoot, vShoulder, twist, -sweep, -0.12, mOut, -1, 1, 1));
-    }
+    // O rabo abana e abre o leque o tempo todo (é o leme de quem para no ar); no voo, fecha.
+    const hovering = this.state === 'hover' ? 1 : 0.35;
+    const pump = (Math.sin(t * 5.3) * 0.14 + Math.sin(t * 13.7) * 0.05) * hovering;
+    const fan = 1 + (0.15 + 0.12 * Math.sin(t * 3.1)) * hovering;
+    this.tail.set(0, jointMatrix(mRoot, HUMMINGBIRD_TAIL, pump, 0, 0, mOut, fan, 1, 1));
+    // Batida em "8" quase na horizontal, ~50 por segundo: rápida demais para qualquer taxa
+    // de quadros. O que o olho vê é o borrão; a lâmina aparece cada quadro numa fase da
+    // batida, sem o "efeito roda de carroça" de amostrar a fase pelo relógio.
+    this.flutter = (this.flutter + GOLDEN) % 1;
+    const phase = this.flutter * Math.PI * 2;
+    const [forward, back] = HUMMINGBIRD_SWEEP;
+    const sweep = (forward + back) / 2 + ((back - forward) / 2) * Math.sin(phase);
+    // A asa gira no próprio eixo: inclinada no meio da batida, em pé nas viradas (lá na
+    // frente e lá atrás), e de cabeça para baixo na volta.
+    const twist = phase + 0.5 * Math.cos(phase) - 0.35 * Math.sin(2 * phase);
+    vShoulder.set(-HUMMINGBIRD_SHOULDER.x, HUMMINGBIRD_SHOULDER.y, HUMMINGBIRD_SHOULDER.z);
+    // As pontas um pouco para cima (diedro): o leque não some quando visto de lado.
+    this.blur.set(0, jointMatrix(mRoot, HUMMINGBIRD_SHOULDER, 0, 0, WING_DIHEDRAL, mOut));
+    this.blur.set(1, jointMatrix(mRoot, vShoulder, 0, 0, -WING_DIHEDRAL, mOut, -1, 1, 1));
+    this.wings.set(0, jointMatrix(mRoot, HUMMINGBIRD_SHOULDER, twist, sweep, WING_DIHEDRAL, mOut));
+    this.wings.set(1, jointMatrix(mRoot, vShoulder, twist, -sweep, -WING_DIHEDRAL, mOut, -1, 1, 1));
   }
 
   private hide(): void {
     this.body.hide(0);
-    for (let i = 0; i < 4; i++) this.wings.hide(i);
+    this.tail.hide(0);
+    for (let i = 0; i < 2; i++) {
+      this.wings.hide(i);
+      this.blur.hide(i);
+    }
   }
 
   private flush(): void {
     this.body.flush();
+    this.tail.flush();
     this.wings.flush();
+    this.blur.flush();
   }
 
   startle(position: THREE.Vector3, radius: number, ctx: CritterContext): void {

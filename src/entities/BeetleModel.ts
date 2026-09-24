@@ -134,7 +134,7 @@ export class BeetleModel {
   private readonly stalkMat: THREE.MeshPhysicalMaterial;
   private readonly clubMat: THREE.MeshPhysicalMaterial;
   private readonly skinUniforms: SkinUniforms = createSkinUniforms();
-  private readonly outfitPose: OutfitPose = { time: 0, dt: 0, speed: 0, pushBlend: 0, airborne: 0, verticalSpeed: 0 };
+  private readonly outfitPose: OutfitPose = { time: 0, dt: 0, speed: 0, pushBlend: 0, airborne: 0, verticalSpeed: 0, headPitch: 0 };
 
   private time = 0;
   private stride = 0;
@@ -651,6 +651,7 @@ export class BeetleModel {
     o.pushBlend = pushBlend;
     o.airborne = grounded ? 0 : clamp(Math.abs(verticalSpeed) / 3, 0, 1);
     o.verticalSpeed = verticalSpeed;
+    o.headPitch = this.body.rotation.x + this.head.rotation.x;
     this.outfit.update(o);
   }
 }
