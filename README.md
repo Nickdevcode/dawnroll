@@ -129,7 +129,7 @@ Conta é **opcional**: sem ela o jogo continua igualzinho, salvando no aparelho.
 | | |
 |---|---|
 | 👤 **Chip da conta** | No canto de cima do menu: **"Entrar"** sem conta; com conta, o besourinho com o seu casco, o apelido e uma bolinha do estado da nuvem (verde salvo, laranja subindo, cinza sem internet) |
-| 🔑 **Como entrar** | **E-mail + senha** (mínimo 8), sem confirmação por e-mail. O cadastro já pede o **apelido**. **Google** também, quando estiver ligado no Supabase (o botão aparece sozinho). Quem entra pelo Google ganha um apelido sorteado e uma **janelinha pra escolher o seu** (com dado pra sortear sugestões) |
+| 🔑 **Como entrar** | **E-mail + senha** (mínimo 8), sem confirmação por e-mail. O cadastro já pede o **apelido**. **Google** também (ligado em 24/09/2026; o botão aparece sozinho quando o provedor está ligado no Supabase). Quem entra pelo Google ganha um apelido sorteado e uma **janelinha pra escolher o seu** (com dado pra sortear sugestões) |
 | 🏷️ **Apelido** | 3 a 16 caracteres (letras com acento, números, espaço, `_ . -`), único sem diferenciar maiúscula e com filtro de palavrão (pt/en) no servidor. A disponibilidade é conferida enquanto digita. Dá pra trocar na placa da conta |
 | ☁️ **Save na nuvem** | O save inteiro (nível, despensa, catálogo, conquistas, cascos, acessórios...) sobe alguns segundos depois de cada mudança. Entrou num aparelho novo: o progresso vem junto. Já tinha jogado como convidado: **o progresso de convidado entra na conta** (e os enterros dele contam no ranking, com teto) |
 | 🔄 **Dois aparelhos** | Se dois aparelhos gravarem ao mesmo tempo, o jogo **junta os dois** sem perder nada: contadores e recordes ficam com o maior, figurinhas, conquistas e achados viram a soma das listas |
@@ -233,7 +233,7 @@ select p.nickname, s.buried, s.week_buried, s.total_cm, s.stickers, s.last_buria
 from public.player_stats s join public.profiles p on p.id = s.user_id order by s.buried desc limit 20;
 ```
 
-**⚙️ Autenticação:** confirmação de e-mail **desligada**, senha mínima de 8, site URL `https://dawnroll.vercel.app` e redirecionamentos liberados pra produção, previews da Vercel (`dawnroll-*.vercel.app`) e `localhost`. O login do Google entra ligando o provedor no Supabase (Authentication → Sign In / Providers → Google) com o Client ID e o Secret de um app OAuth do Google Cloud; o callback é `https://msmauxysewzacyotifcr.supabase.co/auth/v1/callback`.
+**⚙️ Autenticação:** confirmação de e-mail **desligada**, senha mínima de 8, site URL `https://dawnroll.vercel.app` e redirecionamentos liberados pra produção, previews da Vercel (`dawnroll-*.vercel.app`) e `localhost`. **Google ligado** com o app OAuth "Dawnroll" do Google Cloud (publicado, só os escopos básicos: `openid`, e-mail e perfil); o callback é `https://msmauxysewzacyotifcr.supabase.co/auth/v1/callback`. A tela do Google mostra "continuar para msmauxysewzacyotifcr.supabase.co" — trocar pelo nome do jogo exige domínio próprio no Supabase (plano pago).
 
 > 📌 **Se o jogo crescer:** voltar com código por e-mail + recuperação de senha (precisa de SMTP próprio, ex.: Resend com um domínio do jogo) e CAPTCHA no cadastro.
 
