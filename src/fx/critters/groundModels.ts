@@ -425,28 +425,57 @@ export function leafBit(): THREE.BufferGeometry {
 }
 
 /** Formigueiro: montinho de terra granulada com a boca escura no topo e torrões em volta. */
+/**
+ * Perfil do formigueiro (raio, altura), de fora pra dentro: a encosta sobe até
+ * a borda da cratera (r ≈ 0,22) e desce pro buraco no meio. Serve pro desenho,
+ * pra altura em que as formigas pisam e pro colisor.
+ */
+const ANTHILL_PROFILE: Array<[number, number]> = [
+  [1.4, -0.05],
+  [1.15, 0.1],
+  [0.8, 0.28],
+  [0.45, 0.42],
+  [0.22, 0.47],
+  [0.13, 0.4],
+  [0.06, 0.18],
+  [0.001, 0.12],
+];
+/** Raio da base do formigueiro. */
+export const ANTHILL_RADIUS = 1.4;
+/** Quanto o montinho fica enterrado (a base entra no chão em terreno torto). */
+export const ANTHILL_SINK = 0.08;
+const ANTHILL_SMOOTH = smoothProfile(ANTHILL_PROFILE, 40);
+
+/** Altura da superfície do formigueiro (antes do `ANTHILL_SINK`) a `r` do centro; 0 fora dele. */
+export function anthillHeight(r: number): number {
+  if (r >= ANTHILL_RADIUS) return 0;
+  for (let i = 1; i < ANTHILL_SMOOTH.length; i++) {
+    const [r0, y0] = ANTHILL_SMOOTH[i - 1];
+    const [r1, y1] = ANTHILL_SMOOTH[i];
+    if (r <= r0 && r >= r1) return y0 + ((y1 - y0) * (r0 - r)) / Math.max(r0 - r1, 1e-6);
+  }
+  return ANTHILL_SMOOTH[ANTHILL_SMOOTH.length - 1][1];
+}
+
+/**
+ * Pontos do casco convexo do formigueiro (x, y, z intercalados, origem no
+ * centro da base, já com o `ANTHILL_SINK`). O casco tampa a cratera: por cima
+ * dá pra andar e rolar, o buraco é só das formigas.
+ */
+export function anthillHull(sides = 16): Float32Array {
+  const points: number[] = [];
+  for (const [r, y] of ANTHILL_PROFILE) {
+    if (r < 0.2) continue;
+    for (let i = 0; i < sides; i++) {
+      const a = (i / sides) * Math.PI * 2;
+      points.push(Math.cos(a) * r * 0.97, y - ANTHILL_SINK, Math.sin(a) * r * 0.97);
+    }
+  }
+  return new Float32Array(points);
+}
+
 export function anthill(seed: number): THREE.BufferGeometry {
-  const mound = lumpify(
-    latheGeometry(
-      smoothProfile(
-        [
-          [1.4, -0.05],
-          [1.15, 0.1],
-          [0.8, 0.28],
-          [0.45, 0.42],
-          [0.22, 0.47],
-          [0.13, 0.4],
-          [0.06, 0.18],
-          [0.001, 0.12],
-        ],
-        20,
-      ),
-      32,
-    ),
-    0.045,
-    6,
-    seed,
-  );
+  const mound = lumpify(latheGeometry(smoothProfile(ANTHILL_PROFILE, 20), 32), 0.045, 6, seed);
   const dirt = new THREE.Color('#b98a5a');
   const crumb = new THREE.Color('#d2a672');
   const hole = new THREE.Color('#3a2616');

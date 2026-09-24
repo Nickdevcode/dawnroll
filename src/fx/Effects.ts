@@ -216,6 +216,11 @@ export class Effects {
     return old;
   }
 
+  /** Centros dos formigueiros do jardim atual (a lista troca quando o jardim troca). */
+  get anthills(): readonly THREE.Vector3[] {
+    return this.critters.anthills;
+  }
+
   /** Poder "Formigueiro amigo": formigas no raio largam a folhinha; devolve onde cada folha caiu (mundo). */
   takeAntLeaves(center: THREE.Vector3, radius: number, max: number): THREE.Vector3[] {
     return this.critters.takeAntLeaves(center, radius, max);

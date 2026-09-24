@@ -16,7 +16,7 @@ Um besouro rola-bosta de massinha num jardim em miniatura. Você rola uma bola d
 | 🌼 **Flores gigantes** | Margaridas, tulipas, campânulas, dentes-de-leão e flores de trevo, todas balançando com o vento |
 | 🍄 **Cogumelos** | Em touceiras, com pé de bulbo, saia, lamelas esculpidas e bolinhas no chapéu |
 | 🪨 **Pedras e troncos** | Rochedos com musgo e líquen, troncos com anéis na ponta e orelha-de-pau |
-| 🦋 **Bichinhos** | Borboletas (9 paletas), abelhas com cestinha de pólen, libélulas de 4 asas, joaninhas que abrem os élitros e voam, caracóis que recolhem os olhos, **formigas em trilha** saindo dos formigueiros (algumas carregando folhinha), **tatuzinhos** que viram bolinha, **gafanhotos** que pulam, **minhocas** que saem na chuva e **sapos** na beira das poças cheias |
+| 🦋 **Bichinhos** | Borboletas (9 paletas), abelhas com cestinha de pólen, libélulas de 4 asas, joaninhas que abrem os élitros e voam, caracóis que recolhem os olhos, **formigas em trilha** saindo dos formigueiros (algumas carregando folhinha, entrando e saindo pelo buraco no alto do montinho, que é sólido: o besouro sobe nele e a bola rola por cima), **tatuzinhos** que viram bolinha, **gafanhotos** que pulam, **minhocas** que saem na chuva e **sapos** na beira das poças cheias |
 | 🐛 **Bichos que grudam** | Tatuzinho, **tesourinha e lacraia** (saem correndo de baixo de pedra e tronco arrancados), **bicho-pau** disfarçado de graveto (acorda quando você chega perto), **lagarta mede-palmo** andando em sanfona, **lesma** na chuva (deixa rastro de gosma onde a bola desliza), **vaquinha** (o besourinho verde de pinta amarela das hortas) e **tanajura** pousada |
 | 🕷️ **Eventos do jardim** | **Teias de aranha** entre as flores, com orvalho e a aranha-de-jardim listrada: a bola rasga, o fio gruda nela e a aranha desce e foge correndo nas 8 patas (articuladas, com o pé fincado no chão a cada passo). **Revoada de tanajuras** depois da chuva (fenômeno real da primavera). **Beija-flor** raro visitando as flores: uma estrelinha-ametista (beija-flor de jardim brasileiro) com a garganta furta-cor, o rabo em forquilha que abana e o borrão das asas batendo. **Cigarras** cantando nas árvores nos dias de sol |
 | 🧸 **Objetos perdidos** | Tralha de gente pra grudar (botão, bolinha de gude, moeda de 1 real, clipe, pecinha de montar, dado, tampinha) e coisas grandes pra arrancar: pinha, maçã caída, soldadinhos, carrinhos, patinho de borracha, **bola de tênis** (que rola e dá pra chutar antes de engolir), vasinho de barro, pá, luva, **chinelo** e o chefão: o **anão de jardim** |
@@ -236,6 +236,7 @@ src/
 │   │                       # SceneryLayer (lote + colisores + consultas) e colliderFit (colisão automática)
 │   ├── Pickables.ts        # Katamari do cenário: arrancar, grudar e "falta crescer X cm"
 │   ├── LooseObjects.ts     # bolas de tênis de física de verdade (rolam, a bola chuta e depois engole)
+│   ├── AnthillColliders.ts # colisão dos formigueiros (casco convexo, refeito a cada jardim)
 │   ├── zones.ts            # sorteio dos três cantinhos (piquenique, brinquedos, jardineiro)
 │   ├── objects/            # objetos perdidos: frutas, piquenique, brinquedos, jardineiro, anão, detritos novos
 │   │                       # + compose.ts (montagem procedural de um cantinho sem sobrepor nada)

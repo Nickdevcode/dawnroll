@@ -1,11 +1,11 @@
 import * as THREE from 'three';
-import { clamp, damp } from '../../utils/math';
+import { clamp, damp, smoothstep } from '../../utils/math';
 import { clay } from '../../render/clayMaterial';
 import { BURROW, dirtAmount, terrainHeight, PLAY_RADIUS } from '../../world/Terrain';
 import { InstancedPart } from './InstancedPart';
 import { critterMaterials } from './materials';
 import { mergeParts } from './models';
-import { antBody, anthill, leafBit } from './groundModels';
+import { ANTHILL_RADIUS, ANTHILL_SINK, antBody, anthill, anthillHeight, leafBit } from './groundModels';
 import { insideBasin } from './common';
 import { rootMatrix, jointMatrix } from './flyers';
 import type { CritterContext, Species } from './types';
@@ -24,6 +24,10 @@ import type { CritterContext, Species } from './types';
 const PATH_STEP = 0.15;
 /** Distância lateral entre a faixa de ida e a de volta. */
 const LANE = 0.13;
+/** Trecho da trilha (a partir do buraco) em que as duas faixas se juntam pra entrar no formigueiro. */
+const NEST_APPROACH = 1.1;
+/** Folga acima da terra do montinho (ele é encaroçado; sem isso a formiga afunda nos calombos). */
+const MOUND_LIFT = 0.025;
 
 interface TrailPath {
   x: Float32Array;
@@ -70,6 +74,7 @@ const ColonyTints = [new THREE.Color(0.45, 0.4, 0.4), new THREE.Color(1.05, 0.55
 const mRoot = new THREE.Matrix4();
 const mOut = new THREE.Matrix4();
 const vPos = new THREE.Vector3();
+const EMPTY: readonly THREE.Vector3[] = [];
 const LEAF_OFFSET = new THREE.Vector3(0, 0.2, 0.14);
 
 export class AntColonies implements Species {
@@ -77,6 +82,8 @@ export class AntColonies implements Species {
   private readonly poseB: InstancedPart;
   private readonly leaves: InstancedPart;
   private readonly colonies: Colony[] = [];
+  /** Centro de cada formigueiro (mundo); a mesma lista a vida toda (vazia até o primeiro quadro). */
+  private readonly nestList: THREE.Vector3[] = [];
   private built = false;
 
   constructor(
@@ -103,7 +110,7 @@ export class AntColonies implements Species {
       const colony = (c === 0 ? this.placePicnicColony(ctx) : null) ?? this.placeColony(ctx, baseAngle + (c / this.colonyCount) * Math.PI * 2);
       if (!colony) continue;
       const hill = anthill(c + 1);
-      hill.translate(colony.nest.x, colony.nest.y - 0.08, colony.nest.z);
+      hill.translate(colony.nest.x, colony.nest.y - ANTHILL_SINK, colony.nest.z);
       hills.push(hill);
       colony.tint = ColonyTints[c % ColonyTints.length];
       for (let i = 0; i < this.antsPerColony; i++) {
@@ -133,6 +140,7 @@ export class AntColonies implements Species {
         ant.carry = ant.dir < 0 && ctx.rng.next() < 0.65;
       }
       this.colonies.push(colony);
+      this.nestList.push(colony.nest);
     }
     if (hills.length > 0) {
       const mesh = new THREE.Mesh(mergeParts(hills), critterMaterials().body);
@@ -267,21 +275,31 @@ export class AntColonies implements Species {
           this.hide(ant);
           continue;
         }
-        // Posição na trilha (interpolada) + faixa + desvio.
+        // Posição na trilha (interpolada) + faixa + desvio. Perto do buraco as duas faixas se
+        // juntam no meio: a formiga sobe o montinho e entra (ou sai) pela boca, lá no alto.
         const f = clamp(ant.s / PATH_STEP, 0, path.x.length - 1.001);
         const i = Math.floor(f);
         const k = f - i;
         const ux = path.ux[i] + (path.ux[i + 1] - path.ux[i]) * k;
         const uz = path.uz[i] + (path.uz[i + 1] - path.uz[i]) * k;
-        const lateral = LANE * ant.dir + ant.offset;
+        const lateral = (LANE * ant.dir + ant.offset) * smoothstep(0, NEST_APPROACH, ant.s);
         const x = path.x[i] + (path.x[i + 1] - path.x[i]) * k - uz * lateral;
         const z = path.z[i] + (path.z[i + 1] - path.z[i]) * k + ux * lateral;
         const y = path.y[i] + (path.y[i + 1] - path.y[i]) * k;
-        vPos.set(x, y + 0.005, z);
+        const fx = ux * ant.dir;
+        const fz = uz * ant.dir;
+        vPos.set(x, this.surface(colony, x, z, y) + 0.005, z);
+        // Na encosta do montinho ela inclina junto (nariz pra cima subindo, pra baixo descendo pro buraco).
+        let pitch = 0;
+        if (Math.hypot(x - colony.nest.x, z - colony.nest.z) < ANTHILL_RADIUS + 0.1) {
+          const ahead = this.surface(colony, x + fx * 0.06, z + fz * 0.06, terrainHeight(x + fx * 0.06, z + fz * 0.06));
+          const behind = this.surface(colony, x - fx * 0.06, z - fz * 0.06, terrainHeight(x - fx * 0.06, z - fz * 0.06));
+          pitch = -Math.atan2(ahead - behind, 0.12);
+        }
         ant.at.copy(vPos);
         ant.shown = true;
-        const yaw = Math.atan2(ux * ant.dir, uz * ant.dir) + Math.sin(t * 7 + ant.phase) * 0.12 - ant.offset * 0.15 * ant.dir;
-        rootMatrix(mRoot, vPos, yaw, 0, 0, ant.scale);
+        const yaw = Math.atan2(fx, fz) + Math.sin(t * 7 + ant.phase) * 0.12 - ant.offset * 0.15 * ant.dir;
+        rootMatrix(mRoot, vPos, yaw, pitch, 0, ant.scale);
         const moving = ant.pause <= 0;
         const pose = moving && Math.floor(t * (12 + ant.hurry * 8) + ant.phase) % 2 === 1;
         (pose ? this.poseB : this.poseA).set(ant.slot, mRoot);
@@ -353,15 +371,25 @@ export class AntColonies implements Species {
     if (push !== 0) ant.hurry = Math.min(1, ant.hurry + dt * 2);
   }
 
+  /** Altura em que a formiga pisa: a terra do montinho por cima do chão (`ground`), perto do formigueiro. */
+  private surface(colony: Colony, x: number, z: number, ground: number): number {
+    const r = Math.hypot(x - colony.nest.x, z - colony.nest.z);
+    if (r >= ANTHILL_RADIUS) return ground;
+    return Math.max(ground, colony.nest.y - ANTHILL_SINK + anthillHeight(r) + MOUND_LIFT * smoothstep(ANTHILL_RADIUS, 0.25, r));
+  }
+
   private hide(ant: Ant): void {
     this.poseA.hide(ant.slot);
     this.poseB.hide(ant.slot);
     this.leaves.hide(ant.slot);
   }
 
-  /** Bocas dos formigueiros (mundo). Vazio até o primeiro quadro (as colônias nascem nele). */
+  /**
+   * Centros dos formigueiros (mundo). Vazio até o primeiro quadro (as colônias nascem nele);
+   * depois, sempre a mesma lista (dá pra comparar por identidade).
+   */
   get nests(): readonly THREE.Vector3[] {
-    return this.colonies.map((colony) => colony.nest);
+    return this.built ? this.nestList : EMPTY;
   }
 
   /**

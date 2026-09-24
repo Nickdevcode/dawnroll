@@ -191,6 +191,11 @@ export class Critters {
     this.ctx.menu = open;
   }
 
+  /** Centros dos formigueiros deste jardim (vazio até o primeiro quadro; depois, sempre a mesma lista). */
+  get anthills(): readonly THREE.Vector3[] {
+    return this.ants.nests;
+  }
+
   /** Poder "Formigueiro amigo": formigas no raio largam a folhinha; devolve onde cada uma caiu. */
   takeAntLeaves(center: THREE.Vector3, radius: number, max: number): THREE.Vector3[] {
     return this.ants.takeLeaves(center, radius, max);

@@ -15,6 +15,7 @@ import { GroundCover } from './world/GroundCover';
 import { Collectibles, FRESH_CHANCE, type DebrisMaterial, type StinkSource } from './world/Collectibles';
 import { Pickables, type PickEvent } from './world/Pickables';
 import { LooseObjects } from './world/LooseObjects';
+import { AnthillColliders } from './world/AnthillColliders';
 import type { PickableKind } from './world/scenery/context';
 import { Burrow, MIN_BURY_RADIUS } from './world/Burrow';
 import { Weather } from './world/Weather';
@@ -160,6 +161,7 @@ export class Game {
   private collectibles!: Collectibles;
   private pickables!: Pickables;
   private looseObjects!: LooseObjects;
+  private anthillColliders!: AnthillColliders;
   private burrow!: Burrow;
   private puddles!: Puddles;
   private ball!: DungBall;
@@ -394,6 +396,7 @@ export class Game {
     scene.add(this.collectibles.group);
     this.pickables = new Pickables(this.physics, this.scenery);
     this.looseObjects = new LooseObjects(this.physics, this.scenery);
+    this.anthillColliders = new AnthillColliders(this.physics);
     scene.add(this.looseObjects.group);
     this.burrow = new Burrow();
     scene.add(this.burrow.group);
@@ -1391,6 +1394,8 @@ export class Game {
       f.ballVelocity.set(0, 0, 0);
     }
     this.effects.update(dt, f);
+    // Os formigueiros nascem com os bichos (primeiro quadro de cada jardim): a colisão vem junto.
+    this.anthillColliders.sync(this.effects.anthills);
   }
 
   /** Retrato do quadro para o áudio (roda também na pausa: a madrugada do menu tem som). */
