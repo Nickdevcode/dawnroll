@@ -55,7 +55,7 @@ Um besouro rola-bosta de massinha num jardim em miniatura. Você rola uma bola d
 | Zoom | Roda do mouse | `LB` / `RB` (`L1` / `R1`) | — |
 | Pausar | `Esc` | `Start` / `Options` | Botão de pausa no topo |
 
-🎮 **Controle:** é só conectar (USB ou Bluetooth) e mexer. O jogo detecta se é de Xbox ou PlayStation e mostra os botões certos nas dicas. No menu, direcional/analógico navegam, `A`/`✕` escolhe e `B`/`○` volta. Com o controle, a câmera volta sozinha pra trás do besouro e ele vibra nas batidas e no enterro (dá pra desligar).
+🎮 **Controle:** é só conectar (USB ou Bluetooth) e mexer. O jogo detecta se é de Xbox ou PlayStation e mostra os botões certos nas dicas. No menu, direcional/analógico andam pro vizinho na tela (o catálogo anda por linha e coluna), `A`/`✕` escolhe, `B`/`○` volta, `LB`/`RB` trocam de aba na Toca e nas Configurações e o analógico direito rola a placa aberta. Na escolha de poder, uma carta só fica destacada e é ela que o `A` pega. Com o controle, a câmera volta sozinha pra trás do besouro e ele vibra nas batidas e no enterro (dá pra desligar).
 
 ### 🟤 A mecânica
 - **Empurrar:** chega perto da bola e segura `E`. O besouro vira de costas, apoia a cabeça no chão e empurra com as patas traseiras, de ré, igualzinho ao rola-bosta de verdade. Você só aponta a direção.
@@ -245,6 +245,7 @@ src/
     ├── gameIcons.ts        # figurinhas do catálogo e ícones dos poderes (SVG)
     ├── screenMarker.ts     # marcador preso na borda da tela (toca e Faro)
     ├── tabs.ts             # abas acessíveis compartilhadas pelas placas
+    ├── spatialNav.ts       # navegação do controle no menu: vizinho na direção apertada (grade e lista)
     ├── Menu.ts             # menu de início/pausa, configurações (abas) e como jogar
     ├── controls.ts         # seletor, chave e slider acessíveis (teclado, leitor de tela)
     ├── icons.ts            # ícones SVG
@@ -324,7 +325,9 @@ Ferramentas de medição (descartáveis, em `shots/lead/`, fora do git): `bench.
 - **O limite real da bola é o jardim, não o número:** antes, todos os arrancáveis somavam ~755 de volume e a bola de 24 cm pedia ~905 (o teto era promessa vazia). Os objetos perdidos somam mais ~945 (o anão sozinho, 195), o jardim inteiro vai a ~1680 e aí sim o teto subiu pra 30 cm (1767): 24 cm fica alcançável e 30 cm só varrendo quase tudo e ainda comendo bosta.
 - **Bola que "nunca chegava":** o raio anda até o alvo com suavização exponencial, que nunca encosta nele. No teto a bola ficava em 29,9996 cm e o marco de 30 (e antes o de 24) nunca disparava. Agora o raio encaixa no alvo quando fica a menos de 0,0005, e o diâmetro é arredondado na terceira casa.
 - **Casco sem repintar malha:** o degradê do casco e das patas é assado nos vértices só como sombra (cinza); a cor vem do material. Trocar de casco é trocar a cor de 6 materiais, e as peças fundidas continuam fundidas. A pálpebra é uma meia-esfera sem cor nos vértices: material com `vertexColors` ali deixaria ela preta.
-- **Equilibrista sem física nova:** em cima da bola o besouro não usa o controlador de personagem. Ele fica colado no topo dela e aplica na bola a mesma força limitada do empurrar, na direção do analógico. Subir e descer são pulinhos animados, e o ponto de pouso da descida é conferido com um raio pra baixo (cai em cima da pedra, se tiver pedra).
+- **Equilibrista sem física nova:** em cima da bola o besouro não usa o controlador de personagem. Ele fica colado no topo dela e aplica na bola a mesma força limitada do empurrar, na direção do analógico. Subir e descer são pulinhos animados que giram em volta do centro da bola (a linha reta entre o chão e o topo passa por dentro dela, e numa bola grande isso é bem no meio), e o ponto de pouso da descida é conferido com um raio pra baixo (cai em cima da pedra, se tiver pedra).
+- **Equilibrista arremessando a bola (corrigido):** a regra de grupos do solver do Rapier vale dos dois lados, e a bola usa o grupo padrão ("tudo", inclusive `WORLD`). Então o contato besouro–bola gera força com a massa infinita do corpo cinemático. No pulinho de subir, o besouro atravessava a bola a ~40 un/s e, com bola grande, arremessava ela (e ele junto) a ~80 de altura, pra fora do jardim. Agora, subindo, em cima e descendo, o solver do besouro fica desligado; no chão nada mudou (empurrar medido igual antes e depois).
+- **Uma carta selecionada só:** o destaque da escolha de poder vinha de `:hover` + `:focus-visible`. Com o cursor parado em cima de uma carta e o controle em outra, apareciam duas cartas levantadas. Agora existe uma seleção (`is-selected`) que setas, controle e mouse (só movimento de verdade) movem juntos. A direção que já estava apertada quando um menu abre (o analógico de andar) não vale até ser solta, e no analógico ganha o eixo dominante (antes, "direita e um pouco pra cima" virava cima).
 - **Trombada de frente:** o "impacto" da bola só via queda e quique (velocidade vertical). Bater rolando numa coisa grande demais aparece como freada brusca na horizontal, então o jogo compara a velocidade de um passo pro outro enquanto a bola encosta num arrancável grande demais.
 - **Cor pra pedido é a que a gente vê:** a família de cor ("vermelha", "azul") sai do matiz e da saturação em sRGB, não do valor linear que o three.js guarda. Marrom e cinza não contam (senão bosta e pedra cumpririam pedido de cor).
 - **Pedido dourado não mente:** só vira dourado um pedido que já não seja o fácil nem um desafio (desafio não tem "mais difícil"), e o dourado de tamanho tem teto de 30 cm, que agora existe.

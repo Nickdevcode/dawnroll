@@ -20,6 +20,7 @@ import { GameIcons } from './gameIcons';
 import { segmented, slider, toggle, type Control } from './controls';
 import { BurrowSheet } from './BurrowSheet';
 import { bindTabs, tabsMarkup } from './tabs';
+import { nearestInDirection } from './spatialNav';
 
 /**
  * Menu de início e de pausa: a "madrugada" por cima do jardim (que continua
@@ -125,6 +126,7 @@ export class Menu {
         <p class="menu__pad-legend" data-pad-legend hidden>
           <kbd class="padcap" data-pad="a"></kbd><span data-t="pad.select"></span>
           <kbd class="padcap" data-pad="b"></kbd><span data-t="pad.back"></span>
+          <span class="menu__pad-tabs"><kbd class="padcap" data-pad="lb"></kbd><kbd class="padcap" data-pad="rb"></kbd><span data-t="pad.tabs"></span></span>
         </p>
       </div>
       ${this.settingsSheet()}
@@ -202,19 +204,17 @@ export class Menu {
   }
 
   /**
-   * Navegação por controle: cima/baixo andam entre os controles da tela (ou da placa
-   * aberta), esquerda/direita mudam o valor do que está em foco, A aciona, B volta.
+   * Navegação por controle: as direções andam pro vizinho na tela (grade do catálogo por
+   * linha e coluna), esquerda/direita mudam o valor de slider/opção/aba em foco, A aciona,
+   * B volta, LB/RB trocam de aba. Sem vizinho pra cima/baixo, a placa rola (texto corrido).
    * Devolve false quando o menu não usou a ação (ex.: B sem placa aberta = continuar).
    */
   handleGamepad(action: MenuAction): boolean {
     document.documentElement.classList.add('using-gamepad');
-    const scope = this.openSheet ? this.sheets[this.openSheet] : (this.element.querySelector('.menu__main') as HTMLElement);
-    // `data-focusable`: itens de leitura (catálogo, poderes) que o controle precisa alcançar pra rolar a placa.
-    const focusables = Array.from(scope.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), [data-focusable]')).filter(
-      (el) => el.tabIndex >= 0 && el.offsetParent !== null,
-    );
+    const sheet = this.openSheet ? this.sheets[this.openSheet] : null;
+    const focusables = this.gamepadFocusables(sheet ?? (this.element.querySelector('.menu__main') as HTMLElement));
     const active = document.activeElement as HTMLElement | null;
-    const index = active ? focusables.indexOf(active) : -1;
+    const current = active && focusables.includes(active) ? active : null;
     const focus = (el: HTMLElement | undefined) => {
       if (!el) return;
       el.focus({ preventScroll: false, focusVisible: true } as FocusOptions);
@@ -222,27 +222,39 @@ export class Menu {
     };
     switch (action) {
       case 'up':
-      case 'down': {
-        const step = action === 'down' ? 1 : -1;
-        focus(focusables[index < 0 ? 0 : Math.min(Math.max(index + step, 0), focusables.length - 1)]);
-        return true;
-      }
+      case 'down':
       case 'left':
       case 'right': {
-        if (!active || index < 0) return true;
-        if (active instanceof HTMLInputElement && active.type === 'range') {
-          if (action === 'right') active.stepUp();
-          else active.stepDown();
-          active.dispatchEvent(new Event('input', { bubbles: true }));
-        } else if (active.getAttribute('role') === 'radio' || active.getAttribute('role') === 'tab') {
-          active.dispatchEvent(new KeyboardEvent('keydown', { key: action === 'right' ? 'ArrowRight' : 'ArrowLeft', bubbles: true }));
+        if (!current) {
+          focus(focusables[0]);
+          return true;
         }
+        if ((action === 'left' || action === 'right') && this.adjust(current, action)) return true;
+        const next = nearestInDirection(current, focusables, action);
+        if (next) focus(next);
+        else if (sheet && (action === 'up' || action === 'down')) this.pageSheet(action === 'down' ? 1 : -1);
         return true;
       }
-      case 'confirm':
-        if (active && index >= 0) active.click();
-        else focus(focusables[0]);
+      case 'prevTab':
+      case 'nextTab': {
+        const tab = sheet?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]');
+        if (!tab) return true;
+        // Mesmo caminho das setas numa aba (seleciona e foca a vizinha); a placa volta pro topo.
+        tab.dispatchEvent(new KeyboardEvent('keydown', { key: action === 'nextTab' ? 'ArrowRight' : 'ArrowLeft', bubbles: true }));
+        const body = sheet?.querySelector<HTMLElement>('.sheet__body');
+        if (body) body.scrollTop = 0;
         return true;
+      }
+      case 'confirm': {
+        if (!current) {
+          focus(focusables[0]);
+          return true;
+        }
+        // Cartão de leitura com um botão dentro (casco: "Usar"): A aciona o botão.
+        const inner = current.matches('button, input') ? null : current.querySelector<HTMLElement>('button:not(:disabled)');
+        (inner ?? current).click();
+        return true;
+      }
       case 'back':
         if (!this.openSheet) return false;
         this.closeSheet();
@@ -250,6 +262,45 @@ export class Menu {
       case 'start':
         return false;
     }
+  }
+
+  /** Analógico direito: rola a placa aberta (pixels; positivo = pra baixo). */
+  scrollSheet(dy: number): void {
+    if (!this.openSheet || dy === 0) return;
+    const body = this.sheets[this.openSheet].querySelector<HTMLElement>('.sheet__body');
+    if (body) body.scrollTop += dy;
+  }
+
+  /**
+   * O que o controle alcança: botões, campos e `data-focusable` (itens de leitura — catálogo,
+   * poderes, conquistas — que precisam de foco pra placa rolar até eles). Quem está dentro de
+   * outro alcançável fica de fora (o "Usar" do casco é acionado pelo A no cartão).
+   */
+  private gamepadFocusables(scope: HTMLElement): HTMLElement[] {
+    const all = Array.from(scope.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), [data-focusable]')).filter(
+      (el) => el.tabIndex >= 0 && el.offsetParent !== null,
+    );
+    return all.filter((el) => !all.some((other) => other !== el && other.contains(el)));
+  }
+
+  /** Esquerda/direita num controle de valor (slider, opção, aba). Devolve se era um deles. */
+  private adjust(el: HTMLElement, action: 'left' | 'right'): boolean {
+    if (el instanceof HTMLInputElement && el.type === 'range') {
+      if (action === 'right') el.stepUp();
+      else el.stepDown();
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      return true;
+    }
+    const role = el.getAttribute('role');
+    if (role !== 'radio' && role !== 'tab') return false;
+    el.dispatchEvent(new KeyboardEvent('keydown', { key: action === 'right' ? 'ArrowRight' : 'ArrowLeft', bubbles: true }));
+    return true;
+  }
+
+  /** Sem mais nada pra focar naquela direção: a placa rola uma boa parte da altura. */
+  private pageSheet(direction: 1 | -1): void {
+    const body = this.openSheet ? this.sheets[this.openSheet].querySelector<HTMLElement>('.sheet__body') : null;
+    body?.scrollBy({ top: direction * body.clientHeight * 0.6, behavior: 'smooth' });
   }
 
   setProgress(save: SaveData): void {
@@ -474,6 +525,8 @@ export class Menu {
     });
     // Nada do menu chega na área de arrastar a câmera do toque.
     this.element.addEventListener('pointerdown', (e) => e.stopPropagation());
+    // Voltou pro mouse/toque: o contorno de foco "de controle" sai (senão todo clique ficava com anel).
+    window.addEventListener('pointerdown', () => document.documentElement.classList.remove('using-gamepad'), { capture: true });
   }
 
   private open(name: SheetName, intro = false): void {
@@ -487,6 +540,8 @@ export class Menu {
     }
     this.openers[name].setAttribute('aria-expanded', 'true');
     this.element.classList.add('has-sheet');
+    // Placa com abas: a legenda do controle mostra LB/RB.
+    this.element.classList.toggle('has-tabs', sheet.querySelector('[role="tablist"]') !== null);
     // Foco no primeiro controle útil da placa (aba ativa ou o fechar).
     const first = sheet.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]') ?? sheet.querySelector<HTMLElement>('[data-close]');
     first?.focus({ preventScroll: true });
@@ -498,7 +553,7 @@ export class Menu {
     this.openSheet = null;
     this.sheets[name].hidden = true;
     this.openers[name].setAttribute('aria-expanded', 'false');
-    this.element.classList.remove('has-sheet');
+    this.element.classList.remove('has-sheet', 'has-tabs');
     if (returnFocus) this.openers[name].focus({ preventScroll: true });
   }
 

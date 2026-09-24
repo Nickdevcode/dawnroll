@@ -316,6 +316,7 @@ export class Hud {
     this.currentHint = '';
     this.setHint(this.hintState.kind, this.hintState.value);
     this.refreshAbilityKey();
+    this.perkPicker.setDevice(device, padStyle);
   }
 
   /**

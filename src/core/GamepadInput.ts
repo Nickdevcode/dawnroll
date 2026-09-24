@@ -9,11 +9,12 @@
  *   LT / L2 (ou B / ○)  correr           Y / △               trazer a bola
  *   LB / RB             zoom             Start / Options     pausar
  *   RS / R3 (ou ↑)      poder de apertar (Equilibrista)
- * No menu: direcional ou analógico navegam, A escolhe, B volta.
+ * No menu: direcional ou analógico navegam, A escolhe, B volta, LB/RB trocam de aba e o
+ * analógico direito rola a placa aberta.
  */
 
 export type PadStyle = 'xbox' | 'playstation';
-export type MenuAction = 'up' | 'down' | 'left' | 'right' | 'confirm' | 'back' | 'start';
+export type MenuAction = 'up' | 'down' | 'left' | 'right' | 'confirm' | 'back' | 'start' | 'prevTab' | 'nextTab';
 
 /** Rótulo de cada botão no estilo do controle (para dicas e ajuda). */
 export const PAD_LABELS: Record<PadStyle, Record<'a' | 'b' | 'x' | 'y' | 'lb' | 'rb' | 'lt' | 'rt' | 'start' | 'ability', string>> = {
@@ -50,6 +51,10 @@ const LOOK_SPEED_Y = 560;
 /** Navegação no menu segurando a direção: primeira repetição e as seguintes. */
 const REPEAT_DELAY = 0.38;
 const REPEAT_RATE = 0.11;
+/** Analógico conta como direção de menu a partir daqui (no eixo dominante). */
+const MENU_STICK = 0.6;
+/** Rolagem da placa pelo analógico direito, em pixels por segundo na ponta. */
+const MENU_SCROLL_SPEED = 900;
 
 /** Zona morta radial + curva quadrática (precisão perto do centro, velocidade na ponta). */
 function stick(x: number, y: number): [number, number] {
@@ -81,6 +86,8 @@ export class GamepadInput {
   active = false;
   /** Ações de menu deste quadro (bordas, com repetição ao segurar a direção). */
   readonly menuActions: MenuAction[] = [];
+  /** Rolagem pedida pelo analógico direito neste quadro (pixels; positivo = pra baixo). */
+  menuScroll = 0;
 
   onConnectionChange: ((connected: boolean, style: PadStyle) => void) | null = null;
 
@@ -99,7 +106,7 @@ export class GamepadInput {
   poll(dt: number): void {
     this.menuActions.length = 0;
     this.jumpPressed = this.recallPressed = this.startPressed = this.abilityPressed = false;
-    this.moveX = this.moveY = this.lookX = this.lookY = this.zoom = 0;
+    this.moveX = this.moveY = this.lookX = this.lookY = this.zoom = this.menuScroll = 0;
     this.grab = this.run = this.active = false;
 
     const pad = this.pad();
@@ -123,14 +130,14 @@ export class GamepadInput {
     this.startPressed = edge(Button.Start) || edge(Button.Back);
     this.active = mx !== 0 || my !== 0 || lx !== 0 || ly !== 0 || pressed.some(Boolean);
 
-    // Menu: A escolhe, B volta; direções com repetição ao segurar (direcional ou analógico).
+    // Menu: A escolhe, B volta, LB/RB trocam de aba; direções com repetição ao segurar.
     if (edge(Button.A)) this.menuActions.push('confirm');
     if (edge(Button.B)) this.menuActions.push('back');
+    if (edge(Button.LB)) this.menuActions.push('prevTab');
+    if (edge(Button.RB)) this.menuActions.push('nextTab');
     if (this.startPressed) this.menuActions.push('start');
-    const rawX = pad.axes[0] ?? 0;
-    const rawY = pad.axes[1] ?? 0;
-    const dir: MenuAction | null =
-      down(Button.Up) || rawY < -0.6 ? 'up' : down(Button.Down) || rawY > 0.6 ? 'down' : down(Button.Left) || rawX < -0.6 ? 'left' : down(Button.Right) || rawX > 0.6 ? 'right' : null;
+    this.menuScroll = ly * MENU_SCROLL_SPEED * dt;
+    const dir = this.menuDirection(down, pad.axes[0] ?? 0, pad.axes[1] ?? 0);
     if (dir !== this.repeatDir) {
       this.repeatDir = dir;
       this.repeatTimer = REPEAT_DELAY;
@@ -143,6 +150,29 @@ export class GamepadInput {
       }
     }
     this.previous = pressed;
+  }
+
+  /**
+   * Um menu acabou de abrir (pausa, cartas de poder): a direção que já estava apertada
+   * — normalmente o analógico de andar — não vale até ser solta. Sem isso ela seguia
+   * repetindo e arrastava a seleção sozinha.
+   */
+  suppressHeldDirection(): void {
+    this.repeatTimer = Infinity;
+  }
+
+  /**
+   * Direção de menu: o direcional manda; no analógico vale o eixo dominante (na diagonal
+   * "direita e um pouco pra cima" é direita — antes o cima ganhava e a seleção ia pro outro lado).
+   */
+  private menuDirection(down: (b: Button) => boolean, x: number, y: number): MenuAction | null {
+    if (down(Button.Up)) return 'up';
+    if (down(Button.Down)) return 'down';
+    if (down(Button.Left)) return 'left';
+    if (down(Button.Right)) return 'right';
+    if (Math.max(Math.abs(x), Math.abs(y)) < MENU_STICK) return null;
+    if (Math.abs(x) > Math.abs(y)) return x > 0 ? 'right' : 'left';
+    return y > 0 ? 'down' : 'up';
   }
 
   /** Vibração (0..1 em cada motor). Silenciosa onde o navegador/controle não suporta. */

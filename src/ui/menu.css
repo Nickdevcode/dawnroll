@@ -280,6 +280,19 @@
 .menu__pad-legend span + .padcap {
   margin-left: var(--space-3);
 }
+/* LB/RB só fazem algo numa placa com abas (toca, configurações). */
+.menu__pad-tabs {
+  display: none;
+  align-items: center;
+  gap: var(--space-1);
+  margin-left: var(--space-3);
+}
+.menu__pad-tabs span {
+  margin-left: var(--space-1);
+}
+.menu.has-tabs .menu__pad-tabs {
+  display: inline-flex;
+}
 .padcap {
   display: inline-grid;
   place-items: center;
@@ -1608,6 +1621,18 @@ button.catalog-tile.is-selected {
   background: rgba(75, 63, 134, 0.06);
   box-shadow: none;
   animation: none;
+}
+/* No controle não dá pra "dar uma olhada" rolando: o cartão da figurinha escolhida fica preso
+   no topo (senão o A numa figurinha lá de baixo mudava um cartão fora da vista). As figurinhas
+   param abaixo dele quando a navegação rola a placa pra cima. */
+.using-gamepad .catalog-detail:not(.is-empty) {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  box-shadow: 0 2px 0 rgba(43, 42, 94, 0.08), inset 0 0 0 1.5px rgba(255, 181, 71, 0.45), 0 10px 18px -8px rgba(43, 42, 94, 0.35);
+}
+.using-gamepad [data-panel="catalog"]:has(.catalog-detail:not(.is-empty)) .catalog-tile {
+  scroll-margin-top: 170px;
 }
 .catalog-detail__hint {
   display: flex;

@@ -803,6 +803,8 @@ export class Game {
     state.resetPressed = false;
     state.abilityPressed = false;
     if (this.startDisabled) return;
+    // Analógico direito rola a placa aberta (Como jogar é só texto: sem isso, não dava pra ler tudo).
+    this.menu.scrollSheet(this.input.gamepad.menuScroll);
     for (const action of this.input.menuActions) {
       if (action === 'start') {
         this.start();
@@ -827,6 +829,7 @@ export class Game {
   private pause(): void {
     if (this.menu.isVisible) return;
     if (this.input.pointerLocked) document.exitPointerLock();
+    this.input.gamepad.suppressHeldDirection();
     this.menu.show(true);
     this.audio.setPaused(true);
     this.effects.setMenuNight(true);
@@ -1324,6 +1327,8 @@ export class Game {
       return;
     }
     this.choosing = true;
+    // O analógico de andar costuma estar apertado quando as cartas chegam: não vira navegação.
+    this.input.gamepad.suppressHeldDirection();
     if (this.beetle.pushing) this.beetle.releaseBall();
     // Solta o mouse pra dar pra clicar nas cartas (o `choosing` impede que isso vire pausa).
     if (this.input.pointerLocked) document.exitPointerLock();

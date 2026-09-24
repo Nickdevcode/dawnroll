@@ -26,27 +26,52 @@ const LOSE_GRIP_DISTANCE = 1.4;
 
 /** Equilibrista: até onde (da superfície da bola) dá pra pular pra cima dela. */
 const MOUNT_REACH = 3.2;
-/** Duração do pulinho de subir e do de descer (segundos). */
+/** Duração do pulinho de subir e do de descer (segundos), mais um tanto por unidade de raio da bola. */
 const MOUNT_SECONDS = 0.38;
 const DISMOUNT_SECONDS = 0.42;
+const HOP_SECONDS_PER_RADIUS = 0.035;
 
 export type BeetleEvent = 'jump' | 'land' | 'grab' | 'release' | 'mount' | 'dismount';
 
-/** Pulinho animado (subir/descer da bola): sai de `from`, chega em `to` num arco. */
+/**
+ * Pulinho animado (subir/descer da bola). `from` e `to` são relativos ao centro da bola:
+ * o besouro gira em volta dela (contornando a superfície) em vez de ir em linha reta — a
+ * reta entre o chão e o topo passa por dentro da bola, e numa bola grande isso é bem no meio.
+ */
 interface Hop {
+  /** Centro da bola quando o pulo começou (a descida gira em volta dele e pousa num ponto fixo). */
+  readonly pivot: THREE.Vector3;
   readonly from: THREE.Vector3;
   readonly to: THREE.Vector3;
   t: number;
   duration: number;
   height: number;
-  /** Subindo na bola: o destino acompanha o topo dela enquanto ela rola. */
+  /** Subindo na bola: gira em volta do centro ATUAL (a bola pode estar rolando) até o topo. */
   mounting: boolean;
 }
+
+/** Solver do besouro no chão (encosta no mundo) e desligado (em cima da bola / nos pulinhos). */
+const SOLVER_GROUND = interactionGroups(Groups.PLAYER, Groups.WORLD);
+const SOLVER_OFF = interactionGroups(Groups.PLAYER, 0);
 
 const UP = new THREE.Vector3(0, 1, 0);
 const tmpA = new THREE.Vector3();
 const tmpB = new THREE.Vector3();
 const tmpC = new THREE.Vector3();
+const tmpAxis = new THREE.Vector3();
+
+/** Entre dois pontos em volta de um centro: gira a direção e interpola a distância. */
+function orbitLerp(from: THREE.Vector3, to: THREE.Vector3, t: number, target: THREE.Vector3): THREE.Vector3 {
+  const fromLength = from.length();
+  const toLength = to.length();
+  const length = fromLength + (toLength - fromLength) * t;
+  if (fromLength < 1e-6 || toLength < 1e-6) return target.lerpVectors(from, to, t);
+  const angle = from.angleTo(to);
+  target.copy(from).divideScalar(fromLength);
+  tmpAxis.crossVectors(from, to);
+  if (angle > 1e-4 && tmpAxis.lengthSq() > 1e-10) target.applyAxisAngle(tmpAxis.normalize(), angle * t);
+  return target.multiplyScalar(length);
+}
 
 /**
  * Controlador do besouro: personagem cinemático (KinematicCharacterController
@@ -93,6 +118,8 @@ export class Beetle {
   /** Inclinação de equilíbrio em cima da bola (visual). */
   private readonly balance = new THREE.Vector3();
   private ridePhase = 0;
+  /** Solver desligado agora (Equilibrista)? */
+  private solverOff = false;
 
   onEvent: ((event: BeetleEvent) => void) | null = null;
 
@@ -110,9 +137,10 @@ export class Beetle {
     this.collider = physics.world.createCollider(
       RAPIER.ColliderDesc.ball(COLLIDER_RADIUS)
         .setCollisionGroups(interactionGroups(Groups.PLAYER, Groups.WORLD | Groups.BALL))
-        // O solver não gera força entre besouro e bola: corpo cinemático empurraria com massa infinita.
-        // Toda força na bola passa pela lógica de empurrar (limitada pelo tamanho dela).
-        .setSolverGroups(interactionGroups(Groups.PLAYER, Groups.WORLD)),
+        // Atenção: a regra do solver vale dos dois lados e o grupo padrão da bola é "tudo" (inclui
+        // WORLD), então o contato besouro–bola GERA força, com a massa infinita do corpo cinemático
+        // (andar contra a bola empurra ela). Em cima da bola e nos pulinhos isso é desligado: ver `syncSolver`.
+        .setSolverGroups(SOLVER_GROUND),
       this.body,
     );
 
@@ -181,6 +209,19 @@ export class Beetle {
     this.body.setNextKinematicTranslation(this.position);
     this.body.setTranslation(this.position, true);
     this.releaseBall();
+    this.syncSolver();
+  }
+
+  /**
+   * Subindo, em cima ou descendo da bola, o besouro não troca força com nada. O pulinho de
+   * subir atravessa a bola a ~40 un/s, e o contato cinemático (massa infinita) arremessava a
+   * bola — com o besouro em cima — pra fora do jardim quando ela era grande.
+   */
+  private syncSolver(): void {
+    const off = this.riding || this.hop !== null;
+    if (off === this.solverOff) return;
+    this.solverOff = off;
+    this.collider.setSolverGroups(off ? SOLVER_OFF : SOLVER_GROUND);
   }
 
   /** Perto o bastante da bola (e com ela inteira) pra pular em cima dela? */
@@ -196,7 +237,17 @@ export class Beetle {
     if (!this.canMount()) return false;
     this.releaseBall();
     this.riding = true;
-    this.hop = { from: this.position.clone(), to: this.rideTop(new THREE.Vector3()), t: 0, duration: MOUNT_SECONDS, height: 0.9, mounting: true };
+    const c = this.ball.position(new THREE.Vector3());
+    this.hop = {
+      pivot: c,
+      from: this.position.clone().sub(c),
+      to: this.rideTop(new THREE.Vector3()).sub(c),
+      t: 0,
+      duration: MOUNT_SECONDS + this.ball.radius * HOP_SECONDS_PER_RADIUS,
+      height: 0.9,
+      mounting: true,
+    };
+    this.syncSolver();
     this.velocity.set(0, 0, 0);
     this.onEvent?.('mount');
     return true;
@@ -216,7 +267,15 @@ export class Beetle {
     const ray = new RAPIER.Ray({ x: land.x, y: land.y, z: land.z }, { x: 0, y: -1, z: 0 });
     const hit = this.physics.world.castRay(ray, r * 2 + 40, true, undefined, interactionGroups(Groups.PLAYER, Groups.WORLD), this.collider);
     land.y = hit ? land.y - hit.timeOfImpact + COLLIDER_RADIUS + 0.05 : c.y - r + COLLIDER_RADIUS + 0.05;
-    this.hop = { from: this.position.clone(), to: land, t: 0, duration: DISMOUNT_SECONDS, height: 0.7 + r * 0.15, mounting: false };
+    this.hop = {
+      pivot: c.clone(),
+      from: this.position.clone().sub(c),
+      to: land.sub(c),
+      t: 0,
+      duration: DISMOUNT_SECONDS + r * HOP_SECONDS_PER_RADIUS,
+      height: 0.7 + r * 0.15,
+      mounting: false,
+    };
     this.velocity.set(0, 0, 0);
     this.onEvent?.('dismount');
   }
@@ -238,6 +297,7 @@ export class Beetle {
   fixedUpdate(dt: number, input: InputState, cameraYaw: number): void {
     this.prevPosition.copy(this.position);
     this.prevYaw = this.yaw;
+    this.syncSolver();
 
     // Direção desejada relativa à câmera.
     const forward = tmpA.set(-Math.sin(cameraYaw), 0, -Math.cos(cameraYaw));
@@ -360,12 +420,22 @@ export class Beetle {
   private updateHop(dt: number): void {
     const hop = this.hop!;
     hop.t = Math.min(1, hop.t + dt / hop.duration);
-    // Subindo, a bola continua rolando: o alvo acompanha o topo dela.
-    if (hop.mounting) this.rideTop(hop.to);
     const k = hop.t;
     const eased = k * k * (3 - 2 * k);
-    this.position.lerpVectors(hop.from, hop.to, eased);
-    this.position.y += Math.sin(Math.PI * k) * hop.height;
+    // Subindo, a bola continua rolando: gira em volta do centro de agora, até o topo.
+    const pivot = hop.mounting ? this.ball.position(tmpC) : hop.pivot;
+    const offset = orbitLerp(hop.from, hop.to, eased, tmpB);
+    // O "pulinho" sai pra fora da bola (no topo é pra cima; no meio da descida, pro lado).
+    offset.setLength(offset.length() + Math.sin(Math.PI * k) * hop.height);
+    this.position.copy(pivot).add(offset);
+    // A bola pode ter rolado pra dentro do caminho da descida: o besouro não entra nela.
+    if (this.ball.isSolid) {
+      const c = this.ball.position(tmpC);
+      const surface = this.ball.radius + COLLIDER_RADIUS - 0.05;
+      const out = tmpA.subVectors(this.position, c);
+      const distance = out.length();
+      if (distance < surface && distance > 1e-4) this.position.copy(c).addScaledVector(out, surface / distance);
+    }
     this.body.setNextKinematicTranslation(this.position);
     this.grounded = false;
     this.pushBlend = damp(this.pushBlend, 0, 9, dt);

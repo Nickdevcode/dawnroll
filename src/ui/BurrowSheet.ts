@@ -229,7 +229,10 @@ export class BurrowSheet {
   private openCatalogEntry(id: CatalogId): void {
     this.selectedCatalog = id;
     this.renderCatalog();
-    this.panels.get('catalog')!.querySelector<HTMLElement>(`[data-catalog="${id}"]`)?.focus({ preventScroll: true });
+    const tile = this.panels.get('catalog')!.querySelector<HTMLElement>(`[data-catalog="${id}"]`);
+    tile?.focus({ preventScroll: true });
+    // O cartão de detalhe cresceu (ou mudou de altura) lá em cima e empurrou a grade: a figurinha volta pra vista.
+    tile?.scrollIntoView({ block: 'nearest' });
   }
 
   /** Cartão de detalhe no topo do catálogo: ícone, nome, quantas, rara e a curiosidade. */

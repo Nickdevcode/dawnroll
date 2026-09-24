@@ -9,6 +9,11 @@ import { escapeHtml } from './html';
  * Escolha de poder no marco de tamanho: três cartas por cima do jogo congelado.
  * Teclado (1/2/3, setas + Enter), mouse, toque e controle (direcional + A).
  * O jogo congela a simulação enquanto ela está aberta; quem decide isso é o `Game`.
+ *
+ * Existe UMA carta selecionada (classe `is-selected`, que também leva o foco): setas,
+ * controle e o mouse passando por cima movem a mesma seleção. Antes o destaque vinha do
+ * `:hover` + `:focus-visible`, e com o cursor parado em cima de uma carta o controle
+ * mostrava duas cartas "levantadas" — não dava pra saber qual o A ia pegar.
  */
 export class PerkPicker {
   readonly element: HTMLElement;
@@ -21,6 +26,8 @@ export class PerkPicker {
   private readonly cards: HTMLElement;
   private readonly hint: HTMLElement;
   private options: PerkOffer[] = [];
+  /** Carta selecionada (a que A / Enter / E escolhem). */
+  private selected = 0;
   private cm = 0;
   private device: InputDevice = 'keyboard';
   private padStyle: PadStyle = 'xbox';
@@ -55,14 +62,35 @@ export class PerkPicker {
     this.cards = $('[data-cards]');
     this.hint = $('[data-hint]');
 
-    this.cards.addEventListener('click', (e) => {
+    const cardIndex = (e: Event) => {
       const card = (e.target as HTMLElement).closest<HTMLElement>('[data-perk]');
-      if (card) this.choose(Number(card.dataset.index));
+      return card ? Number(card.dataset.index) : -1;
+    };
+    this.cards.addEventListener('click', (e) => {
+      const index = cardIndex(e);
+      if (index >= 0) this.choose(index);
+    });
+    // Mouse passando por cima seleciona (só movimento de verdade: o cursor parado onde a
+    // carta nasceu não rouba a seleção de quem está no controle).
+    this.cards.addEventListener('pointermove', (e) => {
+      const index = e.pointerType === 'mouse' ? cardIndex(e) : -1;
+      if (index >= 0 && index !== this.selected) this.select(index);
+    });
+    // Tab (ou leitor de tela) levando o foco pra outra carta: a seleção vai junto.
+    this.cards.addEventListener('focusin', (e) => {
+      const index = cardIndex(e);
+      if (index >= 0) this.mark(index);
     });
     // Nada daqui vaza pra área de arrastar a câmera do toque.
     this.element.addEventListener('pointerdown', (e) => e.stopPropagation());
     window.addEventListener('keydown', this.onKeyDown, { capture: true });
-    onLocaleChange(() => this.visible && this.render());
+    onLocaleChange(() => {
+      if (!this.visible) return;
+      this.render();
+      // As cartas foram refeitas: o foco volta pra selecionada (menos com a pausa por cima,
+      // que é justamente onde se troca o idioma).
+      if (!this.suspended) this.select(this.selected);
+    });
   }
 
   get visible(): boolean {
@@ -75,9 +103,10 @@ export class PerkPicker {
     this.device = device;
     this.padStyle = padStyle;
     this.openedAt = performance.now();
+    this.selected = 0;
     this.render();
     this.element.hidden = false;
-    this.cardButtons()[0]?.focus({ preventScroll: true });
+    this.select(0);
   }
 
   hide(): void {
@@ -86,25 +115,29 @@ export class PerkPicker {
     this.suspended = false;
   }
 
-  /** Pausa (menu por cima) suspende; voltar do menu reativa com o foco na primeira carta. */
+  /** Pausa (menu por cima) suspende; voltar do menu reativa com o foco na carta que estava selecionada. */
   setSuspended(suspended: boolean): void {
     this.suspended = suspended;
-    if (!suspended && this.visible) this.cardButtons()[0]?.focus({ preventScroll: true });
+    if (!suspended && this.visible) this.select(this.selected);
   }
 
-  /** Controle: direções andam entre as cartas, A escolhe. Devolve se usou a ação. */
+  /** Dispositivo em uso mudou com as cartas abertas: a dica passa a citar os botões dele. */
+  setDevice(device: InputDevice, padStyle: PadStyle): void {
+    if (device === this.device && padStyle === this.padStyle) return;
+    this.device = device;
+    this.padStyle = padStyle;
+    if (this.visible) this.renderHint();
+  }
+
+  /** Controle: direções andam entre as cartas, A escolhe a selecionada. Devolve se usou a ação. */
   handleGamepad(action: MenuAction): boolean {
     if (!this.visible || this.suspended) return false;
-    const buttons = this.cardButtons();
-    const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
     if (action === 'left' || action === 'up' || action === 'right' || action === 'down') {
-      const step = action === 'left' || action === 'up' ? -1 : 1;
-      const next = index < 0 ? 0 : Math.min(Math.max(index + step, 0), buttons.length - 1);
-      buttons[next]?.focus({ preventScroll: true });
+      this.select(this.selected + (action === 'left' || action === 'up' ? -1 : 1));
       return true;
     }
     if (action === 'confirm') {
-      this.choose(index < 0 ? 0 : index);
+      this.choose(this.selected);
       return true;
     }
     return false;
@@ -121,8 +154,9 @@ export class PerkPicker {
         const name = t(`perk.${id}.name` as MessageKey);
         const desc = t(`perk.${id}.${upgrade ? 'up' : 'desc'}` as MessageKey);
         const label = upgrade ? `${name} ★★. ${desc}` : `${name}. ${desc}`;
+        const classes = ['perk-card', upgrade ? 'is-upgrade' : '', i === this.selected ? 'is-selected' : ''].filter(Boolean).join(' ');
         return /* html */ `
-          <button class="perk-card${upgrade ? ' is-upgrade' : ''}" type="button" data-perk="${id}" data-index="${i}" aria-label="${escapeHtml(label)}">
+          <button class="${classes}" type="button" data-perk="${id}" data-index="${i}" aria-label="${escapeHtml(label)}">
             <span class="perk-card__key" aria-hidden="true">${i + 1}</span>
             ${upgrade ? `<span class="perk-card__badge" aria-hidden="true">${escapeHtml(t('perk.pick.upgrade'))}</span>` : ''}
             <span class="perk-card__icon perk-icon--${id}" aria-hidden="true">${PerkIcons[id]}</span>
@@ -132,14 +166,34 @@ export class PerkPicker {
       })
       .join('');
     this.element.style.setProperty('--cards', String(this.options.length));
+    this.renderHint();
+  }
+
+  private renderHint(): void {
     if (this.device === 'gamepad') this.hint.textContent = t('perk.pick.gamepad', { button: PAD_LABELS[this.padStyle].a });
     else if (this.device === 'touch') this.hint.textContent = t('perk.pick.touch');
     else this.hint.textContent = t('perk.pick.keys', { keys: this.options.map((_, i) => i + 1).join(', ') });
+    // No toque não há seleção (é tocar e pronto): o destaque some.
     this.element.classList.toggle('is-touch-hint', this.device === 'touch');
   }
 
   private cardButtons(): HTMLButtonElement[] {
     return Array.from(this.cards.querySelectorAll<HTMLButtonElement>('.perk-card'));
+  }
+
+  /** Seleciona uma carta (presa nas pontas) e leva o foco pra ela. */
+  private select(index: number): void {
+    const buttons = this.cardButtons();
+    if (buttons.length === 0) return;
+    const next = Math.min(Math.max(index, 0), buttons.length - 1);
+    this.mark(next);
+    buttons[next].focus({ preventScroll: true });
+  }
+
+  /** Só o destaque (o foco já está lá, ou vai chegar). */
+  private mark(index: number): void {
+    this.selected = index;
+    this.cardButtons().forEach((button, i) => button.classList.toggle('is-selected', i === index));
   }
 
   private choose(index: number): void {
@@ -160,21 +214,19 @@ export class PerkPicker {
       this.choose(Number(digit[1]) - 1);
       return;
     }
-    const buttons = this.cardButtons();
-    const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
-    let next = -1;
-    if (e.code === 'ArrowLeft' || e.code === 'ArrowUp' || e.code === 'KeyA' || e.code === 'KeyW') next = Math.max(0, (index < 0 ? 0 : index) - 1);
-    else if (e.code === 'ArrowRight' || e.code === 'ArrowDown' || e.code === 'KeyD' || e.code === 'KeyS') next = Math.min(buttons.length - 1, index + 1);
+    let step = 0;
+    if (e.code === 'ArrowLeft' || e.code === 'ArrowUp' || e.code === 'KeyA' || e.code === 'KeyW') step = -1;
+    else if (e.code === 'ArrowRight' || e.code === 'ArrowDown' || e.code === 'KeyD' || e.code === 'KeyS') step = 1;
     else if (e.code === 'KeyE') {
       e.preventDefault();
       e.stopPropagation();
-      this.choose(index < 0 ? 0 : index);
+      this.choose(this.selected);
       return;
     }
-    if (next >= 0) {
+    if (step !== 0) {
       e.preventDefault();
       e.stopPropagation();
-      buttons[next]?.focus({ preventScroll: true });
+      this.select(this.selected + step);
     }
   };
 }

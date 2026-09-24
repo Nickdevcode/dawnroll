@@ -88,6 +88,7 @@ export const en: Messages = {
   'key.rightStick': 'Right stick',
   'pad.select': 'Select',
   'pad.back': 'Back',
+  'pad.tabs': 'Tabs',
   'gamepad.connected': 'Controller connected',
 
   'hud.yourBall': 'Your ball',

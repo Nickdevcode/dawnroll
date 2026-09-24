@@ -92,6 +92,7 @@ export const ptBR = {
   'key.rightStick': 'Analógico dir.',
   'pad.select': 'Escolher',
   'pad.back': 'Voltar',
+  'pad.tabs': 'Abas',
   'gamepad.connected': 'Controle conectado',
 
   'hud.yourBall': 'Sua bola',

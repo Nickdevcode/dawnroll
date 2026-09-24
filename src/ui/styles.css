@@ -1142,16 +1142,23 @@ body {
 .perk-card:nth-child(3) {
   animation-delay: 140ms;
 }
-.perk-card:hover,
-.perk-card:focus-visible {
+/* Uma carta selecionada só (controle, teclado e mouse movem a mesma seleção; o `:hover`
+   não levanta carta sozinho — com o cursor parado em cima de outra, pareciam duas). */
+.perk-picker:not(.is-touch-hint) .perk-card.is-selected {
   transform: translateY(-6px) rotate(-0.6deg);
   box-shadow: 0 10px 0 rgba(15, 12, 40, 0.35), 0 26px 48px rgba(15, 12, 40, 0.4), inset 0 2px 0 rgba(255, 255, 255, 0.8);
-}
-.perk-card:focus-visible {
   outline: 4px solid var(--color-accent);
   outline-offset: 4px;
 }
-.perk-card:active {
+.perk-card:focus {
+  outline: none;
+}
+.is-touch-hint .perk-card:focus-visible {
+  outline: 4px solid var(--color-accent);
+  outline-offset: 4px;
+}
+.perk-card:active,
+.perk-picker:not(.is-touch-hint) .perk-card.is-selected:active {
   transform: translateY(2px) scale(0.98);
 }
 .perk-card__key {
