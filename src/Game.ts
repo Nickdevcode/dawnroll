@@ -391,7 +391,7 @@ export class Game {
     });
     scene.add(this.effects.group);
     this.effects.onCritterEvent = (event) => this.onCritterEvent(event);
-    // O jogo abre no menu: madrugada com vaga-lumes.
+    // O jogo abre no menu: madrugada.
     this.effects.setMenuNight(true);
 
     this.wireEvents();

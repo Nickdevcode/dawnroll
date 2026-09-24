@@ -11,7 +11,6 @@ import { ChunkParticles } from './ChunkParticles';
 import { BallTrail } from './BallTrail';
 import { AmbientMotes } from './AmbientMotes';
 import { Rain, type SurfaceProbe } from './Rain';
-import { Fireflies } from './Fireflies';
 import {
   Critters,
   type AttractLevel,
@@ -116,7 +115,6 @@ export class Effects {
   /** Estado dos bichos que passa de um jardim para o outro. */
   private menuNight = true;
   private attract: AttractLevel = 0;
-  private readonly fireflies: Fireflies;
   private readonly rain: Rain;
   private readonly surface: SurfaceProbe;
   private readonly rng = createRng(909);
@@ -150,9 +148,6 @@ export class Effects {
     this.critterSounds = options.sounds;
     this.critters = this.createCritters(options.landingSpots, options.isGroundFree, options.picnic, options.critterSeed);
     this.critters.onEvent = (event) => this.onCritterEvent?.(event);
-    // ~40 vaga-lumes no PC; menos no celular (o orçamento de bichos é menor).
-    this.fireflies = new Fireflies(Math.min(40, Math.round(options.critters * 1.25)));
-    this.fireflies.setActive(true);
     this.rain = new Rain(options.rainDrops, options.rainSplashes);
     this.surface = options.surface;
 
@@ -165,7 +160,6 @@ export class Effects {
       this.dust.points,
       this.glow.points,
       this.motes.points,
-      this.fireflies.points,
       this.critters.group,
       this.rain.group,
     );
@@ -227,10 +221,9 @@ export class Effects {
     return this.critters.takeAntLeaves(center, radius, max);
   }
 
-  /** Madrugada do menu: vaga-lumes acendem e as visitas de dia (beija-flor, revoada) esperam. */
+  /** Madrugada do menu: as visitas de dia (beija-flor, revoada) esperam o jogo começar. */
   setMenuNight(on: boolean): void {
     this.menuNight = on;
-    this.fireflies.setActive(on);
     this.critters.setMenu(on);
   }
 
@@ -490,7 +483,6 @@ export class Effects {
     this.trail.update(dt);
     // Na chuva o pólen some (gruda molhado nas folhas).
     this.motes.update(f.time, f.camera.position, f.pixelScale, 1 - Math.min(1, f.rain * 1.6));
-    this.fireflies.update(dt, f.time, f.camera, f.pixelScale);
     this.rain.update(dt, f.time, f.camera, f.player, f.rain, this.surface);
     this.critters.update(dt, {
       player: f.player,

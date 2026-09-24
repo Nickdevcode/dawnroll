@@ -18,7 +18,7 @@ Um besouro rola-bosta de massinha num jardim em miniatura. Você rola uma bola d
 | 🪨 **Pedras e troncos** | Rochedos com musgo e líquen, troncos com anéis na ponta e orelha-de-pau |
 | 🦋 **Bichinhos** | Borboletas (9 paletas), abelhas com cestinha de pólen, libélulas de 4 asas, joaninhas que abrem os élitros e voam, caracóis que recolhem os olhos, **formigas em trilha** saindo dos formigueiros (algumas carregando folhinha), **tatuzinhos** que viram bolinha, **gafanhotos** que pulam, **minhocas** que saem na chuva e **sapos** na beira das poças cheias |
 | 🐛 **Bichos que grudam** | Tatuzinho, **tesourinha e lacraia** (saem correndo de baixo de pedra e tronco arrancados), **bicho-pau** disfarçado de graveto (acorda quando você chega perto), **lagarta mede-palmo** andando em sanfona, **lesma** na chuva (deixa rastro de gosma onde a bola desliza), **vaquinha** (o besourinho verde de pinta amarela das hortas) e **tanajura** pousada |
-| 🕷️ **Eventos do jardim** | **Teias de aranha** entre as flores, com orvalho e a aranha-de-jardim listrada: a bola rasga e o fio gruda nela. **Revoada de tanajuras** depois da chuva (fenômeno real da primavera). **Beija-flor** raro visitando as flores. **Cigarras** cantando nas árvores nos dias de sol. **Vaga-lumes** na madrugada do menu |
+| 🕷️ **Eventos do jardim** | **Teias de aranha** entre as flores, com orvalho e a aranha-de-jardim listrada: a bola rasga e o fio gruda nela. **Revoada de tanajuras** depois da chuva (fenômeno real da primavera). **Beija-flor** raro visitando as flores. **Cigarras** cantando nas árvores nos dias de sol |
 | 🧸 **Objetos perdidos** | Tralha de gente pra grudar (botão, bolinha de gude, moeda de 1 real, clipe, pecinha de montar, dado, tampinha) e coisas grandes pra arrancar: pinha, maçã caída, soldadinhos, carrinhos, patinho de borracha, **bola de tênis** (que rola e dá pra chutar antes de engolir), vasinho de barro, pá, luva, **chinelo** e o chefão: o **anão de jardim** |
 | 🎲 **Jardim novo a cada rodada** | Cada vez que o jogo abre **e a cada bola enterrada**, o jardim é sorteado de novo: onde ficam os cantinhos, cada pedra, flor, cogumelo e tronco, as frutas caídas, os bichos, as teias e as trilhas de formiga. O relevo, a toca, as poças e a trilha de terra são o "mapa" e ficam no lugar |
 | 🗺️ **Três cantinhos** | A **toalha de piquenique** xadrez (morango, bolacha recheada, jujuba, pipoca, cubo de açúcar e uva), o **cantinho dos brinquedos** (bagunça espalhada, com vãos) e o **cantinho do jardineiro** (vasos, pás e luvas). Cada rodada monta cada um de um jeito, e às vezes alguma coisa "fugiu" pro meio do jardim (o morango que as formigas levaram, o soldadinho esquecido) |
@@ -220,7 +220,6 @@ src/
 │   ├── BallTrail.ts        # rastro da bola no chão
 │   ├── AmbientMotes.ts     # pólen flutuando (100% no shader)
 │   ├── Rain.ts             # riscos de chuva (100% no shader) + anéis de respingo
-│   ├── Fireflies.ts        # vaga-lumes da madrugada do menu (100% no shader)
 │   └── critters/           # fauna instanciada por espécie: voadores, rasteiros, formigas,
 │                           # tatuzinho, gafanhoto, minhoca, sapo, tesourinha e lacraia,
 │                           # bicho-pau, lagarta, lesma (e o rastro), tanajuras, aranha e teia, beija-flor
