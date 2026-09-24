@@ -486,6 +486,19 @@ export class Progression implements UnlockProgress {
     this.emit();
   }
 
+  /**
+   * Troca o progresso inteiro (save da nuvem juntado com o do aparelho, ou o
+   * começo de novo ao sair da conta). O objeto do save continua o mesmo — quem
+   * guardou a referência (o jogo, o HUD) vê o conteúdo novo. A rodada em curso
+   * segue; o nível e as conquistas são recalculados.
+   */
+  replaceSave(next: SaveData): void {
+    Object.assign(this.save, structuredClone(next));
+    this.info = levelInfo(this.save.xp);
+    this.catchUpAchievements();
+    this.emit();
+  }
+
   /** O painel da toca já foi apresentado. */
   markBurrowSeen(): void {
     if (this.save.seenBurrow) return;

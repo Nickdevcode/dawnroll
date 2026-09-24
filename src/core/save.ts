@@ -15,6 +15,9 @@ import { isLookKey, type LookKey } from '../progression/looks';
  * Os campos da toca entraram depois do recorde, o casco e os contadores depois
  * deles, e os acessórios por último: save antigo (sem esses campos) abre normal,
  * com o que faltar zerado.
+ *
+ * Com conta, este mesmo JSON vai pra nuvem (`online/CloudSave`); o navegador
+ * continua sendo a cópia de trabalho.
  */
 
 /** Contadores que atravessam as rodadas (conquistas de "N vezes"). */
@@ -147,6 +150,31 @@ function readOutfit(value: unknown): Outfit {
   return outfit;
 }
 
+/**
+ * Valida um save vindo de fora (localStorage ou nuvem): o que não for do formato
+ * certo vira zero/padrão, nunca quebra o jogo.
+ */
+export function parseSave(value: unknown): SaveData {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return emptySave();
+  const data = value as Record<string, unknown>;
+  return {
+    bestCm: sane(data.bestCm, 1000),
+    buried: Math.floor(sane(data.buried, 1e7)),
+    totalCm: sane(data.totalCm, 1e9),
+    xp: Math.floor(sane(data.xp, 1e9)),
+    pantry: readPantry(data.pantry),
+    catalog: readCatalog(data.catalog),
+    seenBurrow: data.seenBurrow === true,
+    achievements: readIds(data.achievements, isAchievementId),
+    perksUsed: readIds(data.perksUsed, isPerkId),
+    skin: typeof data.skin === 'string' && isSkinId(data.skin) ? data.skin : DEFAULT_SKIN,
+    outfit: readOutfit(data.outfit),
+    seenLooks: readIds(data.seenLooks, isLookKey),
+    found: readIds(data.found, isAccessoryId),
+    stats: readStats(data.stats),
+  };
+}
+
 export function loadSave(): SaveData {
   try {
     let raw = window.localStorage.getItem(KEY);
@@ -158,25 +186,7 @@ export function loadSave(): SaveData {
         window.localStorage.removeItem(LEGACY_KEY);
       }
     }
-    if (!raw) return emptySave();
-    const data = JSON.parse(raw) as Record<string, unknown> | null;
-    if (!data || typeof data !== 'object') return emptySave();
-    return {
-      bestCm: sane(data.bestCm, 1000),
-      buried: Math.floor(sane(data.buried, 1e7)),
-      totalCm: sane(data.totalCm, 1e9),
-      xp: Math.floor(sane(data.xp, 1e9)),
-      pantry: readPantry(data.pantry),
-      catalog: readCatalog(data.catalog),
-      seenBurrow: data.seenBurrow === true,
-      achievements: readIds(data.achievements, isAchievementId),
-      perksUsed: readIds(data.perksUsed, isPerkId),
-      skin: typeof data.skin === 'string' && isSkinId(data.skin) ? data.skin : DEFAULT_SKIN,
-      outfit: readOutfit(data.outfit),
-      seenLooks: readIds(data.seenLooks, isLookKey),
-      found: readIds(data.found, isAccessoryId),
-      stats: readStats(data.stats),
-    };
+    return raw ? parseSave(JSON.parse(raw)) : emptySave();
   } catch {
     return emptySave();
   }

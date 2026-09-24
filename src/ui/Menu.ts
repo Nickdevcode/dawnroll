@@ -15,24 +15,31 @@ import {
 } from '../i18n';
 import { PAD_LABELS, type MenuAction, type PadStyle } from '../core/GamepadInput';
 import type { Progression } from '../progression/Progression';
+import { skin } from '../progression/skins';
+import type { Online } from '../online/Online';
 import { Icons } from './icons';
 import { GameIcons } from './gameIcons';
 import { segmented, slider, toggle, type Control } from './controls';
 import { BurrowSheet } from './BurrowSheet';
 import { WardrobeSheet } from './WardrobeSheet';
-import { HangerIcon } from './lookIcons';
+import { RankingSheet } from './RankingSheet';
+import { AccountSheet } from './AccountSheet';
+import { NicknameDialog } from './NicknameDialog';
+import { HangerIcon, skinIcon } from './lookIcons';
+import { escapeHtml } from './html';
 import { bindTabs, tabsMarkup } from './tabs';
 import { nearestInDirection } from './spatialNav';
 
 /**
  * Menu de início e de pausa: a "madrugada" por cima do jardim (que continua
  * girando ao vivo atrás). Jogar faz amanhecer; pausar faz a noite voltar.
- * Tem quatro placas que deslizam por cima: Toca (despensa, catálogo, poderes e
+ * Tem seis placas que deslizam por cima: Toca (despensa, catálogo, poderes e
  * conquistas), Guarda-roupa (casco e acessórios, com o besouro no provador),
- * Configurações (com abas) e Como jogar.
+ * Ranking, Conta (a do chip no canto de cima), Configurações (com abas) e Como jogar.
  */
 
-export type SheetName = 'burrow' | 'wardrobe' | 'settings' | 'help';
+export type SheetName = 'burrow' | 'wardrobe' | 'ranking' | 'account' | 'settings' | 'help';
+const SHEETS: readonly SheetName[] = ['burrow', 'wardrobe', 'ranking', 'account', 'settings', 'help'];
 type TabName = 'graphics' | 'audio' | 'controls' | 'language';
 
 const TABS: ReadonlyArray<{ name: TabName; icon: string; label: MessageKey }> = [
@@ -85,6 +92,11 @@ export class Menu {
   readonly burrow: BurrowSheet;
   /** Guarda-roupa (o jogo liga o provador e o "provar"). */
   readonly wardrobe: WardrobeSheet;
+  private readonly ranking: RankingSheet;
+  private readonly account: AccountSheet;
+  private readonly nicknameDialog: NicknameDialog;
+  /** Chip da conta no canto de cima (besouro + apelido, ou "Entrar"). */
+  private readonly accountChip: HTMLButtonElement;
   private readonly sheets: Record<SheetName, HTMLElement>;
   private readonly openers: Record<SheetName, HTMLButtonElement>;
   private readonly tabButtons = new Map<TabName, HTMLButtonElement>();
@@ -103,6 +115,7 @@ export class Menu {
     parent: HTMLElement,
     private readonly isTouch: boolean,
     private readonly progression: Progression,
+    private readonly online: Online,
   ) {
     this.element = document.createElement('div');
     this.element.className = 'menu';
@@ -111,6 +124,7 @@ export class Menu {
     this.element.setAttribute('aria-labelledby', 'menu-title');
     this.element.innerHTML = /* html */ `
       <div class="menu__sky" aria-hidden="true"></div>
+      <button class="menu__account" type="button" data-open="account" aria-expanded="false" aria-controls="sheet-account" hidden></button>
       <div class="menu__main">
         <h1 class="wordmark" id="menu-title">
           <span class="sr-only">Dawnroll</span>
@@ -128,6 +142,9 @@ export class Menu {
           <button class="menu__link" type="button" data-open="wardrobe" aria-expanded="false" aria-controls="sheet-wardrobe">
             <span class="menu__link-icon">${HangerIcon}<span class="menu__link-badge" data-wardrobe-badge hidden></span></span>
             <span data-t="menu.wardrobe"></span>
+          </button>
+          <button class="menu__link" type="button" data-open="ranking" aria-expanded="false" aria-controls="sheet-ranking" hidden>
+            <span class="menu__link-icon">${Icons.podium}</span><span data-t="menu.ranking"></span>
           </button>
           <button class="menu__link" type="button" data-open="settings" aria-expanded="false" aria-controls="sheet-settings">
             <span class="menu__link-icon">${Icons.gear}</span><span data-t="menu.settings"></span>
@@ -149,8 +166,13 @@ export class Menu {
     // A placa da toca entra antes da coleta dos textos (ela também usa data-t).
     this.burrow = new BurrowSheet(progression);
     this.wardrobe = new WardrobeSheet(progression);
-    this.element.append(this.burrow.element, this.wardrobe.element);
+    this.ranking = new RankingSheet(online);
+    this.account = new AccountSheet(online, progression);
+    this.element.append(this.burrow.element, this.wardrobe.element, this.ranking.element, this.account.element);
     parent.append(this.element);
+    this.nicknameDialog = new NicknameDialog(parent, online, progression, () => this.isVisible);
+    this.ranking.onOpenAccount = () => this.open('account');
+    this.account.onOpenRanking = () => this.open('ranking');
 
     const $ = <T extends HTMLElement>(sel: string) => this.element.querySelector(sel) as T;
     this.playButton = $('[data-play]');
@@ -159,10 +181,20 @@ export class Menu {
     this.burrowMeta = $('[data-burrow-meta]');
     this.burrowBadge = $('[data-burrow-badge]');
     this.wardrobeBadge = $('[data-wardrobe-badge]');
-    this.sheets = { burrow: this.burrow.element, wardrobe: this.wardrobe.element, settings: $('#sheet-settings'), help: $('#sheet-help') };
+    this.accountChip = $('[data-open="account"]');
+    this.sheets = {
+      burrow: this.burrow.element,
+      wardrobe: this.wardrobe.element,
+      ranking: this.ranking.element,
+      account: this.account.element,
+      settings: $('#sheet-settings'),
+      help: $('#sheet-help'),
+    };
     this.openers = {
       burrow: $('[data-open="burrow"]'),
       wardrobe: $('[data-open="wardrobe"]'),
+      ranking: $('[data-open="ranking"]'),
+      account: this.accountChip,
       settings: $('[data-open="settings"]'),
       help: $('[data-open="help"]'),
     };
@@ -174,7 +206,11 @@ export class Menu {
     this.bindEvents();
 
     settings.subscribe((s) => this.syncControls(s));
-    progression.subscribe(() => this.updateBurrowLink());
+    progression.subscribe(() => {
+      this.updateBurrowLink();
+      this.updateAccountChip();
+    });
+    online.subscribe(() => this.updateAccountChip());
     onLocaleChange(() => this.refreshTexts());
     this.syncControls(settings.get());
     this.refreshTexts();
@@ -200,6 +236,8 @@ export class Menu {
     this.element.hidden = false;
     this.element.removeAttribute('inert');
     if (this.ready) this.playButton.focus({ preventScroll: true });
+    // Entrou pelo Google e foi jogar antes do apelido carregar: a janelinha aparece na pausa.
+    this.nicknameDialog?.check();
   }
 
   /** Esconde o menu (amanhece) e fecha qualquer placa aberta. */
@@ -232,8 +270,12 @@ export class Menu {
    */
   handleGamepad(action: MenuAction): boolean {
     document.documentElement.classList.add('using-gamepad');
-    const sheet = this.openSheet ? this.sheets[this.openSheet] : null;
-    const focusables = this.gamepadFocusables(sheet ?? (this.element.querySelector('.menu__main') as HTMLElement));
+    // Janelinha do apelido aberta: o controle anda só dentro dela (B = "Depois").
+    const dialog = this.nicknameDialog.isOpen ? this.nicknameDialog.element : null;
+    const sheet = dialog ?? (this.openSheet ? this.sheets[this.openSheet] : null);
+    const focusables = sheet
+      ? this.gamepadFocusables(sheet)
+      : [...this.gamepadFocusables(this.element, this.accountChip), ...this.gamepadFocusables(this.element.querySelector('.menu__main') as HTMLElement)];
     const active = document.activeElement as HTMLElement | null;
     const current = active && focusables.includes(active) ? active : null;
     const focus = (el: HTMLElement | undefined) => {
@@ -277,6 +319,10 @@ export class Menu {
         return true;
       }
       case 'back':
+        if (dialog) {
+          this.nicknameDialog.close();
+          return true;
+        }
         if (!this.openSheet) return false;
         this.closeSheet();
         return true;
@@ -297,8 +343,9 @@ export class Menu {
    * poderes, conquistas — que precisam de foco pra placa rolar até eles). Quem está dentro de
    * outro alcançável fica de fora (o "Usar" do casco é acionado pelo A no cartão).
    */
-  private gamepadFocusables(scope: HTMLElement): HTMLElement[] {
-    const all = Array.from(scope.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), [data-focusable]')).filter(
+  private gamepadFocusables(scope: HTMLElement, only?: HTMLElement): HTMLElement[] {
+    const candidates = only ? [only] : Array.from(scope.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), [data-focusable]'));
+    const all = candidates.filter(
       (el) => el.tabIndex >= 0 && el.offsetParent !== null,
     );
     return all.filter((el) => !all.some((other) => other !== el && other.contains(el)));
@@ -524,7 +571,7 @@ export class Menu {
 
   private bindEvents(): void {
     this.playButton.addEventListener('click', () => this.onPlay?.());
-    for (const name of ['burrow', 'wardrobe', 'settings', 'help'] as const) {
+    for (const name of SHEETS) {
       this.openers[name].addEventListener('click', () => (this.openSheet === name ? this.closeSheet() : this.open(name)));
     }
     this.element.querySelectorAll<HTMLButtonElement>('[data-close]').forEach((b) => b.addEventListener('click', () => this.closeSheet()));
@@ -560,6 +607,8 @@ export class Menu {
       this.burrow.prepare(intro);
       this.progression.markBurrowSeen();
     }
+    if (name === 'ranking') this.ranking.prepare();
+    if (name === 'account') this.account.prepare();
     // Guarda-roupa: o menu principal sai de cena e o besouro vira o centro (provador).
     this.element.classList.toggle('has-wardrobe', name === 'wardrobe');
     if (name === 'wardrobe') this.wardrobe.prepare();
@@ -578,6 +627,7 @@ export class Menu {
     if (!name) return;
     this.openSheet = null;
     if (name === 'wardrobe') this.wardrobe.close();
+    if (name === 'account') this.account.close();
     this.sheets[name].hidden = true;
     this.openers[name].setAttribute('aria-expanded', 'false');
     this.element.classList.remove('has-sheet', 'has-tabs', 'has-wardrobe');
@@ -631,6 +681,32 @@ export class Menu {
     this.wardrobeBadge.parentElement!.parentElement!.setAttribute('aria-label', fresh > 0 ? `${t('menu.wardrobe')}: ${tn('wardrobe.newCount', fresh)}` : t('menu.wardrobe'));
   }
 
+  /**
+   * Chip da conta: com conta, o besouro (casco atual) + apelido e uma bolinha do
+   * estado da nuvem; sem conta, "Entrar". Build sem Supabase: some junto com o
+   * link do ranking.
+   */
+  private updateAccountChip(): void {
+    const { status, profile, sync } = this.online.state;
+    const chip = this.accountChip;
+    chip.hidden = status === 'disabled';
+    this.openers.ranking.hidden = status === 'disabled';
+    if (status === 'disabled') return;
+    chip.dataset.state = status;
+    if (status === 'signedIn') {
+      const nick = profile?.nickname ?? '…';
+      chip.innerHTML = /* html */ `
+        <span class="menu__account-avatar" aria-hidden="true">${skinIcon(skin(this.progression.skin))}<span class="menu__account-dot" data-sync="${sync}"></span></span>
+        <span class="menu__account-text"><strong>${escapeHtml(nick)}</strong></span>`;
+      chip.setAttribute('aria-label', t('account.chip.aria', { nick }));
+      return;
+    }
+    chip.innerHTML = /* html */ `
+      <span class="menu__account-avatar is-guest" aria-hidden="true">${status === 'loading' ? '' : Icons.user}</span>
+      <span class="menu__account-text"><strong>${escapeHtml(t('account.chip.signIn'))}</strong><span>${escapeHtml(t('account.chip.hint'))}</span></span>`;
+    chip.removeAttribute('aria-label');
+  }
+
   private updatePlayLabel(): void {
     this.playLabel.textContent = !this.ready ? t('menu.loading') : this.paused ? t('menu.resume') : t('menu.play');
   }
@@ -643,6 +719,7 @@ export class Menu {
     for (const control of this.controls) control.refresh();
     this.updatePlayLabel();
     this.updateBurrowLink();
+    this.updateAccountChip();
     if (this.lastSave) this.setProgress(this.lastSave);
   }
 }

@@ -1490,6 +1490,34 @@
   }
 }
 
+/* Altura média (notebook 720p, janela menor): o menu inteiro precisa caber, com o recorde embaixo. */
+@media (min-height: 521px) and (max-height: 820px) {
+  .wordmark {
+    font-size: clamp(56px, min(9.5vw, 14vh), 132px);
+  }
+  .menu__tagline {
+    margin: var(--space-3) 0 var(--space-4);
+  }
+  .menu__play {
+    padding: 15px 40px 15px 28px;
+    font-size: 24px;
+    margin-bottom: var(--space-2);
+  }
+  .menu__link {
+    padding-block: 7px;
+  }
+  .menu__link-icon {
+    width: 36px;
+    height: 36px;
+  }
+  .menu__record {
+    margin-top: var(--space-4);
+  }
+  .menu__main {
+    padding-block: var(--space-5);
+  }
+}
+
 /* Celular deitado: pouca altura, tudo mais compacto. */
 @media (max-height: 520px) {
   .wordmark {

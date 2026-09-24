@@ -1,0 +1,1313 @@
+/* ==========================================================================
+   Parte online: chip da conta (menu), placa da conta, placa do ranking e a
+   janelinha do apelido. Mesmo vocabulário das outras placas: creme de
+   massinha, tinta índigo, o sol laranja nas ações principais.
+   ========================================================================== */
+
+:root {
+  --rank-gold: #f2c14e;
+  --rank-gold-deep: #c8912a;
+  --rank-silver: #cfd4de;
+  --rank-silver-deep: #9199a8;
+  --rank-bronze: #dd9a5f;
+  --rank-bronze-deep: #a8652f;
+  --account-danger: #b3402a;
+  --account-ok: #2f7a2a;
+  --field-border: rgba(43, 42, 94, 0.16);
+}
+
+/* --- Chip da conta (canto de cima do menu) ---------------------------------- */
+.menu__account {
+  position: absolute;
+  z-index: 1;
+  top: max(var(--space-5), env(safe-area-inset-top));
+  right: max(var(--space-5), env(safe-area-inset-right));
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: min(280px, 60vw);
+  padding: 5px 16px 5px 5px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: rgba(27, 26, 68, 0.55);
+  color: var(--dawn-cream);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 8px 24px rgba(15, 12, 40, 0.25);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out),
+    opacity 500ms var(--ease-out),
+    visibility 0s linear 0s;
+  animation: chip-in 600ms var(--ease-out) both;
+}
+.menu__account[hidden] {
+  display: none;
+}
+.menu__account:hover,
+.menu__account[aria-expanded='true'] {
+  background: rgba(43, 42, 94, 0.8);
+}
+.menu__account:active {
+  transform: translateY(2px);
+}
+.menu__account:focus-visible {
+  outline: 3px solid var(--dawn-sun);
+  outline-offset: 3px;
+}
+/* Com placa aberta ou jogando, o chip sai de cena junto com o resto do menu. */
+.menu.has-sheet .menu__account,
+.menu[hidden] .menu__account {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity 200ms var(--ease-out),
+    visibility 0s linear 200ms;
+}
+.menu__account-avatar {
+  position: relative;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: var(--dawn-cream);
+  box-shadow: inset 0 -3px 0 rgba(43, 42, 94, 0.12);
+}
+.menu__account-avatar svg {
+  width: 30px;
+  height: 30px;
+}
+.menu__account-avatar.is-guest {
+  background: rgba(255, 243, 226, 0.14);
+  color: var(--dawn-cream);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+.menu__account-avatar.is-guest svg {
+  width: 20px;
+  height: 20px;
+}
+.menu__account:hover .menu__account-avatar.is-guest {
+  background: var(--dawn-sun);
+  color: #2a1706;
+}
+.menu__account[data-state='loading'] .menu__account-avatar::after {
+  content: '';
+  width: 18px;
+  height: 18px;
+  border: 3px solid rgba(255, 243, 226, 0.25);
+  border-top-color: var(--dawn-sun);
+  border-radius: 50%;
+  animation: spin 900ms linear infinite;
+}
+/* Bolinha da nuvem: verde salvo, âmbar subindo, cinza sem conexão. */
+.menu__account-dot {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--dawn-night);
+  border-radius: 50%;
+  background: #7cbf5b;
+}
+.menu__account-dot[data-sync='syncing'] {
+  background: var(--dawn-sun);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+.menu__account-dot[data-sync='offline'] {
+  background: #9a97b8;
+}
+.menu__account-dot[data-sync='idle'] {
+  background: #9a97b8;
+}
+.menu__account-text {
+  display: grid;
+  min-width: 0;
+  line-height: 1.15;
+}
+.menu__account-text strong {
+  overflow: hidden;
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 900;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.menu__account-text span {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--dawn-peach);
+  white-space: nowrap;
+}
+
+/* --- Campos de formulário ----------------------------------------------------- */
+.field {
+  display: grid;
+  gap: 6px;
+}
+.field[hidden] {
+  display: none;
+}
+.field__label {
+  font-size: 14px;
+  font-weight: 900;
+  color: var(--dawn-indigo);
+}
+.field__row {
+  position: relative;
+  display: flex;
+}
+.field__input {
+  width: 100%;
+  min-width: 0;
+  height: 48px;
+  padding: 0 14px;
+  border: 2px solid var(--field-border);
+  border-radius: 16px;
+  background: #fffdf8;
+  color: var(--color-ink);
+  font: inherit;
+  font-size: 16px; /* 16 px: o Safari do iPhone não dá zoom ao focar */
+  font-weight: 700;
+  box-shadow: inset 0 2px 0 rgba(43, 42, 94, 0.05);
+  transition:
+    border-color var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out);
+}
+.field__input::placeholder {
+  color: rgba(109, 86, 70, 0.55);
+}
+.field__input:hover {
+  border-color: rgba(43, 42, 94, 0.28);
+}
+.field__input:focus {
+  outline: none;
+  border-color: var(--dawn-indigo);
+  box-shadow: 0 0 0 4px rgba(255, 181, 71, 0.45);
+}
+.field__input[aria-invalid='true'] {
+  border-color: var(--account-danger);
+}
+.field__row .field__input {
+  padding-right: 52px;
+}
+.field__peek {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--color-ink-soft);
+  cursor: pointer;
+}
+.field__peek:hover {
+  background: rgba(43, 42, 94, 0.07);
+  color: var(--dawn-indigo);
+}
+.field__peek:focus-visible {
+  outline: 3px solid var(--dawn-sun-deep);
+  outline-offset: -2px;
+}
+.field__peek svg {
+  width: 20px;
+  height: 20px;
+}
+.field__hint {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-ink-soft);
+}
+.field__hint[hidden] {
+  display: none;
+}
+.field__status {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 18px;
+  margin: 0;
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--color-ink-soft);
+}
+.field__status svg {
+  width: 16px;
+  height: 16px;
+}
+.field[data-state='ok'] .field__status {
+  color: var(--account-ok);
+}
+.field[data-state='invalid'] .field__status,
+.field[data-state='blocked'] .field__status,
+.field[data-state='taken'] .field__status {
+  color: var(--account-danger);
+}
+
+/* --- Botões das placas online --------------------------------------------------- */
+.account-submit,
+.account-secondary,
+.account-danger,
+.account-google,
+.account-wide,
+.rank-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  border: 0;
+  border-radius: var(--radius-pill);
+  font: inherit;
+  font-family: var(--font-display);
+  font-weight: 900;
+  cursor: pointer;
+  transition:
+    transform var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+.account-submit svg,
+.account-secondary svg,
+.account-danger svg,
+.account-wide svg,
+.rank-button svg {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+.account-submit:focus-visible,
+.account-secondary:focus-visible,
+.account-danger:focus-visible,
+.account-google:focus-visible,
+.account-wide:focus-visible,
+.rank-button:focus-visible,
+.account-icon-button:focus-visible,
+.account-mode__option:focus-visible {
+  outline: 3px solid var(--dawn-sun-deep);
+  outline-offset: 2px;
+}
+
+/* Ação principal: o sol (igual ao "Comer tudo" da toca). */
+.account-submit,
+.rank-button.is-primary {
+  min-height: 50px;
+  padding: 0 24px;
+  background: linear-gradient(180deg, #ffc462 0%, var(--dawn-sun) 55%, #f3a23a 100%);
+  color: #2a1706;
+  font-size: 17px;
+  box-shadow: 0 5px 0 var(--dawn-sun-deep), inset 0 2px 0 rgba(255, 255, 255, 0.55);
+}
+.account-submit:hover:not(:disabled),
+.rank-button.is-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 0 var(--dawn-sun-deep), inset 0 2px 0 rgba(255, 255, 255, 0.55);
+}
+.account-submit:active:not(:disabled),
+.rank-button.is-primary:active {
+  transform: translateY(4px);
+  box-shadow: 0 1px 0 var(--dawn-sun-deep), inset 0 2px 0 rgba(255, 255, 255, 0.4);
+}
+.account-submit:disabled {
+  cursor: progress;
+  opacity: 0.75;
+}
+.account-submit.is-danger {
+  background: linear-gradient(180deg, #d9654c 0%, var(--account-danger) 100%);
+  color: #fff6ee;
+  box-shadow: 0 5px 0 #7c2616, inset 0 2px 0 rgba(255, 255, 255, 0.3);
+}
+.account-submit.is-compact {
+  min-height: 44px;
+  padding: 0 20px;
+  font-size: 16px;
+}
+
+.account-secondary,
+.rank-button {
+  min-height: 44px;
+  padding: 0 18px;
+  background: rgba(43, 42, 94, 0.08);
+  color: var(--dawn-indigo);
+  font-size: 15px;
+}
+.account-secondary:hover,
+.rank-button:hover {
+  background: rgba(43, 42, 94, 0.15);
+}
+.account-secondary:active,
+.rank-button:active {
+  transform: translateY(2px);
+}
+
+.account-danger {
+  min-height: 44px;
+  padding: 0 16px;
+  background: transparent;
+  color: var(--account-danger);
+  font-size: 15px;
+}
+.account-danger:hover {
+  background: rgba(179, 64, 42, 0.1);
+}
+
+/* Botão do Google no padrão de marca deles: fundo claro, borda cinza, "G" colorido. */
+.account-google {
+  width: 100%;
+  min-height: 50px;
+  padding: 0 20px;
+  border: 1.5px solid #747775;
+  background: #fff;
+  color: #1f1f1f;
+  font-family: var(--font-body);
+  font-size: 16px;
+  font-weight: 800;
+  box-shadow: 0 3px 0 rgba(43, 42, 94, 0.12);
+}
+.account-google[hidden] {
+  display: none;
+}
+.account-google svg {
+  width: 20px;
+  height: 20px;
+}
+.account-google:hover {
+  background: #f8f9fb;
+}
+.account-google:active {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 rgba(43, 42, 94, 0.12);
+}
+
+.account-wide {
+  width: 100%;
+  min-height: 52px;
+  padding: 0 20px;
+  background: linear-gradient(135deg, var(--dawn-indigo) 0%, var(--dawn-violet) 100%);
+  color: var(--dawn-cream);
+  font-size: 17px;
+  box-shadow: 0 4px 0 rgba(15, 12, 40, 0.35), inset 0 2px 0 rgba(255, 255, 255, 0.12);
+}
+.account-wide svg {
+  color: var(--dawn-sun);
+}
+.account-wide:hover {
+  transform: translateY(-1px);
+}
+.account-wide:active {
+  transform: translateY(3px);
+  box-shadow: 0 1px 0 rgba(15, 12, 40, 0.35);
+}
+
+.account-icon-button {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 243, 226, 0.14);
+  color: var(--dawn-cream);
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-out);
+}
+.account-icon-button:hover {
+  background: var(--dawn-sun);
+  color: #2a1706;
+}
+.account-icon-button svg {
+  width: 20px;
+  height: 20px;
+}
+
+.account-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+/* --- Placa da conta ------------------------------------------------------------ */
+.account {
+  display: grid;
+  align-content: start;
+}
+.account-view {
+  display: grid;
+  gap: var(--space-3);
+  padding-top: var(--space-2);
+  animation: row-in 320ms var(--ease-out);
+}
+.account-view[hidden] {
+  display: none;
+}
+.account-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  margin: var(--space-6) 0;
+  font-weight: 800;
+  color: var(--color-ink-soft);
+}
+.account-spinner {
+  width: 22px;
+  height: 22px;
+  border: 3px solid rgba(43, 42, 94, 0.14);
+  border-top-color: var(--dawn-sun-deep);
+  border-radius: 50%;
+  animation: spin 900ms linear infinite;
+}
+
+.account-hero {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4) var(--space-3) var(--space-3);
+  border-radius: 22px;
+  background:
+    radial-gradient(120% 140% at 0% 0%, rgba(255, 181, 71, 0.3), rgba(255, 181, 71, 0) 55%),
+    linear-gradient(135deg, var(--dawn-indigo) 0%, var(--dawn-violet) 100%);
+  color: var(--dawn-cream);
+  box-shadow: 0 4px 0 rgba(15, 12, 40, 0.3), inset 0 2px 0 rgba(255, 255, 255, 0.12);
+}
+.account-hero__icon {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: rgba(255, 181, 71, 0.2);
+  color: var(--dawn-sun);
+}
+.account-hero__icon svg {
+  width: 28px;
+  height: 28px;
+}
+.account-hero p {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1.4;
+}
+
+.account-notice {
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: 16px;
+  background: rgba(255, 181, 71, 0.2);
+  color: #6b3a0c;
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1.4;
+}
+.account-notice[hidden] {
+  display: none;
+}
+
+.account-divider {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin: 0;
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--color-ink-soft);
+}
+.account-divider[hidden] {
+  display: none;
+}
+.account-divider::before,
+.account-divider::after {
+  content: '';
+  flex: 1;
+  height: 2px;
+  border-radius: 2px;
+  background: rgba(43, 42, 94, 0.1);
+}
+
+.account-mode {
+  display: flex;
+  gap: 4px;
+  padding: 5px;
+  border-radius: var(--radius-pill);
+  background: rgba(43, 42, 94, 0.07);
+}
+.account-mode__option {
+  flex: 1;
+  min-height: 40px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--color-ink-soft);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 900;
+  cursor: pointer;
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
+}
+.account-mode__option:hover {
+  color: var(--dawn-indigo);
+}
+.account-mode__option[aria-checked='true'] {
+  background: var(--dawn-indigo);
+  color: var(--dawn-cream);
+  box-shadow: 0 2px 0 rgba(15, 12, 40, 0.3);
+}
+
+.account-form {
+  display: grid;
+  gap: var(--space-3);
+}
+.account-form .account-submit {
+  width: 100%;
+  margin-top: var(--space-1);
+}
+.account-note {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(43, 42, 94, 0.05);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.45;
+  color: var(--color-ink-soft);
+}
+.account-note[hidden] {
+  display: none;
+}
+.account-note svg {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  color: var(--dawn-sun-deep);
+}
+.account-error {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1.4;
+  color: var(--account-danger);
+}
+.account-error:empty {
+  display: none;
+}
+
+/* Conta aberta: o cartão do besouro. */
+.account-card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-3) var(--space-3) var(--space-3);
+  border-radius: 22px;
+  background:
+    radial-gradient(120% 140% at 0% 0%, rgba(255, 181, 71, 0.3), rgba(255, 181, 71, 0) 55%),
+    linear-gradient(135deg, var(--dawn-indigo) 0%, var(--dawn-violet) 100%);
+  color: var(--dawn-cream);
+  box-shadow: 0 4px 0 rgba(15, 12, 40, 0.3), inset 0 2px 0 rgba(255, 255, 255, 0.12);
+}
+.account-card__avatar {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: var(--dawn-cream);
+  box-shadow: inset 0 -4px 0 rgba(43, 42, 94, 0.12), 0 3px 0 rgba(15, 12, 40, 0.3);
+}
+.account-card__avatar svg {
+  width: 50px;
+  height: 50px;
+}
+.account-card__text {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  gap: 2px;
+}
+.account-card__text strong {
+  overflow: hidden;
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 900;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.account-card__text span {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--dawn-peach);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.account-nick-form {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.65);
+  box-shadow: 0 2px 0 rgba(43, 42, 94, 0.06);
+  animation: row-in 260ms var(--ease-out);
+}
+.account-nick-form[hidden] {
+  display: none;
+}
+.account-sync {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: 16px;
+  background: rgba(124, 191, 91, 0.16);
+  color: #2f5a1c;
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1.4;
+}
+.account-sync svg {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+}
+.account-sync[data-state='syncing'] {
+  background: rgba(255, 181, 71, 0.18);
+  color: #6b3a0c;
+}
+.account-sync[data-state='syncing'] svg {
+  animation: pulse 1.2s ease-in-out infinite;
+}
+.account-sync[data-state='offline'] {
+  background: rgba(43, 42, 94, 0.07);
+  color: var(--color-ink-soft);
+}
+.account-exit {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding-top: var(--space-3);
+  border-top: 2px solid rgba(43, 42, 94, 0.07);
+}
+.account-confirm {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: 0 3px 0 rgba(43, 42, 94, 0.1), 0 12px 28px rgba(43, 42, 94, 0.14);
+  animation: row-in 260ms var(--ease-out);
+}
+.account-confirm[hidden] {
+  display: none;
+}
+.account-confirm p {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 1.45;
+  color: var(--color-ink);
+}
+
+/* --- Placa do ranking ------------------------------------------------------------ */
+/* Quatro abas: só a ativa mostra o nome (as outras ficam no ícone), igual à toca. */
+.sheet--ranking .tabs__tab {
+  flex: 1 1 0;
+}
+.sheet--ranking .tabs__tab[aria-selected='true'] {
+  flex: 2.4 1 auto;
+}
+.sheet--ranking .tabs__tab:not([aria-selected='true']) span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.rank-blurb {
+  margin: var(--space-2) 0 var(--space-4);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.45;
+  text-align: center;
+  color: var(--color-ink-soft);
+}
+
+/* Pódio: 2º à esquerda, 1º no meio (mais alto), 3º à direita. */
+.rank-podium {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-areas: 'second first third';
+  align-items: end;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-4);
+  padding: 0;
+  list-style: none;
+}
+.rank-podium__spot {
+  --medal: var(--rank-gold);
+  --medal-deep: var(--rank-gold-deep);
+  --step: 76px;
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  min-width: 0;
+  border-radius: 18px;
+  text-align: center;
+  animation: podium-in 520ms var(--ease-out) both;
+}
+.rank-podium__spot:focus-visible {
+  outline: 3px solid var(--dawn-sun-deep);
+  outline-offset: 3px;
+}
+.rank-podium__spot.is-place-1 {
+  grid-area: first;
+}
+.rank-podium__spot.is-place-2 {
+  --medal: var(--rank-silver);
+  --medal-deep: var(--rank-silver-deep);
+  --step: 54px;
+  grid-area: second;
+  animation-delay: 90ms;
+}
+.rank-podium__spot.is-place-3 {
+  --medal: var(--rank-bronze);
+  --medal-deep: var(--rank-bronze-deep);
+  --step: 40px;
+  grid-area: third;
+  animation-delay: 160ms;
+}
+.rank-podium .rank-avatar {
+  width: 58px;
+  height: 58px;
+  box-shadow: 0 0 0 3px var(--medal), 0 4px 0 3px var(--medal-deep);
+}
+.rank-podium .is-place-1 .rank-avatar {
+  width: 70px;
+  height: 70px;
+}
+.rank-podium .rank-avatar svg {
+  width: 78%;
+  height: 78%;
+}
+/* Apelido do pódio: até duas linhas (a coluna é estreita no celular). */
+.rank-name {
+  display: -webkit-box;
+  max-width: 100%;
+  margin-top: 6px;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 900;
+  line-height: 1.2;
+  color: var(--color-ink);
+  overflow-wrap: anywhere;
+}
+.rank-value {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--color-ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+.rank-podium__block {
+  display: grid;
+  place-items: start center;
+  width: 100%;
+  height: var(--step);
+  margin-top: 4px;
+  padding-top: 6px;
+  border-radius: 14px 14px 6px 6px;
+  background: linear-gradient(180deg, var(--dawn-violet) 0%, var(--dawn-indigo) 100%);
+  box-shadow: inset 0 3px 0 var(--medal), 0 4px 0 rgba(15, 12, 40, 0.25);
+  color: var(--medal);
+  font-family: var(--font-display);
+  font-size: 24px;
+  font-weight: 900;
+  line-height: 1;
+}
+/* Degrau sem ninguém: tracejado, pedindo alguém. */
+.rank-podium__spot.is-open {
+  animation-name: podium-open-in;
+}
+.rank-podium__spot.is-open .rank-avatar {
+  background: transparent;
+  box-shadow: none;
+  border: 2.5px dashed rgba(43, 42, 94, 0.25);
+  color: rgba(43, 42, 94, 0.35);
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 900;
+}
+.rank-podium__spot.is-open .rank-name {
+  color: rgba(109, 86, 70, 0.7);
+  font-size: 13px;
+}
+.rank-podium__spot.is-open .rank-podium__block {
+  background: rgba(43, 42, 94, 0.08);
+  box-shadow: inset 0 3px 0 rgba(43, 42, 94, 0.12);
+  color: rgba(43, 42, 94, 0.3);
+}
+.rank-podium__spot.is-me .rank-name {
+  color: var(--dawn-sun-deep);
+}
+
+.rank-avatar {
+  position: relative;
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: #fff8ec;
+  box-shadow: inset 0 -3px 0 rgba(43, 42, 94, 0.1);
+}
+.rank-avatar svg {
+  width: 32px;
+  height: 32px;
+}
+
+.rank-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.rank-row {
+  display: grid;
+  grid-template-columns: 38px 40px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 52px;
+  padding: 6px 14px 6px 6px;
+  border-radius: 18px;
+  background: rgba(43, 42, 94, 0.04);
+  animation: row-in 320ms var(--ease-out) both;
+}
+.rank-row:focus-visible {
+  outline: 3px solid var(--dawn-sun-deep);
+  outline-offset: 2px;
+}
+.rank-row__place {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 900;
+  text-align: center;
+  color: var(--color-ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+.rank-row__name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 15px;
+  font-weight: 900;
+  color: var(--color-ink);
+}
+.rank-row__name > span:first-child {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.rank-row__value {
+  font-size: 14px;
+  font-weight: 900;
+  color: var(--dawn-indigo);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.rank-you {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  background: var(--dawn-indigo);
+  color: var(--dawn-cream);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.rank-row.is-me {
+  background: linear-gradient(90deg, rgba(255, 196, 98, 0.5), rgba(255, 181, 71, 0.22));
+  box-shadow: inset 0 0 0 2px rgba(217, 132, 36, 0.45);
+}
+.rank-row.is-me .rank-row__place {
+  color: #6b3a0c;
+}
+
+/* Carregando: linhas de massinha piscando devagar. */
+.rank-row.is-skeleton {
+  grid-template-columns: 38px 40px 1fr;
+  animation: none;
+}
+.rank-row.is-skeleton span {
+  height: 14px;
+  border-radius: var(--radius-pill);
+  background: linear-gradient(90deg, rgba(43, 42, 94, 0.07) 0%, rgba(43, 42, 94, 0.14) 50%, rgba(43, 42, 94, 0.07) 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s linear infinite;
+}
+.rank-row.is-skeleton span:nth-child(2) {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+}
+.rank-row.is-skeleton span:nth-child(3) {
+  width: 60%;
+}
+
+.rank-gap {
+  display: flex;
+  justify-content: center;
+  gap: 5px;
+  padding: var(--space-2) 0;
+}
+.rank-gap span {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: rgba(43, 42, 94, 0.25);
+}
+
+.rank-empty {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-3);
+  padding: var(--space-6) var(--space-4);
+  text-align: center;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.45;
+  color: var(--color-ink-soft);
+}
+.rank-empty p {
+  max-width: 30ch;
+  margin: 0;
+}
+.rank-empty__icon {
+  width: 56px;
+  height: 56px;
+  color: rgba(43, 42, 94, 0.3);
+}
+.rank-empty__icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.rank-footer {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-5) var(--space-4) var(--space-5);
+  border-top: 1px solid rgba(43, 42, 94, 0.08);
+  background: rgba(255, 255, 255, 0.45);
+}
+.rank-footer[hidden] {
+  display: none;
+}
+.rank-footer p {
+  flex: 1;
+  margin: 0;
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1.35;
+  color: var(--color-ink-soft);
+}
+.rank-footer strong {
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 900;
+  color: var(--dawn-indigo);
+}
+.rank-footer__icon {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: rgba(43, 42, 94, 0.08);
+  color: var(--dawn-indigo);
+}
+.rank-footer__icon.is-me {
+  background: linear-gradient(180deg, #ffd27a 0%, var(--dawn-sun) 60%, #f39a2e 100%);
+  color: #2a1706;
+  box-shadow: 0 3px 0 var(--dawn-sun-deep);
+}
+.rank-footer__icon svg {
+  width: 22px;
+  height: 22px;
+}
+.rank-footer .rank-button.is-primary {
+  min-height: 44px;
+  font-size: 15px;
+}
+
+/* --- Janelinha do apelido ------------------------------------------------------ */
+.nick-dialog {
+  width: min(420px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  padding: 0;
+  border: 0;
+  border-radius: 30px;
+  background: linear-gradient(180deg, #fff8ec 0%, #f8e8d0 100%);
+  color: var(--color-ink);
+  box-shadow: 0 7px 0 rgba(15, 12, 40, 0.28), 0 30px 70px rgba(15, 12, 40, 0.45), inset 0 2px 0 rgba(255, 255, 255, 0.8);
+  overflow: auto;
+}
+.nick-dialog[open] {
+  animation: dialog-in 420ms var(--ease-out);
+}
+.nick-dialog::backdrop {
+  background: rgba(15, 12, 40, 0.6);
+  backdrop-filter: blur(3px);
+}
+.nick-dialog__form {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-3);
+  padding: var(--space-6) var(--space-5) var(--space-5);
+  text-align: center;
+}
+.nick-dialog__avatar {
+  display: grid;
+  place-items: center;
+  width: 84px;
+  height: 84px;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 50% 110%, rgba(255, 181, 71, 0.55), rgba(255, 181, 71, 0) 70%),
+    linear-gradient(135deg, var(--dawn-indigo), var(--dawn-violet));
+  box-shadow: 0 5px 0 rgba(15, 12, 40, 0.3), inset 0 2px 0 rgba(255, 255, 255, 0.15);
+}
+.nick-dialog__avatar svg {
+  width: 62px;
+  height: 62px;
+}
+.nick-dialog__title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 26px;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  color: var(--dawn-indigo);
+}
+.nick-dialog__text {
+  max-width: 32ch;
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.45;
+  color: var(--color-ink-soft);
+}
+.nick-dialog__field {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  width: 100%;
+  text-align: left;
+}
+.nick-dialog__field .field {
+  flex: 1;
+}
+/* O dado fica na altura do campo (o rótulo ocupa a linha de cima). */
+.nick-dialog__shuffle {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  margin-top: 27px;
+  border: 0;
+  border-radius: 16px;
+  background: rgba(43, 42, 94, 0.08);
+  color: var(--dawn-indigo);
+  cursor: pointer;
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    transform var(--dur-med) var(--ease-spring);
+}
+.nick-dialog__shuffle:hover {
+  background: var(--dawn-sun);
+  color: #2a1706;
+  transform: rotate(-12deg);
+}
+.nick-dialog__shuffle:active {
+  transform: rotate(18deg) scale(0.94);
+}
+.nick-dialog__shuffle:focus-visible {
+  outline: 3px solid var(--dawn-sun-deep);
+  outline-offset: 2px;
+}
+.nick-dialog__shuffle svg {
+  width: 24px;
+  height: 24px;
+}
+.nick-dialog .account-actions {
+  width: 100%;
+  justify-content: stretch;
+}
+.nick-dialog .account-actions > * {
+  flex: 1;
+}
+
+/* --- Animações --------------------------------------------------------------------- */
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+@keyframes chip-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}
+@keyframes podium-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.96);
+  }
+}
+@keyframes podium-open-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.96);
+  }
+}
+
+/* --- Celular / telas estreitas ------------------------------------------------------ */
+@media (max-width: 720px) {
+  /* Em pé: o chip fica no canto e o menu desce um pouco pra não encostar nele. */
+  .menu__account {
+    top: max(var(--space-3), env(safe-area-inset-top));
+    right: max(var(--space-3), env(safe-area-inset-right));
+    padding-right: 12px;
+  }
+  .menu__account-avatar {
+    width: 34px;
+    height: 34px;
+  }
+  .menu__account-text span {
+    display: none;
+  }
+  .menu__main {
+    padding-top: max(76px, calc(env(safe-area-inset-top) + 60px));
+  }
+  .rank-podium .rank-avatar {
+    width: 50px;
+    height: 50px;
+  }
+  .rank-podium .is-place-1 .rank-avatar {
+    width: 60px;
+    height: 60px;
+  }
+  .rank-footer {
+    padding-bottom: max(var(--space-4), env(safe-area-inset-bottom));
+  }
+}
+/* Deitado: pouca altura. */
+@media (max-height: 520px) {
+  .menu__account {
+    top: max(var(--space-3), env(safe-area-inset-top));
+  }
+  .menu__account-text span {
+    display: none;
+  }
+  /* Deitado: pódio baixinho (a lista precisa aparecer). */
+  .rank-podium__spot {
+    --step: 34px;
+  }
+  .rank-podium__spot.is-place-2 {
+    --step: 28px;
+  }
+  .rank-podium__spot.is-place-3 {
+    --step: 24px;
+  }
+  .rank-podium__block {
+    padding-top: 3px;
+    font-size: 17px;
+  }
+  .rank-podium .rank-avatar {
+    width: 44px;
+    height: 44px;
+  }
+  .rank-podium .is-place-1 .rank-avatar {
+    width: 52px;
+    height: 52px;
+  }
+  .rank-name {
+    margin-top: 2px;
+    font-size: 14px;
+  }
+  .rank-blurb {
+    margin-bottom: var(--space-3);
+  }
+  .account-view {
+    gap: var(--space-3);
+  }
+  .nick-dialog__form {
+    padding: var(--space-4);
+    gap: var(--space-2);
+  }
+  .nick-dialog__avatar {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .menu__account,
+  .rank-podium__spot,
+  .rank-row,
+  .account-view,
+  .account-nick-form,
+  .account-confirm,
+  .nick-dialog[open] {
+    animation: none;
+  }
+  .rank-row.is-skeleton span,
+  .menu__account-dot[data-sync='syncing'],
+  .account-sync[data-state='syncing'] svg {
+    animation: none;
+  }
+}

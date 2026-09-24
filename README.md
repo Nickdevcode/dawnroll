@@ -26,13 +26,14 @@ Um besouro rola-bosta de massinha num jardim em miniatura. Você rola uma bola d
 | ☀️ **Sol nascente** | O teto da bola subiu pra **30 cm**. Chegando perto, a massinha acende dourada, como o solzinho do nome |
 | 🕳️ **A toca** | Buraco de terra fofa com bandeirinha de folha no monte escavado. Um anel tracejado pulsa quando a bola já pode ser enterrada. Lá embaixo tem **despensa, catálogo, poderes e conquistas** (ver abaixo) |
 | 👗 **Guarda-roupa** | **23 cascos** (alguns vivos, com brilho e partículas) e **33 acessórios** pra personalizar o besouro: chapéu, óculos, gravata, capa, asas... Tudo liberado jogando (e às vezes um acessório aparece brilhando no jardim), dá pra provar antes, e o besouro aparece de frente num provador (ver abaixo) |
+| 🏆 **Conta e ranking** | Entre com e-mail e senha (ou Google) pra **salvar o besouro na nuvem** e continuar de qualquer aparelho, e dispute o **ranking global** em 4 abas: enterradas, da semana, montanha e coleção (ver abaixo) |
 | 💩 **Montinho fresquinho** | Mais ou menos 1 em cada 10 montinhos nasce fresquinho: mais claro e dourado, com três moscas e um brilho de vez em quando. Vale o dobro de bola e conta como raro |
 | 🌧️ **Clima** | Nada muda de supetão: nuvenzinhas passando no sol → o céu fecha devagar → **garoa que vai engrossando** → chuva que "respira" (trechos fracos e rajadas) → amaina aos poucos → abre. Cada chuva é sorteada: **pancada** curta e fraca ou **tempestade** longa com raio, trovoada ao longe antes de chegar e depois de ir embora. O céu fecha, a luz fica difusa, tudo fica molhado e brilhante |
 | 💧 **Poças** | Seis bacias rasas (uma de lama no meio da trilha) que enchem na chuva, com anéis de gota, reflexo do céu e borda rasa transparente. Secam devagar |
 | 🔊 **Som** | Tudo sintetizado na hora (nenhum arquivo de áudio) e em 3D. A bola rolando muda com o chão (grama, terra, lama, água), com o tamanho e com a tralha grudada; cada coisa que gruda tem o seu som (pedrinha "toc", graveto estala, tampinha e moeda tilintam, bolinha de gude faz "clink" de vidro, pecinha de plástico faz "clack", bicho de casca faz tique-tique e lagarta faz squelch) e uma notinha que sobe a cada item seguido, estilo Katamari. Passinhos no ritmo das patas, vento e folhas, chuva em camadas com gota na folha e na poça, trovão que rola, passarinhos de dia, cigarras nos dias de sol, grilos e coruja na madrugada do menu, abelha zumbindo, beija-flor, moscas nos montinhos, sapo coaxando no ritmo do papo e gafanhoto cantando |
 | 🎵 **Trilha** | Generativa, em Fá maior, nunca repete igual: madrugada no menu (caixinha de música), dia jogando (marimba, baixo e, conforme a bola cresce, chocalho, bloco, bumbo e melodia de kalimba) e chuva (Ré menor, gotas de kalimba). Amanhecer ao jogar, anoitecer ao pausar, vinheta nos marcos e fanfarra no enterro (maior no recorde) |
 | 🎥 **Câmera e colisões** | A lente é uma esfera (não um raio fino): nunca para dentro de pedra, brinquedo, pétala ou da própria bola de bosta. Espremida contra alguma coisa, ela sobe por cima em vez de entrar no besouro. Todo modelo tem colisão que acompanha a forma dele (a lâmina da pá, as pontas do morango, os dedos da luva, os cogumelinhos) |
-| 🌙 **Menu** | A "madrugada" por cima do jardim ao vivo: logo com o "o" virando um solzinho de massinha, e Jogar faz amanhecer. Toca, Configurações e Como jogar abrem em placas por cima |
+| 🌙 **Menu** | A "madrugada" por cima do jardim ao vivo: logo com o "o" virando um solzinho de massinha, e Jogar faz amanhecer. Toca, Guarda-roupa, Ranking, Configurações e Como jogar abrem em placas por cima, e a conta fica num chip no canto de cima |
 | 🌅 **Carregando** | A madrugada já aparece no primeiro quadro, antes do download do jogo: logo de massinha, estrelinhas e um **solzinho rolando pelo horizonte**, que é a própria barra de progresso (física, chão, jardim, grama, bichos, shaders). No fim o miolo some e o céu se funde no menu |
 | ⚙️ **Configurações** | Qualidade (Auto, Baixa, Média, Alta, Ultra ou Personalizada), resolução, sombras, oclusão ambiente, desfoque de maquete, brilho, densidade da grama, FPS, volumes (geral, música, efeitos, natureza e clima — cada slider toca uma prévia do próprio canal), sensibilidade e inversão da câmera, tremida de câmera e vibração do controle. Tudo aplica na hora e fica salvo |
 | 🌐 **Idiomas** | Português (Brasil) e inglês. No automático, o jogo segue o idioma do navegador/sistema, e dá pra fixar um nas configurações |
@@ -121,16 +122,52 @@ Um botão novo no menu (com bolinha contando o que chegou). O besouro vira o cen
 | Épico | Onça-pintada, Lua, Cristal, Abissal, Magma, Aurora, Holográfico | boné de hélice, mago, auréola, cangaceiro, medalha de ouro, asas de borboleta, foguete de garrafa |
 | Lendário | Khepri, Via Láctea, Amanhecer | coroa, monóculo |
 
+### 🏆 Conta, save na nuvem e ranking
+
+Conta é **opcional**: sem ela o jogo continua igualzinho, salvando no aparelho. Com ela, o progresso vai pra nuvem e você aparece no ranking.
+
+| | |
+|---|---|
+| 👤 **Chip da conta** | No canto de cima do menu: **"Entrar"** sem conta; com conta, o besourinho com o seu casco, o apelido e uma bolinha do estado da nuvem (verde salvo, laranja subindo, cinza sem internet) |
+| 🔑 **Como entrar** | **E-mail + senha** (mínimo 8), sem confirmação por e-mail. O cadastro já pede o **apelido**. **Google** também, quando estiver ligado no Supabase (o botão aparece sozinho). Quem entra pelo Google ganha um apelido sorteado e uma **janelinha pra escolher o seu** (com dado pra sortear sugestões) |
+| 🏷️ **Apelido** | 3 a 16 caracteres (letras com acento, números, espaço, `_ . -`), único sem diferenciar maiúscula e com filtro de palavrão (pt/en) no servidor. A disponibilidade é conferida enquanto digita. Dá pra trocar na placa da conta |
+| ☁️ **Save na nuvem** | O save inteiro (nível, despensa, catálogo, conquistas, cascos, acessórios...) sobe alguns segundos depois de cada mudança. Entrou num aparelho novo: o progresso vem junto. Já tinha jogado como convidado: **o progresso de convidado entra na conta** (e os enterros dele contam no ranking, com teto) |
+| 🔄 **Dois aparelhos** | Se dois aparelhos gravarem ao mesmo tempo, o jogo **junta os dois** sem perder nada: contadores e recordes ficam com o maior, figurinhas, conquistas e achados viram a soma das listas |
+| 📴 **Sem internet** | Tudo continua salvando no aparelho; o save e os enterros ficam numa fila e sobem quando a conexão voltar (mesmo fechando o jogo no meio) |
+| 🚪 **Sair** | O que faltava sobe antes; o progresso fica guardado na conta e o aparelho volta pro começo até entrar de novo. **Sem internet com coisa por subir, ele avisa e não sai** (nada se perde) |
+| 🗑️ **Excluir conta** | Na placa da conta, com confirmação: apaga a conta, o save da nuvem e o lugar no ranking. O progresso do aparelho continua ali, como convidado |
+| ⚠️ **Senha esquecida** | Ainda **não tem recuperação** (o projeto não tem serviço de e-mail próprio). O cadastro avisa e recomenda o Google |
+
+**O ranking** mostra o pódio com os 3 primeiros (com o besourinho de cada um, no casco que a pessoa usa), a lista até o 50º e, se você estiver fora do top 50, a sua linha no fim. O rodapé diz a sua posição (ou convida a entrar).
+
+| Aba | O que mede |
+|---|---|
+| 🪲 **Enterradas** | Bolas enterradas desde sempre |
+| 📅 **Semana** | Bolas enterradas desde segunda (zera toda **segunda à 0h de Brasília**, com contagem regressiva) — dá chance pra quem chegou agora |
+| ⛰️ **Montanha** | A soma do tamanho de todas as bolas enterradas (premia bola grande) |
+| 📖 **Coleção** | Figurinhas diferentes no catálogo da toca |
+
+> "Maior bola" ficou de fora de propósito: o teto é 30 cm, então virava um empate geral.
+
 ---
 
 ## 🚀 Rodando no seu PC
 
-Precisa do **Node.js 20+** instalado.
+Precisa do **Node.js 22+** instalado (o `supabase-js` pede 22 ou mais).
 
 ```bash
 npm install      # só na primeira vez
 npm run dev      # abre em http://localhost:5173
 ```
+
+Pra conta e ranking funcionarem local, crie um `.env.local` na raiz (ele fica fora do git) com as duas chaves **públicas** do Supabase:
+
+```bash
+VITE_SUPABASE_URL=https://msmauxysewzacyotifcr.supabase.co
+VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_...   # Supabase → Project Settings → API Keys
+```
+
+Sem elas o jogo roda normal, só que sem conta (o chip e o ranking nem aparecem).
 
 Outros comandos:
 
@@ -153,6 +190,53 @@ Outros comandos:
 
 A Vercel tá ligada ao repo: **todo `git push` na `main` publica sozinho** em produção. Pull requests e outras branches ganham um link de preview próprio. O domínio antigo (`rola-bosta.vercel.app`) redireciona pro novo com um 308 permanente, configurado no `vercel.json`.
 
+As duas variáveis do Supabase (`VITE_SUPABASE_URL` e `VITE_SUPABASE_PUBLISHABLE_KEY`) já estão cadastradas na Vercel pra produção, preview e desenvolvimento.
+
+---
+
+## 🗄️ Backend (Supabase)
+
+Projeto **Dawnroll** no Supabase (`msmauxysewzacyotifcr`, Canadá). O schema inteiro está em [`supabase/migrations/`](supabase/migrations) e já foi aplicado.
+
+| Tabela | O que guarda | Quem lê / escreve |
+|---|---|---|
+| `profiles` | Apelido, se foi escolhido, casco (pro ranking) e `hidden` (moderação) | Todo mundo lê (menos os escondidos); **ninguém escreve direto** — o apelido só troca pelo `set_nickname` (com o filtro) |
+| `saves` | O save inteiro do jogo (JSON) + revisão | Só o dono |
+| `player_stats` | Os números do ranking (enterradas, semana, cm, figurinhas) | Todo mundo lê; **ninguém escreve direto** — só as funções abaixo |
+
+| Função (RPC) | Pra quê |
+|---|---|
+| `check_nickname` / `set_nickname` | Apelido livre e permitido? / troca o apelido |
+| `put_save` | Grava o save com trava de revisão (conflito devolve o save do outro aparelho pra juntar) |
+| `record_burials` | Enterros no ranking (aceita a fila de quando estava sem internet) |
+| `import_progress` | Enterros de convidado entram no ranking, **uma vez por conta** |
+| `leaderboard` | Topo de cada aba + a sua linha |
+| `delete_account` | Apaga a conta (e tudo dela, em cascata) |
+
+**🛡️ Segurança e anti-trapaça.** O jogo roda no navegador, então não dá pra barrar 100% de trapaça; o servidor corta o grosso:
+
+- RLS ligado em todas as tabelas e permissão **coluna por coluna** (o padrão do projeto dava tudo pra `anon`/`authenticated`).
+- Funções com privilégio (`SECURITY DEFINER`) moram num schema `private` que a API não enxerga, sempre conferindo `auth.uid()`; a API só vê funções `SECURITY INVOKER`. O EXECUTE que toda função ganha por padrão foi fechado no `private` e liberado uma a uma.
+- Apelido com filtro de palavrão **na própria tabela** (constraint), além do `set_nickname`: uma revisão de código achou que um PATCH direto na API driblava o filtro — fechado na segunda migração.
+- Enterro só conta com bola de **3 a 30 cm**, no ritmo de **1 a cada 8 s** desde o último (a fila offline passa, spam não), no máximo **500 por dia** e 50 por chamada.
+- Importação de convidado: no máximo **150 enterros** (e 30 cm por enterro), uma vez por conta.
+- Figurinhas saem do próprio save, com teto de 99 (o jogo tem 58: acima disso é save forjado, fácil de achar).
+- Advisor de segurança do Supabase: **0 avisos**.
+
+**🧹 Moderação** (SQL Editor do Supabase):
+
+```sql
+-- Esconder alguém do ranking (a pessoa ainda joga e se vê)
+update public.profiles set hidden = true where lower(nickname) = lower('Apelido Aqui');
+-- Ver os maiores números pra achar trapaça
+select p.nickname, s.buried, s.week_buried, s.total_cm, s.stickers, s.last_burial_at
+from public.player_stats s join public.profiles p on p.id = s.user_id order by s.buried desc limit 20;
+```
+
+**⚙️ Autenticação:** confirmação de e-mail **desligada**, senha mínima de 8, site URL `https://dawnroll.vercel.app` e redirecionamentos liberados pra produção, previews da Vercel (`dawnroll-*.vercel.app`) e `localhost`. O login do Google entra ligando o provedor no Supabase (Authentication → Sign In / Providers → Google) com o Client ID e o Secret de um app OAuth do Google Cloud; o callback é `https://msmauxysewzacyotifcr.supabase.co/auth/v1/callback`.
+
+> 📌 **Se o jogo crescer:** voltar com código por e-mail + recuperação de senha (precisa de SMTP próprio, ex.: Resend com um domínio do jogo) e CAPTCHA no cadastro.
+
 ---
 
 ## 📱 Celular
@@ -171,6 +255,7 @@ A Vercel tá ligada ao repo: **todo `git push` na `main` publica sozinho** em pr
 | [Three.js](https://threejs.org) r186 | Renderização 3D (WebGL 2) |
 | [Rapier](https://rapier.rs) 0.20 (WASM) | Física: bola rolando, colisões, controlador do besouro |
 | [Vite](https://vite.dev) 8 + TypeScript | Build e servidor de desenvolvimento |
+| [Supabase](https://supabase.com) (`@supabase/supabase-js` 2.117) | Contas, save na nuvem e ranking (Postgres + RLS). A biblioteca carrega depois do jardim, num pedaço separado do bundle (~55 KB gzip) |
 
 Não tem nenhum arquivo de modelo, textura ou som: **tudo é gerado por código** (modelos procedurais, normal map de massinha, céu pintado em canvas, partículas, e **todo o som e a trilha sintetizados na hora com Web Audio**).
 
@@ -179,7 +264,9 @@ Não tem nenhum arquivo de modelo, textura ou som: **tudo é gerado por código*
 ## 🗂️ Estrutura
 
 ```
+supabase/migrations/        # schema do backend (tabelas, RLS, funções), já aplicado no projeto
 src/
+├── env.d.ts                # tipos das variáveis VITE_SUPABASE_*
 ├── main.ts                 # entrada: idioma, checa WebGL 2 e sobe o jogo
 ├── Game.ts                 # laço de jogo, rodadas, clima, água/lama, dicas, qualidade adaptativa
 ├── progression/            # a toca e tudo que atravessa as rodadas (sem Three.js, sem DOM)
@@ -203,7 +290,7 @@ src/
 │   ├── GamepadInput.ts     # Gamepad API: analógicos, gatilhos, menu, vibração, Xbox x PlayStation
 │   ├── settings.ts         # configurações salvas e validadas, predefinições de qualidade
 │   ├── device.ts           # perfis de qualidade (PC x celular)
-│   ├── save.ts             # progresso no localStorage (recorde, XP, despensa, catálogo, conquistas, visual), validado
+│   ├── save.ts             # progresso no localStorage (recorde, XP, despensa, catálogo, conquistas, visual), validado (`parseSave` serve pra nuvem também)
 │   ├── ThirdPersonCamera.ts # órbita, colisão com o cenário e tremidinha de impacto
 │   └── ShowcaseCamera.ts   # provador do guarda-roupa: enquadra de frente, desvia da bola, gira arrastando
 ├── render/
@@ -268,6 +355,15 @@ src/
 │   ├── UiSounds.ts         # sons do menu por delegação de eventos
 │   ├── dsp.ts / loops.ts   # ruídos, reverb, onda do pad; peças dos sons contínuos
 │   └── voices/             # receitas de som (foley, natureza, instrumentos, interface)
+├── online/                 # conta, save na nuvem e ranking (Supabase)
+│   ├── Online.ts           # fachada: sessão, perfil/apelido, entrar/sair/excluir, ranking (com cache curtinho)
+│   ├── CloudSave.ts        # sobe o save com trava de revisão; junta com a nuvem ao entrar e em conflito
+│   ├── BurialQueue.ts      # fila de enterros a caminho do ranking (sobrevive a fechar o jogo e ficar offline)
+│   ├── saveMerge.ts        # junta dois saves sem perder progresso (maior contador, união das listas)
+│   ├── client.ts           # cliente do Supabase sob demanda + quais jeitos de entrar estão ligados
+│   ├── storage.ts          # dono do save local, revisão e fila (localStorage, validado)
+│   ├── nicknames.ts        # formato do apelido e sugestões sorteadas (pt/en)
+│   └── authErrors.ts       # erro do Supabase → mensagem que a interface sabe explicar
 ├── i18n/                   # dicionários pt-BR/en tipados + detecção do idioma do navegador
 └── ui/
     ├── Hud.ts              # HUD em jogo, dicas, marcador da toca, resultado, toque
@@ -283,11 +379,16 @@ src/
     ├── screenMarker.ts     # marcador preso na borda da tela (toca e Faro)
     ├── tabs.ts             # abas acessíveis compartilhadas pelas placas
     ├── spatialNav.ts       # navegação do controle no menu: vizinho na direção apertada (grade e lista)
-    ├── Menu.ts             # menu de início/pausa: toca, guarda-roupa, configurações (abas) e como jogar
+    ├── Menu.ts             # menu de início/pausa: toca, guarda-roupa, ranking, conta (chip), configurações e como jogar
+    ├── AccountSheet.ts     # placa da conta: Google, e-mail + senha, apelido, estado da nuvem, sair e excluir
+    ├── RankingSheet.ts     # placa do ranking: 4 abas, pódio, lista, "você" e o convite pra entrar
+    ├── NicknameDialog.ts   # janelinha "Escolha seu apelido" (quem entrou pelo Google)
+    ├── NicknameField.ts    # campo de apelido com checagem ao vivo (usado nos três lugares)
     ├── controls.ts         # seletor, chave e slider acessíveis (teclado, leitor de tela)
     ├── icons.ts            # ícones SVG
     ├── styles.css          # design tokens + HUD
-    └── menu.css            # o menu "madrugada → amanhecer"
+    ├── menu.css            # o menu "madrugada → amanhecer"
+    └── online.css          # chip da conta, placa da conta, ranking e a janelinha do apelido
 ```
 
 ---
@@ -379,4 +480,14 @@ Ferramentas de medição (descartáveis, em `shots/lead/`, fora do git): `bench.
 - **Cor por instância antes de compilar:** o fresquinho usa `setColorAt` no `InstancedMesh` dos montinhos. Isso muda o programa do shader (entra o `USE_INSTANCING_COLOR`), então todas as vagas ganham cor já na construção, antes do `renderer.compile` — tingir pela primeira vez no meio do jogo daria engasgo.
 - **Carregamento no HTML:** a tela de carregamento é HTML + CSS inline no `index.html`, então aparece antes do download de ~1,46 MB do jogo. O JS só avança o progresso (`--p`) entre as etapas pesadas, com um `requestAnimationFrame` entre elas pra tela pintar. Ela some em dois tempos (miolo, depois céu) pra não mostrar dois logos junto com o menu.
 - **Conquista retroativa sem enxurrada:** save de antes das conquistas ganha o que já tinha feito (pelo recorde, bolas enterradas e catálogo) de uma vez e em silêncio, com o XP; o aviso na tela é só pro que acontece jogando.
+- **Online sem atrasar o jogo:** o `supabase-js` é importado sob demanda depois do jardim abrir (pedaço separado do bundle). O navegador continua sendo a cópia de trabalho do save; a nuvem recebe o JSON inteiro alguns segundos depois (espera 3 s, no máximo 15 s mudando sem parar) e ao trocar de aba/fechar.
+- **Sobe quando o jogo grava, não quando o save muda:** o jogo mexe nos contadores de movimento a cada passo sem gravar; comparar o save vivo antes/depois do upload fazia a nuvem receber o save a cada 3 s com a bola rolando. Agora um contador de gravações decide se ficou coisa por subir.
+- **Sair não apaga o que não subiu:** o "Sair" espera o login em andamento, sobe o que falta e só zera o aparelho depois de a nuvem confirmar e o logout dar certo.
+- **Trava otimista em vez de "último grava ganha":** `put_save` recebe a revisão que o aparelho leu; se outro aparelho gravou no meio, devolve o save de lá, o jogo junta (`mergeSaves`: maior contador, união das listas, despensa e visual do save mais adiantado) e tenta de novo.
+- **Junta pelo maior, não pela soma:** não dá pra saber quanto dos dois saves é história em comum; o maior nunca inventa progresso.
+- **O save local tem dono:** `dawnroll:nuvem:v1` guarda de qual conta é o save do aparelho. Progresso de convidado entra na conta; save de outra conta nunca se mistura. Sessão que cai sozinha (expirou) mantém o dono, pra juntar quando voltar.
+- **Ranking escrito só pelo servidor:** o cliente não tem permissão de escrever em `player_stats`; enterro passa por `record_burials` (ritmo e tetos no banco). A fila local manda de novo o que o servidor ainda não contou.
+- **`onAuthStateChange` não chama o Supabase dentro:** o callback roda segurando a trava da sessão; chamar outra API lá dentro trava. O trabalho vai pro próximo tique (`setTimeout`).
+- **WASD digitando:** o `Input` ignora tecla vinda de campo de texto (senão "w" no e-mail andava com o besouro e o espaço virava pulo).
+- **Senha sem recuperação:** com a confirmação de e-mail desligada e sem SMTP próprio, o Supabase só manda e-mail pra quem é do time. Por isso não tem "esqueci a senha" (o cadastro avisa).
 - **Recorde à prova de lixo:** o save é lido com validação (número finito, não negativo, com teto); aba anônima ou storage bloqueado só não salva. O recorde da época do Rola Bosta é migrado pra chave nova na primeira leitura.

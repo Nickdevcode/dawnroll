@@ -1,9 +1,10 @@
 import * as THREE from 'three';
 import { Physics, FIXED_DT, RAPIER, Groups, interactionGroups } from './core/Physics';
-import { Input } from './core/Input';
+import { Input, isTextField } from './core/Input';
 import { ThirdPersonCamera, CAMERA_PROBE_RADIUS, type CameraBall } from './core/ThirdPersonCamera';
 import { ShowcaseCamera } from './core/ShowcaseCamera';
 import { loadSave, writeSave, type SaveData } from './core/save';
+import { Online } from './online/Online';
 import { settings, nativePixelRatio, type GameSettings } from './core/settings';
 import { Graphics, type RenderOptions } from './render/Graphics';
 import { globalUniforms } from './render/shaderChunks';
@@ -151,7 +152,12 @@ export class Game {
   private readonly cameraRig: ThirdPersonCamera;
   private readonly weather = new Weather();
   private readonly save: SaveData = loadSave();
-  private readonly progression = new Progression(this.save, () => writeSave(this.save));
+  /** Conta, save na nuvem e ranking (antes do Progression: ele já grava no construtor). */
+  private readonly online = new Online({ save: this.save, replaceSave: (next) => this.replaceSave(next) });
+  private readonly progression = new Progression(this.save, () => {
+    writeSave(this.save);
+    this.online.saveChanged();
+  });
 
   private physics!: Physics;
   private terrain!: Terrain;
@@ -259,7 +265,7 @@ export class Game {
     this.graphics = new Graphics(canvas);
     this.input = new Input(canvas);
     this.hud = new Hud(uiRoot, this.input);
-    this.menu = new Menu(uiRoot, this.hud.isTouch, this.progression);
+    this.menu = new Menu(uiRoot, this.hud.isTouch, this.progression, this.online);
     // Depois do menu: o aviso de conquista fica por cima dele (dá pra conquistar comendo na toca).
     const achievementToast = (this.achievementToast = new AchievementToast(uiRoot));
     this.progression.onAchievement = (unlock) => {
@@ -351,6 +357,8 @@ export class Game {
       if (this.started) this.pause();
     });
     window.addEventListener('keydown', (e) => {
+      // Digitando (e-mail, senha, apelido): nenhuma tecla é atalho.
+      if (isTextField(e.target)) return;
       // Enter na tela inicial também começa (acessível pelo teclado).
       if (this.menu.isVisible && !this.startDisabled && document.activeElement === document.body && (e.code === 'Enter' || e.code === 'NumpadEnter')) this.start();
       // T abre a toca (despensa, catálogo e poderes).
@@ -459,6 +467,8 @@ export class Game {
     settings.subscribe((s, changed) => this.applySettings(s, changed));
     void boot.finish();
     this.menu.setReady();
+    // A parte online só liga com o jardim de pé (a biblioteca baixa em segundo plano).
+    void this.online.start();
     // O jardim da segunda rodada já vai nascendo (no menu sobra tempo).
     this.prepareNextGarden();
     this.hud.setBall(this.ball.diameterCm, 0, 0);
@@ -1170,6 +1180,7 @@ export class Game {
     this.save.bestCm = Math.max(this.save.bestCm, result.diameterCm);
     // O enterro salva tudo junto (recorde + despensa + catálogo).
     const outcome = this.progression.bury(result.diameterCm, { raining: this.weather.rain > 0.3, riding: this.buriedWhileRiding });
+    this.online.recordBurial(result.diameterCm);
     this.buriedWhileRiding = false;
     this.hud.setProgress(this.save);
     this.menu.setProgress(this.save);
@@ -1180,6 +1191,16 @@ export class Game {
     this.audio.buried(at, result.diameterCm / 4, record);
     this.cameraRig.shake(0.1);
     this.rumble(0.8, 1, record ? 500 : 300);
+  }
+
+  /**
+   * O progresso inteiro mudou por fora do jogo (save da nuvem juntado com o do
+   * aparelho, ou o começo de novo ao sair da conta): recalcula e redesenha.
+   */
+  private replaceSave(next: SaveData): void {
+    this.progression.replaceSave(next);
+    this.hud.setProgress(this.save);
+    this.menu.setProgress(this.save);
   }
 
   /** Rodada nova: um jardim novo (outro sorteio) e uma bola pequena brota do lado do besouro. */

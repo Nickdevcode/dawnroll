@@ -33,6 +33,13 @@ const MOVE_KEYS: Record<string, [number, number]> = {
   ArrowRight: [1, 0],
 };
 
+/** O alvo da tecla é um campo de texto? (aí WASD, espaço e os atalhos são letras) */
+export function isTextField(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target.isContentEditable || target instanceof HTMLTextAreaElement) return true;
+  return target instanceof HTMLInputElement && !['button', 'checkbox', 'radio', 'range', 'submit', 'reset'].includes(target.type);
+}
+
 export class Input {
   readonly state: InputState = {
     moveX: 0,
@@ -175,6 +182,8 @@ export class Input {
   }
 
   private onKeyDown = (e: KeyboardEvent): void => {
+    // Digitando num campo (e-mail, senha, apelido): WASD e espaço são letras, não o besouro.
+    if (isTextField(e.target)) return;
     this.device = 'keyboard';
     if (e.repeat) return;
     if (e.code === 'Space') {
