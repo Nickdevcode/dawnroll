@@ -128,6 +128,8 @@ export class Menu {
   private readonly sync: Array<(s: Readonly<GameSettings>) => void> = [];
 
   private ready = false;
+  /** A tela de carregamento já saiu da frente (as janelinhas modais esperam por isso). */
+  private revealed = false;
   private paused = false;
   private openSheet: SheetName | null = null;
   private lastSave: SaveData | null = null;
@@ -201,9 +203,9 @@ export class Menu {
     this.account = new AccountSheet(online, progression);
     this.element.append(this.burrow.element, this.wardrobe.element, this.shop.element, this.pass.element, this.ranking.element, this.account.element);
     parent.append(this.element);
-    this.nicknameDialog = new NicknameDialog(parent, online, progression, () => this.isVisible);
+    this.nicknameDialog = new NicknameDialog(parent, online, progression, () => this.isVisible && this.revealed);
     // Boas-vindas das moedas: não briga com a janelinha do apelido (espera ela fechar).
-    this.welcome = new WelcomeDialog(parent, progression, () => this.isVisible && !this.nicknameDialog.isOpen);
+    this.welcome = new WelcomeDialog(parent, progression, () => this.isVisible && this.revealed && !this.nicknameDialog.isOpen);
     this.welcome.onOpenChests = () => {
       this.open('shop');
       this.shop.prepare('chests');
@@ -278,6 +280,12 @@ export class Menu {
     this.playButton.disabled = false;
     this.updatePlayLabel();
     this.playButton.focus({ preventScroll: true });
+  }
+
+  /** A tela de carregamento sumiu: agora as janelinhas (apelido, boas-vindas) podem aparecer. */
+  setRevealed(): void {
+    this.revealed = true;
+    this.nicknameDialog.check();
     this.welcome.check();
   }
 
@@ -290,8 +298,8 @@ export class Menu {
     if (this.ready) this.playButton.focus({ preventScroll: true });
     // Entrou pelo Google e foi jogar antes do apelido carregar: a janelinha aparece na pausa.
     this.nicknameDialog?.check();
-    // Boas-vindas só com o menu pronto (no carregamento ela cobriria a tela de loading).
-    if (this.ready) this.welcome?.check();
+    // Boas-vindas (no carregamento ela espera o loader sair: ver `setRevealed`).
+    this.welcome?.check();
   }
 
   /** Placa aberta agora (null = só o menu principal). */

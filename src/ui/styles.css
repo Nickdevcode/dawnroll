@@ -78,6 +78,11 @@ body {
   pointer-events: none;
   z-index: 1;
 }
+/* O <dialog> modal sobe pro top layer, mas continua herdando o pointer-events daqui:
+   sem isso o mouse atravessa a janelinha (e o resto da página fica inerte atrás dela). */
+#ui dialog {
+  pointer-events: auto;
+}
 
 .sr-only {
   position: absolute;

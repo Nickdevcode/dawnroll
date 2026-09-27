@@ -508,8 +508,11 @@ export class Game {
     this.startDisabled = false;
     this.applySettings(settings.get());
     settings.subscribe((s, changed) => this.applySettings(s, changed));
-    void boot.finish();
     this.menu.setReady();
+    // Janelinhas (boas-vindas, apelido) só com a tela de carregamento fora da frente: o
+    // <dialog> modal sobe pro top layer e ficaria por cima dela (o primeiro quadro, que
+    // ainda compila shader, pode segurar o loader por segundos depois do "pronto").
+    void boot.finish().then(() => this.menu.setRevealed());
     // A parte online só liga com o jardim de pé (a biblioteca baixa em segundo plano).
     void this.online.start();
     // O jardim da segunda rodada já vai nascendo (no menu sobra tempo).
