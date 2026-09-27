@@ -8,6 +8,8 @@ import { Icons } from './icons';
 import { GameIcons } from './gameIcons';
 import { EmptySlotIcon, WardrobeTabIcons, lookIcon } from './lookIcons';
 import { lookDesc, lookName, rarityName, unlockText } from './lookText';
+import { PurchaseConfirm, buyButton } from './purchase';
+import { isFindable } from '../progression/rareFinds';
 import { bindTabs, tabsMarkup } from './tabs';
 
 /** Abas do guarda-roupa: os cascos e um lugar do corpo por aba. */
@@ -49,6 +51,10 @@ export class WardrobeSheet {
   onPreview: ((look: Look | null) => void) | null = null;
   /** Aba mudou (a câmera do provador enquadra a parte do corpo dela). */
   onTabChange: ((tab: WardrobeTab) => void) | null = null;
+  /** Comprou direto do cartão (o jogo toca o som das moedas). */
+  onPurchase: (() => void) | null = null;
+  /** "Ver passe" / "Ver baús": o visual vem de lá (o menu abre a placa certa). */
+  onNavigate: ((target: 'pass' | 'chests') => void) | null = null;
 
   private readonly panels = new Map<WardrobeTab, HTMLElement>();
   private readonly buttons = new Map<WardrobeTab, HTMLButtonElement>();
@@ -59,11 +65,12 @@ export class WardrobeSheet {
   private preview: Look | null = null;
   /** Visuais novos mostrados nesta visita à aba (viram "vistos" ao sair dela). */
   private readonly shownNew = new Set<LookKey>();
+  private readonly confirm = new PurchaseConfirm(() => this.refresh());
 
   constructor(private readonly progression: Progression) {
     const markup = tabsMarkup('wardrobe-', 'sheet-wardrobe-title', TABS);
     this.element = document.createElement('section');
-    this.element.className = 'sheet sheet--wardrobe';
+    this.element.className = 'sheet sheet--showcase sheet--wardrobe';
     this.element.id = 'sheet-wardrobe';
     this.element.setAttribute('role', 'region');
     this.element.setAttribute('aria-labelledby', 'sheet-wardrobe-title');
@@ -102,6 +109,7 @@ export class WardrobeSheet {
 
   /** Abrindo: aba dos cascos, cartões no que está vestido, nada sendo provado. */
   prepare(): void {
+    this.confirm.reset();
     this.setPreview(null);
     this.picks.clear();
     this.picks.set('skins', { kind: 'skin', id: this.progression.skin });
@@ -118,6 +126,7 @@ export class WardrobeSheet {
 
   /** Fechando: tira o que estava sendo provado e dá como vistos os novos que apareceram. */
   close(): void {
+    this.confirm.reset();
     this.setPreview(null);
     this.flushSeen();
   }
@@ -138,6 +147,7 @@ export class WardrobeSheet {
     }
     this.flushSeen();
     this.tab = name;
+    this.confirm.reset();
     this.setPreview(null);
     // Voltando pra aba, o cartão mostra o que está vestido.
     this.picks.set(name, this.wornPick(name));
@@ -157,6 +167,7 @@ export class WardrobeSheet {
 
   /** Clique num quadradinho: veste (liberado), prova (trancado) ou tira (o "nada"). */
   private pick(tab: WardrobeTab, value: string): void {
+    this.confirm.reset();
     if (value === 'none') {
       if (isAccessorySlot(tab)) this.progression.setAccessory(tab, null);
       this.picks.set(tab, 'none');
@@ -179,14 +190,36 @@ export class WardrobeSheet {
     this.focusPick(value);
   }
 
-  /** Botão do cartão de cima ("Tirar"). */
+  /** Botões do cartão de cima ("Tirar", "Comprar", "Ver passe", "Ver baús"). */
   private act(tab: WardrobeTab, action: string): void {
     if (action === 'remove' && isAccessorySlot(tab)) {
       this.progression.setAccessory(tab, null);
       this.picks.set(tab, 'none');
       this.render();
       this.focusPick('none');
+      return;
     }
+    const pick = this.picks.get(tab);
+    if (!pick || pick === 'none') return;
+    if (action === 'buy') {
+      const key = lookKey(pick);
+      if (!this.confirm.press(key)) {
+        this.render();
+        this.panels.get(tab)?.querySelector<HTMLElement>('[data-action="buy"]')?.focus({ preventScroll: true });
+        return;
+      }
+      if (this.progression.buyLook(pick) === 'ok') {
+        this.setPreview(null);
+        if (pick.kind === 'skin') this.progression.setSkin(pick.id);
+        else this.progression.setAccessory(accessory(pick.id).slot, pick.id);
+        this.onPurchase?.();
+      }
+      this.render();
+      this.focusPick(key);
+      return;
+    }
+    if (action === 'goto-pass') this.onNavigate?.('pass');
+    if (action === 'goto-chests') this.onNavigate?.('chests');
   }
 
   private setPreview(look: Look | null): void {
@@ -312,12 +345,17 @@ export class WardrobeSheet {
     let footer = '';
     if (!unlocked) {
       const unlock = lookUnlock(pick)!;
-      // Acessório também pode ser achado no jardim (cascos não).
-      const find = pick.kind === 'acc' ? `<p class="look-detail__find">${GameIcons.sparkle}<span>${escapeHtml(t('wardrobe.findHint'))}</span></p>` : '';
+      // Acessório de conquista/nível/moedas também pode ser achado no jardim (cascos e exclusivos não).
+      const find = pick.kind === 'acc' && isFindable(accessory(pick.id)) ? `<p class="look-detail__find">${GameIcons.sparkle}<span>${escapeHtml(t('wardrobe.findHint'))}</span></p>` : '';
+      let how = '';
+      if ('shop' in unlock) how = buyButton(unlock.shop, this.progression.wallet, this.confirm.isArmed(lookKey(pick)));
+      else if ('pass' in unlock) how = `<button class="look-detail__action" type="button" data-action="goto-pass">${escapeHtml(t('wardrobe.gotoPass'))}</button>`;
+      else if ('chest' in unlock) how = `<button class="look-detail__action" type="button" data-action="goto-chests">${escapeHtml(t('wardrobe.gotoChests'))}</button>`;
       footer = /* html */ `
-        <p class="look-detail__unlock">${GameIcons.lock}<span>${escapeHtml(unlockText(unlock, (id) => this.progression.hasAchievement(id)))}</span></p>
+        <p class="look-detail__unlock">${GameIcons.lock}<span>${escapeHtml(unlockText(pick, unlock, (id) => this.progression.hasAchievement(id)))}</span></p>
         ${find}
-        <span class="look-detail__status is-trying">${escapeHtml(t('wardrobe.trying'))}</span>`;
+        <span class="look-detail__status is-trying">${escapeHtml(t('wardrobe.trying'))}</span>
+        ${how}`;
     } else if (worn && pick.kind === 'acc') {
       footer = /* html */ `
         <span class="look-detail__status is-worn">${Icons.check}${escapeHtml(t('wardrobe.wearing'))}</span>

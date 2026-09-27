@@ -13,6 +13,7 @@ import { Soundscape } from './Soundscape';
 import { UiSounds } from './UiSounds';
 import { Wildlife } from './Wildlife';
 import * as sfx from './voices/foley';
+import * as treasure from './voices/treasure';
 import { uiNotify } from './voices/ui';
 import { celesta } from './voices/instruments';
 
@@ -241,6 +242,42 @@ export class GameAudio {
   /** Aviso rápido (controle conectado). */
   notify(): void {
     this.engine.play(uiNotify, { bus: 'ui', essential: true });
+  }
+
+  // --- economia (tudo no canal da interface: acontece com o menu aberto) ----------
+
+  chestLand(): void {
+    this.engine.play(treasure.chestLand, { bus: 'ui', essential: true });
+  }
+
+  chestRattle(): void {
+    this.engine.play(treasure.chestRattle, { bus: 'ui', key: 'chest-rattle', minInterval: 0.5 });
+  }
+
+  /** Tampa estourando; `rank` 0..3 = raridade do baú (o do Sol faz mais festa). */
+  chestBurst(rank: number): void {
+    this.engine.play(treasure.chestBurst(rank), { bus: 'ui', essential: true, reverb: 0.3 });
+  }
+
+  coinClink(): void {
+    this.engine.play(treasure.coinClink, { bus: 'ui', key: 'coin', minInterval: 0.035 });
+  }
+
+  dewChime(): void {
+    this.engine.play(treasure.dewChime, { bus: 'ui', key: 'dew', minInterval: 0.2, reverb: 0.3 });
+  }
+
+  /** Visual novo saindo do baú (a vinheta da conquista). */
+  itemReveal(): void {
+    this.music.achievement();
+  }
+
+  purchase(): void {
+    this.engine.play(treasure.purchase, { bus: 'ui', essential: true });
+  }
+
+  passClaim(): void {
+    this.engine.play(treasure.passClaim, { bus: 'ui', essential: true });
   }
 
   // --- quadro --------------------------------------------------------------------

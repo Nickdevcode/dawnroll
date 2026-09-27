@@ -36,6 +36,20 @@ const PATTERN_INDEX: Record<SkinPattern, number> = {
   abyss: 12,
   dawn: 13,
   gold: 14,
+  denim: 15,
+  cow: 16,
+  swirl: 17,
+  sprinkles: 18,
+  koi: 19,
+  zebra: 20,
+  neon: 21,
+  storm: 22,
+  dew: 23,
+  honeycomb: 24,
+  petals: 25,
+  sunflower: 26,
+  stained: 27,
+  opal: 28,
 };
 
 /** Parte do casco no `skinPos.w`. */
@@ -383,6 +397,210 @@ vec3 skinColor(vec3 p, float part, out vec3 glow) {
     float glint = skinStars(p, 0.06, 70.0);
     glow += uSkinA * glint * 1.6 * uSkinGlow;
     return c;
+  }
+
+  if (kind == 15) {
+    // Jeans: sarja em diagonal, manchas desbotadas e a costura laranja dos dois lados da emenda.
+    float twill = sin((p.x * 0.7 + p.z + p.y * 0.5) * 150.0);
+    vec3 c = base * (0.9 + 0.1 * twill);
+    c = mix(c, uSkinB, smoothstep(0.55, 0.9, skinFbm(p * 5.0 + 2.0)) * 0.45);
+    if (part < 0.5) {
+      float seam = abs(abs(p.x) - 0.04);
+      float dash = step(0.4, fract(p.z * 30.0));
+      c = mix(c, uSkinA, (1.0 - smoothstep(0.004, 0.009, seam)) * dash);
+    }
+    return c;
+  }
+
+  if (kind == 16) {
+    // Vaquinha: manchas grandes e arredondadas (a cabeça fica lisa, cor de focinho).
+    if (part > 1.5) return base;
+    float n = skinFbm(p * 3.0 + 4.0);
+    return mix(base, uSkinA, smoothstep(0.53, 0.56, n));
+  }
+
+  if (kind == 17) {
+    // Bala listrada: espiral vermelha larga e um fiozinho de menta do lado.
+    if (part > 1.5) return base;
+    float a = skinAround(p);
+    float s = sin(a * 4.0 + p.z * 18.0);
+    vec3 c = mix(base, uSkinA, smoothstep(0.1, 0.25, s));
+    float thin = sin(a * 4.0 + p.z * 18.0 + 2.1);
+    return mix(c, uSkinB, (1.0 - smoothstep(0.08, 0.2, abs(thin))) * 0.9);
+  }
+
+  if (kind == 18) {
+    // Confeitado: granulado (tracinhos virados pra todo lado) nas três cores; a cabeça é a massa.
+    // Grade 2D por cima do casco (em volta × comprimento): todo tracinho cai na superfície.
+    if (part > 1.5) return base;
+    vec2 g = vec2(skinAround(p) * 1.5, p.z) * 6.5;
+    vec2 gi = floor(g);
+    vec2 gf = fract(g) - 0.5;
+    float h = clayHash12(gi + part * 7.0);
+    vec2 off = vec2(clayHash12(gi + 3.1), clayHash12(gi + 7.3)) - 0.5;
+    float ang = h * 18.85;
+    vec2 dir = vec2(cos(ang), sin(ang));
+    vec2 local = gf - off * 0.4;
+    float t = clamp(dot(local, dir), -0.24, 0.24);
+    float d = length(local - dir * t);
+    float mask = (1.0 - smoothstep(0.085, 0.115, d)) * step(0.12, h);
+    vec3 col = h < 0.45 ? uSkinA : (h < 0.72 ? uSkinB : uSkinC);
+    return mix(base, col, mask);
+  }
+
+  if (kind == 19) {
+    // Koi: manchas laranja e pretas no branco e escamas em meia-lua que brilham de lado.
+    vec3 c = base;
+    c = mix(c, uSkinA, smoothstep(0.52, 0.56, skinFbm(p * 2.6 + 1.0)));
+    c = mix(c, uSkinB, smoothstep(0.6, 0.63, skinFbm(p * 3.4 + 9.0)) * 0.95);
+    vec2 g = vec2(skinAround(p) * 3.2, p.z * 15.0);
+    g.x += floor(g.y) * 0.5;
+    vec2 f = fract(g) - vec2(0.5, 0.0);
+    float rim = smoothstep(0.4, 0.5, length(f * vec2(1.0, 1.35)));
+    c *= 0.93 + 0.07 * (1.0 - rim);
+    return c + uSkinC * rim * 0.25 * fresnel;
+  }
+
+  if (kind == 20) {
+    // Zebra: listras tortas abraçando o casco.
+    if (part > 1.5) return base;
+    float warp = skinFbm(p * 4.0) * 2.4;
+    float s = sin(skinAround(p) * 7.0 + p.z * 6.0 + warp);
+    return mix(base, uSkinA, smoothstep(0.15, 0.3, s));
+  }
+
+  if (kind == 21) {
+    // Neon: grade de luz (ciano virando magenta), uma varredura que corre de trás pra frente e a borda acesa.
+    vec2 g = vec2(skinAround(p) * 1.7, p.z) * 9.0;
+    vec2 f = abs(fract(g) - 0.5);
+    float grid = smoothstep(0.43, 0.48, max(f.x, f.y));
+    float scan = exp(-pow((p.z - mix(-0.7, 0.7, fract(uSkinTime * 0.35))) / 0.05, 2.0));
+    vec3 col = mix(uSkinA, uSkinB, 0.5 + 0.5 * sin(p.z * 6.0 + uSkinTime * 0.8));
+    glow += col * grid * (0.45 + scan * 3.0) * uSkinGlow;
+    glow += uSkinC * scan * 0.3 * uSkinGlow;
+    glow += col * pow(fresnel, 3.0) * 0.5 * uSkinGlow;
+    return base + col * grid * 0.55 + uSkinC * scan * 0.12;
+  }
+
+  if (kind == 22) {
+    // Tempestade: nuvem rolando devagar e, de vez em quando, um raio em zigue-zague que acende tudo.
+    vec3 q = p * 3.0 + vec3(uSkinTime * 0.06, 0.0, uSkinTime * 0.03);
+    float n = skinFbm(q + skinFbm(q * 1.6) * 0.8);
+    vec3 cloud = mix(uSkinC, uSkinB, smoothstep(0.35, 0.75, n));
+    vec3 c = mix(base, cloud, 0.85);
+    float cycle = floor(uSkinTime * 0.42);
+    float phase = fract(uSkinTime * 0.42);
+    float flash = (1.0 - step(0.09, phase)) * (0.55 + 0.45 * sin(phase * 190.0));
+    float seedL = clayHash12(vec2(cycle, 3.1));
+    float x0 = (seedL - 0.5) * 0.36;
+    float bolt = abs(p.x - x0 - 0.05 * sin(p.z * 38.0 + seedL * 20.0) - 0.025 * sin(p.z * 91.0));
+    float boltMask = (1.0 - smoothstep(0.004, 0.013, bolt)) * (1.0 - step(0.5, part));
+    glow += uSkinA * boltMask * flash * 6.0 * uSkinGlow;
+    glow += uSkinB * flash * 0.3 * smoothstep(0.4, 0.8, n) * uSkinGlow;
+    return c + uSkinA * boltMask * flash;
+  }
+
+  if (kind == 23) {
+    // Orvalho: folha com nervuras e gotas de todos os tamanhos; a luz do amanhecer corre por elas.
+    vec3 c = base * (0.9 + 0.14 * skinFbm(p * 7.0));
+    float vein = 1.0 - smoothstep(0.0, 0.01, abs(sin((p.z * 1.2 - abs(p.x) * 1.6) * 22.0)) * 0.05);
+    c = mix(c, base * 1.25, vein * 0.35 * step(part, 0.5));
+    vec3 id;
+    vec2 d = skinCells(p * 10.0, id);
+    float h = clayHash13(id);
+    float r = 0.16 + 0.22 * h;
+    float drop = (1.0 - smoothstep(r - 0.05, r, d.x)) * step(0.42, h);
+    float lens = smoothstep(r * 0.35, r, d.x);
+    vec3 water = mix(uSkinB, base * 1.4, 0.4) + lens * 0.22;
+    c = mix(c, water, drop * 0.72);
+    float glint = pow(max(0.0, sin(uSkinTime * 1.2 + h * 30.0)), 16.0);
+    glow += (uSkinA * glint * 2.6 + uSkinC * pow(fresnel, 2.5) * 0.3) * drop * uSkinGlow;
+    return c + uSkinA * drop * (1.0 - lens) * 0.18;
+  }
+
+  if (kind == 24) {
+    // Favo de mel: hexágonos de cera e o mel mais claro no meio de cada um.
+    if (part > 1.5) return base;
+    vec2 q = vec2(skinAround(p) * 1.9, p.z) * 7.5;
+    vec2 r = vec2(1.0, 1.7320508);
+    vec2 hr = r * 0.5;
+    vec2 a = mod(q, r) - hr;
+    vec2 b = mod(q - hr, r) - hr;
+    vec2 gv = dot(a, a) < dot(b, b) ? a : b;
+    vec2 ab = abs(gv);
+    float edge = max(dot(ab, normalize(r)), ab.x);
+    vec3 c = mix(base, uSkinA, smoothstep(0.36, 0.43, edge));
+    c = mix(c, uSkinB, (1.0 - smoothstep(0.0, 0.3, edge)) * 0.45);
+    return c + uSkinB * (1.0 - smoothstep(0.0, 0.34, edge)) * 0.2 * fresnel;
+  }
+
+  if (kind == 25) {
+    // Cerejeira: rosinha manchado e pétalas girando, escorregando devagar pelo casco.
+    vec3 c = mix(base, uSkinB, smoothstep(0.4, 0.8, skinFbm(p * 4.0)) * 0.5);
+    vec2 g = vec2(skinAround(p) * 1.5, p.z + uSkinTime * 0.04) * 4.2;
+    vec2 gi = floor(g);
+    vec2 gf = fract(g) - 0.5;
+    float h = clayHash12(gi + part * 11.0);
+    vec2 off = vec2(clayHash12(gi + 2.1), clayHash12(gi + 5.3)) - 0.5;
+    float ang = h * 6.28 + uSkinTime * (0.4 + h * 0.6);
+    vec2 pp = mat2(cos(ang), -sin(ang), sin(ang), cos(ang)) * (gf - off * 0.35);
+    // Pétala: elipse com o cortinho na ponta.
+    float petal = (1.0 - smoothstep(0.2, 0.25, length(pp * vec2(1.0, 1.75)))) * step(0.35, h);
+    petal *= smoothstep(0.0, 0.05, length(pp - vec2(0.0, 0.2)));
+    c = mix(c, mix(uSkinA, uSkinB, h * 0.5), petal);
+    glow += uSkinA * petal * 0.3 * uSkinGlow;
+    return c;
+  }
+
+  if (kind == 26) {
+    // Girassol: pétalas saindo do miolo (no pronoto) e as sementes em espiral dupla; o brilho gira em volta.
+    vec2 cc = vec2(p.x, p.z - 0.3);
+    float r = length(cc);
+    float a = atan(cc.x, cc.y);
+    if (part < 0.5) {
+      float ray = 0.5 + 0.5 * cos(a * 16.0);
+      vec3 c = mix(uSkinA, base, smoothstep(0.35, 0.65, ray));
+      c = mix(uSkinA * 0.85, c, smoothstep(0.22, 0.36, r));
+      float sweep = 0.5 + 0.5 * sin(a * 2.0 - uSkinTime * 1.2);
+      glow += uSkinC * pow(sweep, 6.0) * ray * 0.55 * uSkinGlow;
+      return c;
+    }
+    if (part < 1.5) {
+      float lr = log(max(r, 0.01)) * 9.0;
+      float s = sin(a * 13.0 + lr) * sin(a * 21.0 - lr * 1.6);
+      vec3 c = mix(base, uSkinB, smoothstep(-0.1, 0.4, s));
+      float pulse = 0.5 + 0.5 * sin(uSkinTime * 1.5 - r * 20.0);
+      glow += uSkinC * smoothstep(0.5, 0.9, s) * pulse * 0.25 * uSkinGlow;
+      return c;
+    }
+    return base;
+  }
+
+  if (kind == 27) {
+    // Vitral: cacos de vidro colorido presos no chumbo escuro, a luz passando e mudando devagar.
+    vec3 id;
+    vec2 d = skinCells(p * 7.0, id);
+    float h = clayHash13(id);
+    vec3 glassCol = h < 0.33 ? uSkinA : (h < 0.66 ? uSkinB : uSkinC);
+    glassCol = mix(glassCol, skinHue(h * 3.0), 0.25);
+    float lead = 1.0 - smoothstep(0.02, 0.07, d.y - d.x);
+    float light = 0.6 + 0.4 * sin(uSkinTime * 0.9 + h * 12.0);
+    glow += glassCol * (1.0 - lead) * light * 0.55 * uSkinGlow;
+    return mix(glassCol * 0.85, base, lead);
+  }
+
+  if (kind == 28) {
+    // Opala: branco leitoso com lascas de arco-íris que trocam de cor com o ângulo e o tempo.
+    vec3 id;
+    vec2 d = skinCells(p * 14.0, id);
+    float h = clayHash13(id);
+    float hue = fract(h * 1.7 + fresnel * 0.8 + uSkinTime * 0.05 + dot(N, vec3(0.3, 0.5, 0.2)));
+    vec3 fleck = skinHue(hue);
+    float mask = (1.0 - smoothstep(0.25, 0.5, d.x)) * smoothstep(0.35, 0.6, clayNoise3(p * 20.0 + h * 7.0));
+    float flash = 0.5 + 0.5 * sin(uSkinTime * 1.6 + h * 25.0 + fresnel * 6.0);
+    vec3 c = mix(base, fleck * 0.9 + 0.15, mask * (0.35 + 0.45 * flash));
+    glow += fleck * mask * flash * 0.7 * uSkinGlow;
+    return c + skinHue(fresnel + uSkinTime * 0.03) * pow(fresnel, 2.0) * 0.2;
   }
 
   return base;

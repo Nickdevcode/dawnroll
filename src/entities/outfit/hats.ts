@@ -17,7 +17,7 @@ import type { AccessoryModel, OutfitPose } from './types';
 const gaussian = (x: number, width: number) => Math.exp(-((x / width) ** 2));
 
 /** Deforma os vértices de uma geometria por uma função (posição → nova posição). */
-function bend(geometry: THREE.BufferGeometry, fn: (p: THREE.Vector3) => void): THREE.BufferGeometry {
+export function bend(geometry: THREE.BufferGeometry, fn: (p: THREE.Vector3) => void): THREE.BufferGeometry {
   const pos = geometry.getAttribute('position') as THREE.BufferAttribute;
   const p = new THREE.Vector3();
   for (let i = 0; i < pos.count; i++) {
@@ -30,7 +30,7 @@ function bend(geometry: THREE.BufferGeometry, fn: (p: THREE.Vector3) => void): T
 }
 
 /** Desloca na horizontal (pra fora do eixo Y) — relevo de tricô, pregas. */
-function radial(geometry: THREE.BufferGeometry, offset: (angle: number, y: number) => number): THREE.BufferGeometry {
+export function radial(geometry: THREE.BufferGeometry, offset: (angle: number, y: number) => number): THREE.BufferGeometry {
   return bend(geometry, (p) => {
     const r = Math.hypot(p.x, p.z);
     if (r < 1e-5) return;

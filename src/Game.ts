@@ -38,6 +38,12 @@ import { Hud, type HintKind } from './ui/Hud';
 import { giverName } from './ui/RoundPanel';
 import { Menu } from './ui/Menu';
 import { AchievementToast } from './ui/AchievementToast';
+import { ChestOverlay } from './ui/ChestOverlay';
+import { SHOWCASE_SHEETS } from './ui/Menu';
+import { ChestStage, CHEST_REVEAL_DELAY, type ChestStageEvent } from './fx/ChestStage';
+import { rarityRank, type ChestResult } from './progression/economy';
+import type { Rarity } from './progression/unlocks';
+import type { ShowcaseFrameName } from './core/ShowcaseCamera';
 import type { BootScreen } from './ui/BootScreen';
 import type { ProjectedPoint } from './ui/screenMarker';
 import { t, type MessageKey } from './i18n';
@@ -231,6 +237,20 @@ export class Game {
   private readonly achievementToast: AchievementToast;
   /** O aviso de pedido dourado já saiu nesta rodada. */
   private goldenAnnounced = false;
+  /** Baú abrindo no jardim (a cerimônia) e o cartão dela. */
+  private readonly chestStage = new ChestStage();
+  private readonly chestOverlay: ChestOverlay;
+  /** Baú da cerimônia em curso (null = nenhuma). */
+  private chest: { key: string; rarity: Rarity; result: ChestResult | null } | null = null;
+  /** Ponto que a câmera do provador rodeia durante a cerimônia (no lugar do besouro). */
+  private readonly chestAnchor = new THREE.Object3D();
+  /** Contagens da cerimônia: até mostrar o prêmio, até o próximo baú cair. */
+  private chestRevealTimer = 0;
+  private chestNextTimer = 0;
+  private readonly chestSpot = new THREE.Vector3();
+  private chestYaw = 0;
+  /** O besouro como obstáculo da lente na cerimônia (a câmera não fica atrás dele). */
+  private readonly beetleSphere: CameraBall = { center: new THREE.Vector3(), radius: 0.7 };
 
   // Qualidade adaptativa (só no "Auto", em até dois degraus)
   private perfSamples = 0;
@@ -272,6 +292,8 @@ export class Game {
       achievementToast.show(unlock);
       this.audio.achievement();
     };
+    // Cartão da cerimônia do baú: por cima de tudo (menu e avisos).
+    this.chestOverlay = new ChestOverlay(uiRoot);
     this.cameraRig = new ThirdPersonCamera(this.graphics.camera);
     this.audio = new GameAudio(uiRoot);
 
@@ -313,16 +335,35 @@ export class Game {
 
     this.menu.onPlay = () => this.start();
     this.menu.burrow.onMeal = (meal) => this.onMeal(meal);
-    // Guarda-roupa: provador (câmera de frente), provar os trancados, girar arrastando.
+    // Guarda-roupa, Feirinha e passe: provador (câmera de frente), provar os trancados, girar arrastando.
     this.menu.onSheetChange = (sheet) => {
-      const wardrobe = sheet === 'wardrobe';
-      if (wardrobe && !this.showcase.active) this.showcase.resetSpin();
-      this.showcase.active = wardrobe;
-      if (wardrobe) this.showcase.setFrame(this.menu.wardrobe.currentTab);
-      else this.setLookPreview(null);
+      const showcase = sheet !== null && SHOWCASE_SHEETS.has(sheet);
+      if (showcase && !this.showcase.active) this.showcase.resetSpin();
+      this.showcase.active = showcase;
+      if (sheet === 'wardrobe') this.showcase.setFrame(this.menu.wardrobe.currentTab);
+      else if (showcase) this.showcase.setFrame('skins');
+      if (!showcase) this.setLookPreview(null);
+      // Abrindo a Feirinha: os baús que o jogador tem já compilam (o primeiro não engasga).
+      if (sheet === 'shop') this.warmChests();
+      if (sheet === null && this.chest) this.endChest();
     };
     this.menu.wardrobe.onPreview = (look) => this.setLookPreview(look);
     this.menu.wardrobe.onTabChange = (tab) => this.showcase.setFrame(tab);
+    this.menu.shop.onPreview = (look) => this.previewFromSheet(look);
+    this.menu.pass.onPreview = (look) => this.previewFromSheet(look);
+    this.menu.shop.onPurchase = () => this.audio.purchase();
+    this.menu.wardrobe.onPurchase = () => this.audio.purchase();
+    this.menu.pass.onClaim = () => this.audio.passClaim();
+    this.menu.onOpenChest = (key) => this.beginChest(key);
+    this.chestOverlay.onOpen = () => this.openChest();
+    this.chestOverlay.onNext = () => this.nextChest();
+    this.chestOverlay.onClose = () => this.endChest();
+    this.chestOverlay.onWear = (look) => {
+      this.setLookPreview(null);
+      if (look.kind === 'skin') this.progression.setSkin(look.id);
+      else this.progression.setAccessory(accessory(look.id).slot, look.id);
+    };
+    this.chestStage.onEvent = (event, at, rarity) => this.onChestEvent(event, at, rarity);
     this.menu.onShowcaseDrag = (dx) => this.showcase.drag(dx);
     this.hud.onOpenMenu = () => this.pause();
     this.hud.onOpenBurrow = () => this.openBurrow();
@@ -410,6 +451,8 @@ export class Game {
     scene.add(this.burrow.group);
     scene.add(this.rareFind.group);
     this.rareFind.compile = (object) => this.graphics.renderer.compileAsync(object, this.graphics.camera, scene).then(() => undefined);
+    scene.add(this.chestStage.group);
+    this.chestStage.compile = (object) => this.graphics.renderer.compileAsync(object, this.graphics.camera, scene).then(() => undefined);
     this.puddles = new Puddles();
     scene.add(this.puddles.group);
     this.frameInfo.puddles = this.puddles.states;
@@ -844,6 +887,7 @@ export class Game {
     this.audio.unlock();
     this.audio.setPaused(false);
     this.effects.setMenuNight(false);
+    if (this.chest) this.endChest();
     this.menu.hide();
     this.hud.setVisible(true);
     this.hud.perkPicker.setSuspended(false);
@@ -884,6 +928,11 @@ export class Game {
     state.resetPressed = false;
     state.abilityPressed = false;
     if (this.startDisabled) return;
+    // Cerimônia do baú: o controle é dela (A abre/avança, B fecha).
+    if (this.chestOverlay.isOpen) {
+      for (const action of this.input.menuActions) this.chestOverlay.handleGamepad(action);
+      return;
+    }
     // Analógico direito rola a placa aberta (Como jogar é só texto: sem isso, não dava pra ler tudo).
     this.menu.scrollSheet(this.input.gamepad.menuScroll);
     for (const action of this.input.menuActions) {
@@ -1186,6 +1235,8 @@ export class Game {
     this.menu.setProgress(this.save);
     this.hud.showResult({ ...result, record, outcome });
     if (outcome.meal && outcome.meal.levelAfter > outcome.meal.levelBefore) this.audio.levelUp();
+    if (outcome.meal && outcome.meal.chests.length > 0) this.achievementToast.showChests(outcome.meal.chests);
+    if (outcome.pass && outcome.pass.tierAfter > outcome.pass.tierBefore) this.achievementToast.showPassTier(outcome.pass.tierAfter);
     if (outcome.introduceBurrow) this.burrowIntroTimer = BURROW_INTRO_DELAY;
     this.effects.buried(at, result.diameterCm / 4);
     this.audio.buried(at, result.diameterCm / 4, record);
@@ -1245,6 +1296,7 @@ export class Game {
   }
 
   private renderFrame(alpha: number, dt: number): void {
+    this.updateChest(dt);
     this.ball.render(alpha, dt);
     this.beetle.render(alpha, dt);
     this.looseObjects.render(alpha);
@@ -1276,7 +1328,9 @@ export class Game {
     // Raio generoso: com a grama densa, o besouro precisa de uma clareira para aparecer.
     // No provador a clareira abre mais (a câmera chega perto e a grama não pode tapar a lente).
     pushers[0].set(player.x, player.y, player.z, 0.95 + this.showcase.blend * 1.6);
-    pushers[1].set(ballPos.x, ballPos.y - this.ball.radius, ballPos.z, this.ball.isSolid ? this.ball.radius * 1.05 : 0);
+    // Na cerimônia do baú, a clareira da bola vai pro baú (o capim não pode tapar ele).
+    if (this.chestStage.active) pushers[1].set(this.chestSpot.x, this.chestSpot.y, this.chestSpot.z, 1.1);
+    else pushers[1].set(ballPos.x, ballPos.y - this.ball.radius, ballPos.z, this.ball.isSolid ? this.ball.radius * 1.05 : 0);
     // Provador: o capim em volta da lente deita (senão uma folha tapa o close).
     pushers[2].set(camera.position.x, camera.position.y - 1, camera.position.z, this.showcase.blend > 0.01 ? 1.3 * this.showcase.blend : 0);
     this.grass.update(camera);
@@ -1381,14 +1435,18 @@ export class Game {
     free.y = 0;
     free.width = w;
     free.height = h;
-    const sheet = this.menu.wardrobe.element;
-    if (!sheet.hidden) {
+    // Cerimônia do baú: o cartão fica embaixo (livre em cima dele) e a câmera rodeia o baú.
+    const sheet = this.chest ? (this.chestOverlay.element.querySelector('[data-card]') as HTMLElement) : this.menu.showcaseSheet;
+    if (sheet) {
       const rect = sheet.getBoundingClientRect();
-      // Placa do lado (computador): livre à esquerda dela. Placa embaixo (celular): livre em cima.
-      if (rect.left > w * 0.25) free.width = rect.left;
+      // Placa do lado (computador): livre à esquerda dela. Placa embaixo (celular, cartão do baú): livre em cima.
+      if (!this.chest && rect.left > w * 0.25) free.width = rect.left;
+      // No baú o cartão é baixo: centraliza acima dele sem afastar tanto a câmera.
+      else if (this.chest) free.height = Math.max(rect.top, h * 0.78);
       else if (rect.top > h * 0.2) free.height = rect.top;
     }
-    return this.showcase.apply(this.graphics.camera, this.beetle.model.root, dt, this.viewport, free);
+    const root = this.chest ? this.chestAnchor : this.beetle.model.root;
+    return this.showcase.apply(this.graphics.camera, root, dt, this.viewport, free);
   }
 
   private updateEffects(dt: number, player: THREE.Vector3): void {
@@ -1569,6 +1627,183 @@ export class Game {
   private onMeal(meal: MealResult): void {
     this.audio.eat();
     if (meal.levelAfter > meal.levelBefore) this.audio.levelUp();
+    if (meal.chests.length > 0) this.achievementToast.showChests(meal.chests);
+  }
+
+  // --- baús ------------------------------------------------------------------------------
+
+  /** Visual provado da Feirinha ou do passe: veste por cima e a câmera enquadra o lugar dele. */
+  private previewFromSheet(look: Look | null): void {
+    this.setLookPreview(look);
+    if (this.chest) return;
+    this.showcase.setFrame(look === null || look.kind === 'skin' ? 'skins' : (accessory(look.id).slot as ShowcaseFrameName));
+  }
+
+  /** Compila os baús que o jogador tem (os dois mais raros), um de cada vez, fora da cerimônia. */
+  private warmChests(): void {
+    const rarities = [...new Set(this.progression.chests.map((c) => c.rarity))].slice(0, 2);
+    void rarities.reduce((chain, rarity) => chain.then(() => this.chestStage.warm(rarity)), Promise.resolve());
+  }
+
+  /**
+   * Começa a cerimônia: o baú cai do lado do besouro (num lugar livre, de
+   * frente pra câmera) e a câmera vem enquadrar os dois.
+   */
+  private beginChest(key: string): void {
+    const grant = this.progression.chests.find((c) => c.key === key);
+    if (!grant || !this.beetle) return;
+    this.chest = { key, rarity: grant.rarity, result: null };
+    this.placeChestSpot();
+    this.menu.setChestMode(true);
+    this.chestStage.present(grant.rarity, this.chestSpot, this.chestYaw);
+    this.chestOverlay.showWaiting(grant.rarity, this.progression.chests.length - 1);
+    this.showcase.obstacles = [this.beetleSphere];
+    this.showcase.active = true;
+    this.showcase.resetSpin();
+    this.showcase.setFrame('chest');
+    this.chestRevealTimer = 0;
+    this.chestNextTimer = 0;
+  }
+
+  /** Tocou pra abrir: sorteia (já grava no save) e o baú estoura. */
+  private openChest(): void {
+    const chest = this.chest;
+    if (!chest || chest.result || !this.chestStage.active) return;
+    const result = this.progression.openChest(chest.key);
+    if (!result) {
+      this.endChest();
+      return;
+    }
+    chest.result = result;
+    this.chestStage.open(result);
+    this.chestOverlay.showOpening();
+    // Casco novo: o besouro já veste (provando) pra mostrar do lado do baú.
+    if (result.look?.startsWith('skin:')) this.setLookPreview({ kind: 'skin', id: result.look.slice(5) as SkinId });
+    this.chestRevealTimer = CHEST_REVEAL_DELAY + 0.45;
+  }
+
+  /** Próximo baú da pilha (o mais raro primeiro), no mesmo lugar. */
+  private nextChest(): void {
+    if (!this.chest) return;
+    this.chestStage.dismiss();
+    this.setLookPreview(null);
+    this.chestNextTimer = 0.4;
+    this.chest.result = null;
+  }
+
+  /** Fim da cerimônia: o baú some e a Feirinha volta. */
+  private endChest(): void {
+    if (!this.chest) return;
+    this.chest = null;
+    this.chestStage.dismiss();
+    this.chestOverlay.hide();
+    this.setLookPreview(null);
+    this.menu.setChestMode(false);
+    this.showcase.obstacles = [];
+    this.showcase.setFrame('skins');
+    this.showcase.resetSpin();
+    this.chestNextTimer = 0;
+    this.chestRevealTimer = 0;
+  }
+
+  /** Relógios da cerimônia (mostrar o prêmio, derrubar o próximo baú). */
+  private updateChest(dt: number): void {
+    this.chestStage.update(dt, this.graphics.camera.position);
+    const chest = this.chest;
+    if (!chest) return;
+    if (this.chestRevealTimer > 0) {
+      this.chestRevealTimer -= dt;
+      if (this.chestRevealTimer <= 0 && chest.result) this.chestOverlay.showResult(chest.result, this.progression.chests.length);
+    }
+    if (this.chestNextTimer > 0) {
+      this.chestNextTimer -= dt;
+      if (this.chestNextTimer <= 0) {
+        const next = this.progression.chests[0];
+        if (!next) {
+          this.endChest();
+          return;
+        }
+        chest.key = next.key;
+        chest.rarity = next.rarity;
+        chest.result = null;
+        this.chestStage.present(next.rarity, this.chestSpot, this.chestYaw);
+        this.chestOverlay.showWaiting(next.rarity, this.progression.chests.length - 1);
+      }
+    }
+    this.showcase.setFrame(this.chestStage.showingItem ? 'chestItem' : 'chest');
+    this.beetleSphere.center.copy(this.beetle.model.root.position).y += 0.3;
+    // A câmera rodeia o baú (o besouro fica atrás dele, aparecendo).
+    this.chestAnchor.position.copy(this.chestSpot);
+    this.chestAnchor.rotation.set(0, this.chestYaw, 0);
+  }
+
+  /**
+   * Onde o baú cai: entre o besouro e a câmera (o lado que ela já enxerga
+   * livre), um pouco de lado, de frente pra ela. Tenta umas posições e fica
+   * com a primeira longe de pedra, tronco e da bola; sem nada livre, a primeira.
+   */
+  private placeChestSpot(): void {
+    const beetle = this.beetle.model.root.position;
+    const camera = this.graphics.camera.position;
+    const toCam = this.tmpFocus.set(camera.x - beetle.x, 0, camera.z - beetle.z);
+    if (toCam.lengthSq() < 1e-4) toCam.set(0, 0, 1);
+    toCam.normalize();
+    const side = new THREE.Vector3(toCam.z, 0, -toCam.x);
+    const ball = this.ball.root.position;
+    const clearOfBall = this.ball.radius * 1.3 + 0.55;
+    // [pra frente (rumo à câmera), pro lado]
+    const tries: ReadonlyArray<readonly [number, number]> = [
+      [0.95, 0.35],
+      [0.95, -0.35],
+      [1.2, 0.7],
+      [1.2, -0.7],
+      [0.7, 1.0],
+      [0.7, -1.0],
+      [1.5, 0],
+    ];
+    let chosen: THREE.Vector3 | null = null;
+    for (const [ahead, lateral] of tries) {
+      const x = beetle.x + toCam.x * ahead + side.x * lateral;
+      const z = beetle.z + toCam.z * ahead + side.z * lateral;
+      if (Math.hypot(x - ball.x, z - ball.z) < clearOfBall) continue;
+      if (!this.scenery.isFree(x, z, 0.45)) continue;
+      if (Math.hypot(x, z) > PLAY_RADIUS - 1) continue;
+      chosen = new THREE.Vector3(x, 0, z);
+      break;
+    }
+    if (!chosen) chosen = new THREE.Vector3(beetle.x + toCam.x * 0.95 + side.x * 0.35, 0, beetle.z + toCam.z * 0.95 + side.z * 0.35);
+    chosen.y = terrainHeight(chosen.x, chosen.z);
+    this.chestSpot.copy(chosen);
+    // De frente pra câmera.
+    this.chestYaw = Math.atan2(camera.x - chosen.x, camera.z - chosen.z);
+  }
+
+  /** Momentos do show do baú → som e partículas. */
+  private onChestEvent(event: ChestStageEvent, at: THREE.Vector3, rarity: Rarity): void {
+    switch (event) {
+      case 'land':
+        this.audio.chestLand();
+        this.effects.land(at, 0.9);
+        break;
+      case 'rattle':
+        this.audio.chestRattle();
+        break;
+      case 'burst':
+        this.audio.chestBurst(rarityRank(rarity));
+        this.effects.celebrate(at, 0.25 + rarityRank(rarity) * 0.08);
+        this.rumble(0.5, 0.8, 250);
+        break;
+      case 'coin':
+        this.audio.coinClink();
+        break;
+      case 'dew':
+        this.audio.dewChime();
+        break;
+      case 'reveal':
+        this.audio.itemReveal();
+        this.effects.sparkle(at, new THREE.Color('#ffe7a3'));
+        break;
+    }
   }
 
   /** Progressão mudou → HUD (nível, pedidos, poderes, contador da despensa). */

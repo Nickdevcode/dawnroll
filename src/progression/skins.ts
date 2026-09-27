@@ -35,7 +35,26 @@ export type SkinId =
   | 'holo'
   | 'khepri'
   | 'galaxy'
-  | 'dawn';
+  | 'dawn'
+  // Feirinha (moedas)
+  | 'canary'
+  | 'denim'
+  | 'cow'
+  | 'candy'
+  | 'sprinkles'
+  | 'koi'
+  | 'zebra'
+  // Feirinha (orvalho)
+  | 'neon'
+  | 'storm'
+  | 'dewdrop'
+  // Passe da temporada Florada
+  | 'honey'
+  | 'sakura'
+  | 'sunflower'
+  // Só em baú
+  | 'stained'
+  | 'opal';
 
 /**
  * Desenho do casco. Os de `ANIMATED_PATTERNS` mexem com o tempo.
@@ -56,7 +75,21 @@ export type SkinPattern =
   | 'holo'
   | 'abyss'
   | 'dawn'
-  | 'gold';
+  | 'gold'
+  | 'denim'
+  | 'cow'
+  | 'swirl'
+  | 'sprinkles'
+  | 'koi'
+  | 'zebra'
+  | 'neon'
+  | 'storm'
+  | 'dew'
+  | 'honeycomb'
+  | 'petals'
+  | 'sunflower'
+  | 'stained'
+  | 'opal';
 
 /** Partículas em volta do besouro (só nos cascos vivos). */
 export type SkinAura = 'embers' | 'stars' | 'sparkles' | 'motes' | 'glints' | 'bubbles';
@@ -94,7 +127,23 @@ export interface SkinDef {
 
 export const DEFAULT_CLUB = '#f4a73b';
 
-export const ANIMATED_PATTERNS: ReadonlySet<SkinPattern> = new Set(['crystal', 'galaxy', 'magma', 'aurora', 'holo', 'abyss', 'dawn', 'gold']);
+export const ANIMATED_PATTERNS: ReadonlySet<SkinPattern> = new Set([
+  'crystal',
+  'galaxy',
+  'magma',
+  'aurora',
+  'holo',
+  'abyss',
+  'dawn',
+  'gold',
+  'neon',
+  'storm',
+  'dew',
+  'petals',
+  'sunflower',
+  'stained',
+  'opal',
+]);
 
 export const SKINS: readonly SkinDef[] = [
   {
@@ -438,6 +487,263 @@ export const SKINS: readonly SkinDef[] = [
     glow: 1,
     aura: 'motes',
     auraColors: ['#ffc27a', '#ff9a7a', '#ffe7a3', '#c9a8ff'],
+  },
+  // --- Feirinha: moedas --------------------------------------------------------
+  {
+    // Canarinho: a camisa amarela com a gola verde e o calção azul.
+    id: 'canary',
+    rarity: 'common',
+    unlock: { shop: { coins: 500 } },
+    elytra: '#f6cf2a',
+    pronotum: '#1f9a4a',
+    belly: '#2553b8',
+    leg: '#1d3f8f',
+    club: '#1f9a4a',
+    iridescence: 0.1,
+    roughness: 0.5,
+  },
+  {
+    // Jeans surrado: a sarja em diagonal, o desbotado e a costura laranja na emenda.
+    id: 'denim',
+    rarity: 'rare',
+    unlock: { shop: { coins: 900 } },
+    elytra: '#3a5f9e',
+    pronotum: '#34568f',
+    head: '#2f4c80',
+    belly: '#1f3050',
+    leg: '#2a3f66',
+    club: '#e89a3c',
+    iridescence: 0,
+    roughness: 0.85,
+    pattern: 'denim',
+    accents: ['#e89a3c', '#8fa9d6'],
+  },
+  {
+    // Vaquinha malhada (combina com o sino do pescoço).
+    id: 'cow',
+    rarity: 'rare',
+    unlock: { shop: { coins: 900 } },
+    elytra: '#f7f3ea',
+    pronotum: '#f7f3ea',
+    head: '#f2c3bb',
+    belly: '#e8e0d2',
+    leg: '#2a2527',
+    club: '#2a2527',
+    iridescence: 0.05,
+    roughness: 0.6,
+    pattern: 'cow',
+    accents: ['#231e20'],
+  },
+  {
+    // Bala listrada: espiral vermelha e fiozinho de menta, brilhando de açúcar.
+    id: 'candy',
+    rarity: 'rare',
+    unlock: { shop: { coins: 900 } },
+    elytra: '#fbf4ee',
+    pronotum: '#fbf4ee',
+    head: '#e8434f',
+    belly: '#c9303c',
+    leg: '#e8434f',
+    club: '#fbf4ee',
+    iridescence: 0.2,
+    roughness: 0.18,
+    pattern: 'swirl',
+    accents: ['#e8434f', '#5fc7a8'],
+  },
+  {
+    // Rosquinha confeitada: cobertura rosa com granulado colorido; a cabeça é a massa.
+    id: 'sprinkles',
+    rarity: 'rare',
+    unlock: { shop: { coins: 1000 } },
+    elytra: '#ff9ec7',
+    pronotum: '#ffb3d2',
+    head: '#b9824f',
+    belly: '#a8703f',
+    leg: '#8a5a3c',
+    club: '#ffe1ee',
+    iridescence: 0.1,
+    roughness: 0.35,
+    pattern: 'sprinkles',
+    accents: ['#5fcfff', '#ffe066', '#7ee07b'],
+  },
+  {
+    // Carpa koi das poças: manchas laranja e pretas e escamas que brilham de lado.
+    id: 'koi',
+    rarity: 'rare',
+    unlock: { shop: { coins: 1100 } },
+    elytra: '#fbf6ef',
+    pronotum: '#fbf6ef',
+    head: '#ff7a2f',
+    belly: '#f0e2d0',
+    leg: '#e8d9c4',
+    club: '#ff7a2f',
+    iridescence: 0.55,
+    roughness: 0.25,
+    pattern: 'koi',
+    accents: ['#ff6a2a', '#222025', '#ffd2a8'],
+  },
+  {
+    // Zebra: listras tortas abraçando o casco.
+    id: 'zebra',
+    rarity: 'rare',
+    unlock: { shop: { coins: 900 } },
+    elytra: '#f4f1ea',
+    pronotum: '#f4f1ea',
+    head: '#1c1a1d',
+    belly: '#e2ddd2',
+    leg: '#1c1a1d',
+    club: '#1c1a1d',
+    iridescence: 0.05,
+    roughness: 0.65,
+    pattern: 'zebra',
+    accents: ['#1c1a1d'],
+  },
+  // --- Feirinha: orvalho (os raros) ----------------------------------------------
+  {
+    // Neon: grade de luz ciano e magenta com uma varredura que corre o casco.
+    id: 'neon',
+    rarity: 'epic',
+    unlock: { shop: { dew: 140 } },
+    elytra: '#140f2e',
+    pronotum: '#18123a',
+    belly: '#0b0820',
+    leg: '#1a1440',
+    club: '#ff4fd8',
+    iridescence: 0.3,
+    roughness: 0.25,
+    pattern: 'neon',
+    accents: ['#35f2ff', '#ff4fd8', '#fff36b'],
+    glow: 1,
+    aura: 'glints',
+    auraColors: ['#35f2ff', '#ff4fd8', '#b9f9ff'],
+  },
+  {
+    // Tempestade: nuvem carregada rolando no casco e um raio de vez em quando.
+    id: 'storm',
+    rarity: 'epic',
+    unlock: { shop: { dew: 160 } },
+    elytra: '#3a4152',
+    pronotum: '#434b5e',
+    belly: '#1c2029',
+    leg: '#2b303c',
+    club: '#bfe6ff',
+    iridescence: 0.1,
+    roughness: 0.6,
+    pattern: 'storm',
+    accents: ['#d4f1ff', '#8aa8cc', '#252a36'],
+    glow: 1,
+    aura: 'sparkles',
+    auraColors: ['#bfe6ff', '#8fc8ff', '#ffffff'],
+  },
+  {
+    // Orvalho: a folha da madrugada coberta de gotas que pegam o primeiro sol.
+    id: 'dewdrop',
+    rarity: 'legendary',
+    unlock: { shop: { dew: 300 } },
+    elytra: '#2f8f5a',
+    pronotum: '#3aa06a',
+    belly: '#153f28',
+    leg: '#1f5a39',
+    club: '#bff5ff',
+    iridescence: 0.6,
+    roughness: 0.3,
+    pattern: 'dew',
+    accents: ['#e6fbff', '#8fdcff', '#ffe7a3'],
+    glow: 1,
+    aura: 'glints',
+    auraColors: ['#dff9ff', '#9fe6ff', '#ffe7a3'],
+  },
+  // --- Passe da temporada Florada -------------------------------------------------
+  {
+    // Favo de mel: hexágonos de cera com o mel brilhando dentro.
+    id: 'honey',
+    rarity: 'rare',
+    unlock: { pass: 'florada' },
+    elytra: '#f2a81d',
+    pronotum: '#e89a17',
+    head: '#3a2a1c',
+    belly: '#5a3a10',
+    leg: '#3a2a1c',
+    club: '#ffcf4a',
+    iridescence: 0.2,
+    roughness: 0.28,
+    pattern: 'honeycomb',
+    accents: ['#8a4a06', '#ffe27a'],
+  },
+  {
+    // Cerejeira: rosinha com pétalas caindo devagar pelo casco.
+    id: 'sakura',
+    rarity: 'epic',
+    unlock: { pass: 'florada' },
+    elytra: '#ffd1df',
+    pronotum: '#ffc2d5',
+    head: '#6a3b3f',
+    belly: '#6a3b3f',
+    leg: '#553034',
+    club: '#ff8fb3',
+    iridescence: 0.3,
+    roughness: 0.45,
+    pattern: 'petals',
+    accents: ['#ff4f8a', '#fff4f8', '#8a4b52'],
+    glow: 0.6,
+    aura: 'motes',
+    auraColors: ['#ffc2d5', '#ff9fbe', '#fff0f5'],
+  },
+  {
+    // Girassol: pétalas saindo do miolo de sementes em espiral, com o brilho girando.
+    id: 'sunflower',
+    rarity: 'legendary',
+    unlock: { pass: 'florada' },
+    elytra: '#ffc81f',
+    pronotum: '#6b3f17',
+    head: '#4a2c10',
+    belly: '#2f6b2a',
+    leg: '#3a7a30',
+    club: '#ffd84a',
+    iridescence: 0.3,
+    roughness: 0.45,
+    pattern: 'sunflower',
+    accents: ['#e8720f', '#3a220c', '#fff09a'],
+    glow: 1,
+    aura: 'sparkles',
+    auraColors: ['#ffe066', '#ffb31a', '#fff5b8'],
+  },
+  // --- Só em baú ---------------------------------------------------------------------
+  {
+    // Vitral: cacos de vidro colorido com a luz passando, presos no chumbo escuro.
+    id: 'stained',
+    rarity: 'epic',
+    unlock: { chest: true },
+    elytra: '#1d1a26',
+    pronotum: '#1d1a26',
+    belly: '#15121c',
+    leg: '#221e2c',
+    club: '#ffc93c',
+    iridescence: 0.2,
+    roughness: 0.15,
+    pattern: 'stained',
+    accents: ['#e84a5f', '#3fa7f5', '#ffc93c'],
+    glow: 0.8,
+    aura: 'glints',
+    auraColors: ['#ff8fa0', '#8fd0ff', '#ffe08a', '#9ff0a0'],
+  },
+  {
+    // Opala: branco leitoso com lascas de arco-íris que acendem conforme gira.
+    id: 'opal',
+    rarity: 'legendary',
+    unlock: { chest: true },
+    elytra: '#e9eef5',
+    pronotum: '#f1f4f9',
+    belly: '#9aa6b8',
+    leg: '#aab5c6',
+    club: '#ffffff',
+    iridescence: 1,
+    roughness: 0.12,
+    pattern: 'opal',
+    accents: ['#ff5fa2', '#4ff0c8', '#6a8bff'],
+    glow: 1,
+    aura: 'sparkles',
+    auraColors: ['#ff9fd0', '#9ff5e0', '#a9b8ff', '#fff3a8'],
   },
 ];
 

@@ -5,6 +5,9 @@ import { isPerkId, type PerkId } from '../progression/perks';
 import { DEFAULT_SKIN, isSkinId, type SkinId } from '../progression/skins';
 import { ACCESSORY_SLOTS, accessory, emptyOutfit, isAccessoryId, type AccessoryId, type Outfit } from '../progression/accessories';
 import { isLookKey, type LookKey } from '../progression/looks';
+import type { ChestResult, Paid } from '../progression/economy';
+import { PASS_COUNTERS, isSeasonId, type PassCounter } from '../progression/seasons';
+import { RARITIES, type Rarity, type SeasonId } from '../progression/unlocks';
 
 /**
  * Progresso salvo no próprio navegador (localStorage): recorde, bolas
@@ -18,6 +21,9 @@ import { isLookKey, type LookKey } from '../progression/looks';
  *
  * Com conta, este mesmo JSON vai pra nuvem (`online/CloudSave`); o navegador
  * continua sendo a cópia de trabalho.
+ *
+ * A economia (moedas, baús, compras) e o passe entraram por último. O saldo
+ * não é guardado: sai do que está aqui (ver `progression/economy.ts`).
  */
 
 /** Contadores que atravessam as rodadas (conquistas de "N vezes"). */
@@ -30,6 +36,30 @@ export interface SaveStats {
   rideSeconds: number;
   /** Quanto a bola já rolou no total (unidades do mundo). */
   rollUnits: number;
+}
+
+/** Moedas, baús e compras. */
+export interface EconomyState {
+  /** Semente dos baús (sorteada uma vez; 0 = ainda não tem). O mesmo baú abre igual em qualquer aparelho. */
+  seed: number;
+  /** Compras na Feirinha: chave (`look:skin:neon`, `chest:epic:...`) → quanto custou. */
+  purchases: Record<string, Paid>;
+  /** Baús abertos: chave do baú → o que saiu. */
+  opened: Record<string, ChestResult>;
+  /** Já viu o aviso de boas-vindas das moedas (o presente das conquistas antigas). */
+  welcomed: boolean;
+}
+
+/** Passe de uma temporada. */
+export interface PassState {
+  /** XP juntado jogando (enterros, pedidos, primeiro enterro do dia, conquistas). Os desafios somam por cima. */
+  xp: number;
+  /** Níveis do passe já pegos. */
+  claimed: number[];
+  /** O que aconteceu durante a temporada (metas dos desafios). */
+  counters: Record<PassCounter, number>;
+  /** Último dia (AAAA-MM-DD, horário do aparelho) com enterro na temporada. */
+  lastDay: string;
 }
 
 /** Bola guardada na despensa, esperando ser comida. */
@@ -68,6 +98,9 @@ export interface SaveData {
   /** Acessórios achados no jardim (achado raro): liberados mesmo sem a conquista/nível. */
   found: AccessoryId[];
   stats: SaveStats;
+  economy: EconomyState;
+  /** Passe de cada temporada jogada. */
+  passes: Partial<Record<SeasonId, PassState>>;
 }
 
 const KEY = 'dawnroll:progresso:v1';
@@ -90,8 +123,26 @@ export function emptySave(): SaveData {
     seenLooks: [],
     found: [],
     stats: { requestsDone: 0, websTorn: 0, rideSeconds: 0, rollUnits: 0 },
+    economy: emptyEconomy(),
+    passes: {},
   };
 }
+
+export function emptyEconomy(): EconomyState {
+  return { seed: 0, purchases: {}, opened: {}, welcomed: false };
+}
+
+export function emptyPass(): PassState {
+  const counters = {} as Record<PassCounter, number>;
+  for (const counter of PASS_COUNTERS) counters[counter] = 0;
+  return { xp: 0, claimed: [], counters, lastDay: '' };
+}
+
+/** Teto de entradas nas listas da economia (save editado à mão não vira um JSON gigante). */
+const MAX_ECONOMY_ENTRIES = 4000;
+/** Chaves válidas de compra e de baú. */
+const PURCHASE_KEY = /^(look:(skin|acc):[a-zA-Z0-9]{1,32}|chest:(rare|epic|legendary):[a-z0-9]{1,24})$/;
+const CHEST_KEY = /^(lvl:\d{1,3}|pass:[a-z]{1,24}:\d{1,3}|chest:(rare|epic|legendary):[a-z0-9]{1,24})$/;
 
 /** Número finito, não negativo e dentro de um teto sensato. */
 function sane(value: unknown, max: number): number {
@@ -150,6 +201,74 @@ function readOutfit(value: unknown): Outfit {
   return outfit;
 }
 
+const isRarity = (value: unknown): value is Rarity => typeof value === 'string' && (RARITIES as readonly string[]).includes(value);
+
+function readPaid(value: unknown): Paid | null {
+  if (!value || typeof value !== 'object') return null;
+  const { coins, dew } = value as Record<string, unknown>;
+  return { coins: Math.floor(sane(coins, 1e7)), dew: Math.floor(sane(dew, 1e6)) };
+}
+
+function readChestResult(value: unknown): ChestResult | null {
+  if (!value || typeof value !== 'object') return null;
+  const data = value as Record<string, unknown>;
+  if (!isRarity(data.rarity)) return null;
+  const look = typeof data.look === 'string' && isLookKey(data.look) ? data.look : null;
+  return { rarity: data.rarity, coins: Math.floor(sane(data.coins, 1e5)), dew: Math.floor(sane(data.dew, 1e4)), look };
+}
+
+/** Objeto chave → valor, só com as chaves no formato certo e os valores que passam na leitura. */
+function readRecord<T>(value: unknown, keyOk: RegExp, read: (v: unknown) => T | null): Record<string, T> {
+  const out: Record<string, T> = {};
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return out;
+  let n = 0;
+  for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
+    if (n >= MAX_ECONOMY_ENTRIES) break;
+    if (!keyOk.test(key)) continue;
+    const item = read(raw);
+    if (item === null) continue;
+    out[key] = item;
+    n++;
+  }
+  return out;
+}
+
+function readEconomy(value: unknown): EconomyState {
+  const data = value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
+  const seed = typeof data.seed === 'number' && Number.isInteger(data.seed) && data.seed > 0 && data.seed <= 0xffffffff ? data.seed : 0;
+  return {
+    seed,
+    purchases: readRecord(data.purchases, PURCHASE_KEY, readPaid),
+    opened: readRecord(data.opened, CHEST_KEY, readChestResult),
+    welcomed: data.welcomed === true,
+  };
+}
+
+function readPass(value: unknown): PassState {
+  const pass = emptyPass();
+  if (!value || typeof value !== 'object') return pass;
+  const data = value as Record<string, unknown>;
+  pass.xp = Math.floor(sane(data.xp, 1e7));
+  if (Array.isArray(data.claimed)) {
+    const tiers = new Set<number>();
+    for (const tier of data.claimed) if (Number.isInteger(tier) && tier >= 1 && tier <= 200) tiers.add(tier);
+    pass.claimed = [...tiers].sort((a, b) => a - b);
+  }
+  const counters = data.counters && typeof data.counters === 'object' ? (data.counters as Record<string, unknown>) : {};
+  for (const counter of PASS_COUNTERS) pass.counters[counter] = sane(counters[counter], 1e9);
+  pass.lastDay = typeof data.lastDay === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(data.lastDay) ? data.lastDay : '';
+  return pass;
+}
+
+function readPasses(value: unknown): SaveData['passes'] {
+  const passes: SaveData['passes'] = {};
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return passes;
+  for (const [id, raw] of Object.entries(value as Record<string, unknown>)) {
+    if (isSeasonId(id)) passes[id] = readPass(raw);
+  }
+  return passes;
+}
+
 /**
  * Valida um save vindo de fora (localStorage ou nuvem): o que não for do formato
  * certo vira zero/padrão, nunca quebra o jogo.
@@ -172,6 +291,8 @@ export function parseSave(value: unknown): SaveData {
     seenLooks: readIds(data.seenLooks, isLookKey),
     found: readIds(data.found, isAccessoryId),
     stats: readStats(data.stats),
+    economy: readEconomy(data.economy),
+    passes: readPasses(data.passes),
   };
 }
 

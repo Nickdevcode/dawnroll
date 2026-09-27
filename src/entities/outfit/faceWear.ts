@@ -9,23 +9,23 @@ import type { AccessoryModel, OutfitPose } from './types';
  * a lente mora 0,1 u à frente do centro do olho, olhando pra onde ele olha.
  */
 
-const EYE_X = 0.13;
-const EYE_TURN = 0.35;
-const LENS_OUT = 0.1;
+export const EYE_X = 0.13;
+export const EYE_TURN = 0.35;
+export const LENS_OUT = 0.1;
 
 /** Centro da lente do olho de um lado (1 = direita do besouro). */
-function lensCenter(side: 1 | -1, out = LENS_OUT): THREE.Vector3 {
+export function lensCenter(side: 1 | -1, out = LENS_OUT): THREE.Vector3 {
   return new THREE.Vector3(side * (EYE_X + Math.sin(EYE_TURN) * out), 0, Math.cos(EYE_TURN) * out);
 }
 
 /** Ponto na borda da lente (ângulo no plano da lente, raio `r`), já no espaço do rosto. */
-function lensEdge(side: 1 | -1, angle: number, r: number): THREE.Vector3 {
+export function lensEdge(side: 1 | -1, angle: number, r: number): THREE.Vector3 {
   const local = new THREE.Vector3(Math.cos(angle) * r, Math.sin(angle) * r, 0);
   return local.applyAxisAngle(new THREE.Vector3(0, 1, 0), side * EYE_TURN).add(lensCenter(side));
 }
 
 /** Uma peça por olho, na frente dele. */
-function perEye(build: (side: 1 | -1) => THREE.Object3D): THREE.Group {
+export function perEye(build: (side: 1 | -1) => THREE.Object3D): THREE.Group {
   const group = new THREE.Group();
   for (const side of [1, -1] as const) {
     const piece = build(side);
@@ -37,7 +37,7 @@ function perEye(build: (side: 1 | -1) => THREE.Object3D): THREE.Group {
 }
 
 /** Ponte (arquinho entre as lentes) e as hastes que vão pra trás, pelos lados dos olhos. */
-function bridgeAndArms(material: THREE.Material, halfWidth: number, radius: number, lift = 0.012): THREE.Group {
+export function bridgeAndArms(material: THREE.Material, halfWidth: number, radius: number, lift = 0.012): THREE.Group {
   const group = new THREE.Group();
   const inner = lensEdge(1, Math.PI, halfWidth);
   const bridge = new THREE.QuadraticBezierCurve3(
@@ -59,7 +59,7 @@ function bridgeAndArms(material: THREE.Material, halfWidth: number, radius: numb
 }
 
 /** Retângulo de cantos redondos (lente de óculos escuros). */
-function roundedRect(width: number, height: number, radius: number): THREE.Shape {
+export function roundedRect(width: number, height: number, radius: number): THREE.Shape {
   const w = width / 2;
   const h = height / 2;
   const r = Math.min(radius, w, h);
@@ -77,7 +77,7 @@ function roundedRect(width: number, height: number, radius: number): THREE.Shape
 }
 
 /** Risquinho de brilho na lente (diagonal, em cima e pro lado de dentro). */
-function lensGlint(side: 1 | -1, offset: number): THREE.Mesh {
+export function lensGlint(side: 1 | -1, offset: number): THREE.Mesh {
   return part(clayCapsule(0.0055, 0.035, 0, 0, 8), Mat.glossy('#ffffff'), [-side * 0.025, 0.02, offset], [0, 0, side * 0.75], [1, 1, 0.35]);
 }
 

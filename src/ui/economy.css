@@ -1,0 +1,1207 @@
+/* ==========================================================================
+   Economia: moedas e orvalho, Feirinha (baús e compras), passe da temporada,
+   a cerimônia do baú e as boas-vindas.
+
+   Mesma massinha do resto do menu: creme, índigo da madrugada e o sol. A
+   moeda é dourada; o orvalho, azul-gelo. Cada baú tem a cor da raridade
+   (madeira, prata, cristal, Sol).
+   ========================================================================== */
+:root {
+  --coin: #e9a83a;
+  --coin-deep: #b8741c;
+  --dew: #4fb6ff;
+  --dew-deep: #2a7fd0;
+  --chest-common: #a8703f;
+  --chest-rare: #7f93ad;
+  --chest-epic: #7a4fd6;
+  --chest-legendary: #e69a1e;
+}
+
+/* --- Valores com ícone (moedas, orvalho) ------------------------------------------ */
+.amount {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-family: var(--font-display);
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.amount__icon {
+  display: grid;
+  place-items: center;
+  width: 1.25em;
+  height: 1.25em;
+}
+.amount__icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.wallet {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.wallet__item {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 12px 5px 7px;
+  border-radius: var(--radius-pill);
+  background: #fff;
+  box-shadow: 0 2px 0 rgba(43, 42, 94, 0.08), inset 0 0 0 1.5px rgba(233, 168, 58, 0.35);
+  font-size: 16px;
+  color: var(--color-ink);
+}
+.wallet__item:nth-child(2) {
+  box-shadow: 0 2px 0 rgba(43, 42, 94, 0.08), inset 0 0 0 1.5px rgba(79, 182, 255, 0.4);
+}
+
+/* Link da Feirinha no menu: a carteira no lugar do "nível". */
+.menu__link-meta--wallet {
+  display: inline-flex;
+  gap: 8px;
+  font-size: 12.5px;
+}
+.menu__link-meta--wallet .amount__icon {
+  width: 15px;
+  height: 15px;
+}
+
+/* --- Feirinha ------------------------------------------------------------------------ */
+.shop-summary {
+  display: grid;
+  gap: 6px;
+  margin: 0 var(--space-6) var(--space-3);
+}
+.shop-summary__hint {
+  margin: 0;
+  font-size: 12.5px;
+  font-weight: 700;
+  line-height: 1.4;
+  color: var(--color-ink-soft);
+}
+.sheet--shop .tabs__tab.has-new,
+.sheet--pass .tabs__tab.has-new {
+  position: relative;
+}
+.sheet--shop .tabs__tab.has-new::after,
+.sheet--pass .tabs__tab.has-new::after {
+  content: '';
+  position: absolute;
+  top: 5px;
+  right: 10px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--dawn-sun);
+  box-shadow: 0 0 0 2px #fbf1e2;
+}
+
+.chest-list {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-4);
+  padding: 0;
+  list-style: none;
+}
+.chest-card,
+.chest-offer {
+  --chest: var(--chest-common);
+  display: grid;
+  grid-template-columns: 54px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 8px 10px 8px 8px;
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: 0 2px 0 rgba(43, 42, 94, 0.08), inset 0 0 0 1.5px color-mix(in srgb, var(--chest) 45%, transparent);
+}
+.chest-card.is-rare,
+.chest-offer.is-rare {
+  --chest: var(--chest-rare);
+}
+.chest-card.is-epic,
+.chest-offer.is-epic {
+  --chest: var(--chest-epic);
+}
+.chest-card.is-legendary,
+.chest-offer.is-legendary {
+  --chest: var(--chest-legendary);
+  background: linear-gradient(135deg, #fffaf0 0%, #fff 45%, #fff6e0 100%);
+}
+.chest-card__art {
+  display: grid;
+  place-items: center;
+  width: 54px;
+  height: 54px;
+  border-radius: 16px;
+  background: radial-gradient(circle at 50% 35%, #fffaf0 0%, #f3e3c7 100%);
+  box-shadow: inset 0 -3px 0 rgba(58, 42, 34, 0.08);
+}
+.chest-card__art svg {
+  width: 44px;
+  height: 44px;
+}
+/* Baú fechado esperando: dá um pulinho de vez em quando (tem coisa lá dentro). */
+.chest-card .chest-card__art svg {
+  animation: chest-hop 2.6s var(--ease-spring) infinite;
+}
+.chest-card__text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.chest-card__text strong {
+  font-family: var(--font-display);
+  font-size: 15.5px;
+  font-weight: 900;
+  color: var(--color-ink);
+}
+.chest-card__text span {
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--color-ink-soft);
+}
+.chest-card__open {
+  min-height: 42px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: linear-gradient(180deg, #ffc462 0%, var(--dawn-sun) 55%, #f3a23a 100%);
+  color: #2a1706;
+  font: inherit;
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 900;
+  cursor: pointer;
+  box-shadow: 0 4px 0 var(--dawn-sun-deep), inset 0 2px 0 rgba(255, 255, 255, 0.55);
+  transition: transform var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
+}
+.chest-card__open:hover {
+  transform: translateY(-1px);
+}
+.chest-card__open:active {
+  transform: translateY(3px);
+  box-shadow: 0 1px 0 var(--dawn-sun-deep), inset 0 2px 0 rgba(255, 255, 255, 0.4);
+}
+.chest-card__open:focus-visible {
+  outline: 3px solid var(--dawn-sun-deep);
+  outline-offset: 2px;
+}
+.chest-offer__buy {
+  display: grid;
+  justify-items: end;
+  gap: 3px;
+}
+.shop-empty {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin: 0 0 var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border-radius: 18px;
+  background: rgba(43, 42, 94, 0.05);
+}
+.shop-empty svg {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  filter: saturate(0.4);
+  opacity: 0.7;
+}
+.shop-empty p {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.4;
+  color: var(--color-ink-soft);
+}
+.shop-odds {
+  margin: var(--space-2) 0 0;
+  font-size: 11.5px;
+  font-weight: 700;
+  line-height: 1.45;
+  color: var(--color-ink-soft);
+}
+.shop-slot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: var(--space-4) 0 var(--space-2);
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 900;
+  color: var(--dawn-indigo);
+}
+.shop-slot svg {
+  width: 17px;
+  height: 17px;
+}
+
+/* Preço no quadradinho (visual à venda). */
+.look-tile__price {
+  display: inline-flex;
+  padding: 2px 8px 2px 5px;
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 1px 0 rgba(43, 42, 94, 0.1);
+  font-size: 11.5px;
+  color: var(--color-ink);
+}
+.look-tile.is-for-sale .look-tile__art svg {
+  filter: grayscale(0.35);
+  opacity: 0.85;
+}
+.look-tile.is-for-sale .look-tile__name {
+  color: var(--color-ink);
+}
+
+/* Botão de comprar: o preço dentro do sol; armado, vira "Confirmar" em índigo. */
+.buy-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 8px 0 16px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: linear-gradient(180deg, #ffc462 0%, var(--dawn-sun) 55%, #f3a23a 100%);
+  color: #2a1706;
+  font: inherit;
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 900;
+  cursor: pointer;
+  box-shadow: 0 4px 0 var(--dawn-sun-deep), inset 0 2px 0 rgba(255, 255, 255, 0.55);
+  transition:
+    transform var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out);
+}
+.buy-button .amount {
+  padding: 4px 10px 4px 6px;
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, 0.55);
+}
+.buy-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+.buy-button:active:not(:disabled) {
+  transform: translateY(3px);
+  box-shadow: 0 1px 0 var(--dawn-sun-deep), inset 0 2px 0 rgba(255, 255, 255, 0.4);
+}
+.buy-button:focus-visible {
+  outline: 3px solid var(--dawn-sun-deep);
+  outline-offset: 2px;
+}
+.buy-button.is-armed {
+  background: linear-gradient(180deg, #5a4fb0 0%, var(--dawn-indigo) 100%);
+  color: var(--dawn-cream);
+  box-shadow: 0 4px 0 #15133a, inset 0 2px 0 rgba(255, 255, 255, 0.2);
+  animation: armed-pulse 1.1s ease-in-out infinite;
+}
+.buy-button.is-armed .amount {
+  background: rgba(255, 255, 255, 0.16);
+}
+.buy-button:disabled {
+  padding: 0 6px;
+  background: rgba(43, 42, 94, 0.08);
+  color: var(--color-ink-soft);
+  box-shadow: none;
+  cursor: not-allowed;
+}
+.buy-button:disabled .amount {
+  background: transparent;
+  opacity: 0.7;
+}
+.buy-missing {
+  font-size: 11.5px;
+  font-weight: 800;
+  color: #a24a2a;
+}
+
+.dew-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  background: rgba(79, 182, 255, 0.16);
+  color: #1f5f9a;
+  font-size: 10.5px;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.look-detail__status.is-bought,
+.look-detail__status.is-owned {
+  background: rgba(95, 184, 74, 0.16);
+  color: #2f5a1c;
+}
+.look-detail.is-celebrating {
+  animation: bought-pop 620ms var(--ease-spring);
+}
+.look-detail.is-celebrating .look-detail__art svg {
+  animation: bought-spin 720ms var(--ease-spring);
+}
+
+/* --- Passe da temporada -------------------------------------------------------------- */
+.pass-hero {
+  display: grid;
+  gap: 8px;
+  margin: 0 var(--space-5) var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-radius: 22px;
+  background:
+    radial-gradient(120% 140% at 0% 0%, rgba(255, 159, 196, 0.35), rgba(255, 159, 196, 0) 60%),
+    radial-gradient(90% 120% at 100% 100%, rgba(255, 213, 74, 0.35), rgba(255, 213, 74, 0) 60%),
+    #fff;
+  box-shadow: 0 2px 0 rgba(43, 42, 94, 0.08), inset 0 0 0 1.5px rgba(255, 159, 196, 0.45);
+}
+.pass-hero__top {
+  display: grid;
+  grid-template-columns: 50px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+}
+.pass-hero__art svg {
+  width: 50px;
+  height: 50px;
+  animation: bloom-sway 5s ease-in-out infinite;
+}
+.pass-hero__text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.pass-hero__text strong {
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 900;
+  color: var(--dawn-indigo);
+}
+.pass-hero__time {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12.5px;
+  font-weight: 800;
+  color: #9a3a6a;
+}
+.pass-hero__time svg {
+  width: 14px;
+  height: 14px;
+}
+.pass-hero__time.is-ended {
+  color: var(--color-ink-soft);
+}
+.pass-level {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 1px;
+  font-family: var(--font-display);
+  font-weight: 900;
+  color: var(--dawn-indigo);
+}
+.pass-level__badge {
+  display: grid;
+  place-items: center;
+  min-width: 42px;
+  height: 42px;
+  padding: 0 6px;
+  border-radius: 50%;
+  background: linear-gradient(180deg, #ffc462 0%, var(--dawn-sun) 55%, #f3a23a 100%);
+  color: #2a1706;
+  font-size: 20px;
+  box-shadow: 0 3px 0 var(--dawn-sun-deep), inset 0 2px 0 rgba(255, 255, 255, 0.55);
+}
+.pass-level__total {
+  font-size: 13px;
+  opacity: 0.7;
+}
+.pass-bar,
+.pass-challenge__bar {
+  display: block;
+  height: 10px;
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  background: rgba(43, 42, 94, 0.1);
+}
+.pass-bar span,
+.pass-challenge__bar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #ff9fc4, #ffd54a);
+  transform-origin: left;
+  transition: transform var(--dur-slow) var(--ease-out);
+}
+.pass-hero__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.pass-hero__xp {
+  font-size: 12.5px;
+  font-weight: 800;
+  color: var(--color-ink-soft);
+}
+.pass-claim-all,
+.pass-tier__claim,
+.pass-tier__wear {
+  min-height: 36px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  font: inherit;
+  font-family: var(--font-display);
+  font-size: 13.5px;
+  font-weight: 900;
+  cursor: pointer;
+  transition: transform var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
+}
+.pass-claim-all,
+.pass-tier__claim {
+  background: linear-gradient(180deg, #ffc462 0%, var(--dawn-sun) 55%, #f3a23a 100%);
+  color: #2a1706;
+  box-shadow: 0 3px 0 var(--dawn-sun-deep), inset 0 2px 0 rgba(255, 255, 255, 0.55);
+}
+.pass-tier__claim {
+  animation: armed-pulse 1.6s ease-in-out infinite;
+}
+.pass-tier__wear {
+  background: var(--dawn-indigo);
+  color: var(--dawn-cream);
+  box-shadow: 0 3px 0 rgba(15, 12, 40, 0.35);
+}
+.pass-claim-all:hover,
+.pass-tier__claim:hover,
+.pass-tier__wear:hover {
+  transform: translateY(-1px);
+}
+.pass-claim-all:active,
+.pass-tier__claim:active,
+.pass-tier__wear:active {
+  transform: translateY(2px);
+}
+.pass-claim-all:focus-visible,
+.pass-tier__claim:focus-visible,
+.pass-tier__wear:focus-visible,
+.pass-tier__body:focus-visible {
+  outline: 3px solid var(--dawn-sun-deep);
+  outline-offset: 2px;
+}
+
+.pass-track {
+  position: relative;
+  display: grid;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  list-style: none;
+}
+/* A linha que liga os níveis (a "trilha"). */
+.pass-track::before {
+  content: '';
+  position: absolute;
+  top: 20px;
+  bottom: 20px;
+  left: 17px;
+  width: 4px;
+  border-radius: 2px;
+  background: rgba(43, 42, 94, 0.1);
+}
+.pass-tier {
+  position: relative;
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-2);
+}
+.pass-tier__num {
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: #efe3cf;
+  color: var(--color-ink-soft);
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 900;
+  box-shadow: inset 0 -3px 0 rgba(58, 42, 34, 0.08);
+}
+.pass-tier.is-ready .pass-tier__num,
+.pass-tier.is-claimed .pass-tier__num {
+  background: linear-gradient(180deg, #ffc462 0%, var(--dawn-sun) 100%);
+  color: #2a1706;
+  box-shadow: 0 2px 0 var(--dawn-sun-deep);
+}
+.pass-tier.is-next .pass-tier__num {
+  background: #fff;
+  color: var(--dawn-indigo);
+  box-shadow: 0 0 0 3px #ff9fc4;
+}
+.pass-tier__body {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: 6px 10px 6px 6px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.66);
+  box-shadow: 0 2px 0 rgba(43, 42, 94, 0.06);
+}
+.pass-tier__body[data-preview] {
+  cursor: pointer;
+  transition: transform var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
+}
+.pass-tier__body[data-preview]:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 0 rgba(43, 42, 94, 0.08);
+}
+.pass-tier.is-trying .pass-tier__body {
+  background: #fff;
+  box-shadow: 0 0 0 2px var(--rarity-epic), 0 3px 0 rgba(138, 79, 214, 0.2);
+}
+.pass-tier.is-ready .pass-tier__body {
+  background: #fff;
+  box-shadow: 0 0 0 2px var(--dawn-sun), 0 3px 0 rgba(217, 132, 36, 0.25);
+}
+.pass-tier__art {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 35%, #fffaf0 0%, #f3e3c7 100%);
+  box-shadow: inset 0 -3px 0 rgba(58, 42, 34, 0.08);
+}
+.pass-tier__art.is-epic {
+  box-shadow: 0 0 0 2px rgba(138, 79, 214, 0.5), inset 0 -3px 0 rgba(58, 42, 34, 0.08);
+}
+.pass-tier__art.is-legendary {
+  box-shadow: 0 0 0 2px #f2a93b, inset 0 -3px 0 rgba(58, 42, 34, 0.08);
+}
+.pass-tier__art svg {
+  width: 34px;
+  height: 34px;
+}
+.pass-tier.is-locked .pass-tier__art svg {
+  filter: grayscale(0.6);
+  opacity: 0.6;
+}
+.pass-tier__text {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+.pass-tier__text strong {
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 900;
+  color: var(--color-ink);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pass-tier__text span {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--color-ink-soft);
+}
+.pass-tier__done,
+.pass-tier__lock {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+}
+.pass-tier__done {
+  background: rgba(95, 184, 74, 0.16);
+  color: #2f5a1c;
+}
+.pass-tier__lock {
+  color: rgba(43, 42, 94, 0.4);
+}
+.pass-tier__done svg,
+.pass-tier__lock svg {
+  width: 16px;
+  height: 16px;
+}
+
+.pass-challenges__count {
+  margin: var(--space-2) 0;
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--color-ink-soft);
+}
+.pass-challenges {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.pass-challenge {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 8px 12px 8px 8px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: 0 2px 0 rgba(43, 42, 94, 0.06);
+}
+.pass-challenge:focus-visible {
+  outline: 3px solid var(--dawn-sun-deep);
+  outline-offset: 2px;
+}
+.pass-challenge__icon {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: rgba(255, 159, 196, 0.2);
+  color: #9a3a6a;
+}
+.pass-challenge__icon svg {
+  width: 24px;
+  height: 24px;
+}
+.pass-challenge.is-done .pass-challenge__icon {
+  background: rgba(95, 184, 74, 0.2);
+  color: #2f5a1c;
+}
+.pass-challenge__text {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.pass-challenge__text strong {
+  font-size: 13.5px;
+  font-weight: 900;
+  color: var(--color-ink);
+}
+.pass-challenge__bar {
+  height: 7px;
+}
+.pass-challenge.is-done .pass-challenge__bar span {
+  background: linear-gradient(90deg, #7cbf5b, #a6e07a);
+}
+.pass-challenge__progress {
+  font-size: 11.5px;
+  font-weight: 800;
+  color: var(--color-ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+.pass-challenge__xp {
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 900;
+  color: #9a3a6a;
+  white-space: nowrap;
+}
+.pass-challenge.is-done .pass-challenge__xp {
+  color: #2f5a1c;
+  text-decoration: line-through;
+  text-decoration-thickness: 2px;
+}
+.pass-how {
+  margin-top: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border-radius: 18px;
+  background: rgba(43, 42, 94, 0.05);
+}
+.pass-how .sheet__heading {
+  margin-top: 0;
+}
+.pass-how ul {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12.5px;
+  font-weight: 700;
+  line-height: 1.45;
+  color: var(--color-ink-soft);
+}
+.pass-empty {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--color-ink-soft);
+}
+
+/* --- Cerimônia do baú ----------------------------------------------------------------- */
+/* Menu durante a cerimônia: placa e menu principal saem; o céu clareia (o baú é o centro). */
+.menu.is-chest .sheet,
+.menu.is-chest .menu__main {
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity 200ms var(--ease-out),
+    visibility 0s linear 200ms;
+}
+.menu.is-chest .menu__sky {
+  opacity: 0.15;
+}
+
+.chest-overlay {
+  --chest: var(--chest-common);
+  position: absolute;
+  inset: 0;
+  z-index: 7;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: var(--space-5) var(--space-4) max(var(--space-5), env(safe-area-inset-bottom));
+  cursor: pointer;
+}
+.chest-overlay[hidden] {
+  display: none;
+}
+.chest-overlay[data-mode='result'],
+.chest-overlay[data-mode='opening'] {
+  cursor: default;
+}
+.chest-overlay[data-rarity='rare'] {
+  --chest: var(--chest-rare);
+}
+.chest-overlay[data-rarity='epic'] {
+  --chest: var(--chest-epic);
+}
+.chest-overlay[data-rarity='legendary'] {
+  --chest: var(--chest-legendary);
+}
+.chest-overlay__card {
+  display: grid;
+  gap: var(--space-3);
+  width: min(440px, 100%);
+  padding: var(--space-4) var(--space-5) var(--space-5);
+  border-radius: 28px;
+  background: linear-gradient(180deg, #fff8ec 0%, #f8e8d0 100%);
+  color: var(--color-ink);
+  box-shadow:
+    0 6px 0 rgba(15, 12, 40, 0.28),
+    0 26px 60px rgba(15, 12, 40, 0.42),
+    inset 0 2px 0 rgba(255, 255, 255, 0.8),
+    inset 0 0 0 2px color-mix(in srgb, var(--chest) 45%, transparent);
+  cursor: auto;
+  animation: chest-card-in 420ms var(--ease-spring);
+}
+.chest-overlay__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.chest-overlay__icon {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 16px;
+  background: radial-gradient(circle at 50% 35%, #fffaf0 0%, #f3e3c7 100%);
+}
+.chest-overlay__icon svg {
+  width: 42px;
+  height: 42px;
+}
+.chest-overlay__title {
+  display: grid;
+  justify-items: start;
+  gap: 4px;
+}
+.chest-overlay__title strong {
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 900;
+  color: var(--dawn-indigo);
+}
+.chest-overlay__hint,
+.chest-overlay__more {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 700;
+  line-height: 1.4;
+  color: var(--color-ink-soft);
+}
+.chest-overlay__more {
+  font-size: 12.5px;
+}
+.chest-overlay__actions {
+  display: flex;
+  gap: var(--space-2);
+}
+.chest-overlay__actions > * {
+  flex: 1;
+}
+.chest-overlay__primary,
+.chest-overlay__secondary {
+  min-height: 48px;
+  padding: 0 20px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  font: inherit;
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 900;
+  cursor: pointer;
+  transition: transform var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out), opacity var(--dur-fast);
+}
+.chest-overlay__primary {
+  background: linear-gradient(180deg, #ffc462 0%, var(--dawn-sun) 55%, #f3a23a 100%);
+  color: #2a1706;
+  box-shadow: 0 5px 0 var(--dawn-sun-deep), inset 0 2px 0 rgba(255, 255, 255, 0.55);
+}
+.chest-overlay__primary.is-small {
+  flex: none;
+  min-height: 38px;
+  padding: 0 16px;
+  font-size: 14px;
+  box-shadow: 0 3px 0 var(--dawn-sun-deep), inset 0 2px 0 rgba(255, 255, 255, 0.55);
+}
+.chest-overlay__secondary {
+  background: rgba(43, 42, 94, 0.08);
+  color: var(--dawn-indigo);
+}
+.chest-overlay__primary:hover:not(:disabled),
+.chest-overlay__secondary:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+.chest-overlay__primary:active:not(:disabled) {
+  transform: translateY(4px);
+  box-shadow: 0 1px 0 var(--dawn-sun-deep), inset 0 2px 0 rgba(255, 255, 255, 0.4);
+}
+.chest-overlay__primary:disabled,
+.chest-overlay__secondary:disabled {
+  opacity: 0.5;
+  cursor: progress;
+}
+.chest-overlay__primary:focus-visible,
+.chest-overlay__secondary:focus-visible {
+  outline: 3px solid var(--dawn-sun-deep);
+  outline-offset: 2px;
+}
+.chest-rewards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.chest-reward {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px 6px 8px;
+  border-radius: var(--radius-pill);
+  background: #fff;
+  box-shadow: 0 2px 0 rgba(43, 42, 94, 0.08), inset 0 0 0 1.5px rgba(233, 168, 58, 0.4);
+  animation: reward-pop 480ms var(--ease-spring) backwards;
+}
+.chest-reward.is-dew {
+  box-shadow: 0 2px 0 rgba(43, 42, 94, 0.08), inset 0 0 0 1.5px rgba(79, 182, 255, 0.45);
+  animation-delay: 120ms;
+}
+.chest-reward svg {
+  width: 26px;
+  height: 26px;
+}
+.chest-reward strong {
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+}
+.chest-reward > span:last-child {
+  font-size: 12.5px;
+  font-weight: 800;
+  color: var(--color-ink-soft);
+}
+.chest-item {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 8px 10px 8px 8px;
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: 0 2px 0 rgba(43, 42, 94, 0.08), inset 0 0 0 2px rgba(138, 79, 214, 0.4);
+  animation: reward-pop 560ms var(--ease-spring) 240ms backwards;
+}
+.chest-item.is-legendary {
+  background: linear-gradient(135deg, #fffaf0 0%, #fff 45%, #fff6e0 100%);
+  box-shadow: 0 2px 0 rgba(43, 42, 94, 0.08), inset 0 0 0 2px #f2a93b;
+}
+.chest-item__art {
+  display: grid;
+  place-items: center;
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 35%, #fffaf0 0%, #f3e3c7 100%);
+}
+.chest-item__art svg {
+  width: 46px;
+  height: 46px;
+}
+.chest-item__text {
+  display: grid;
+  justify-items: start;
+  gap: 3px;
+  min-width: 0;
+}
+.chest-item__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #8a5a12;
+}
+.chest-item__label svg {
+  width: 13px;
+  height: 13px;
+}
+.chest-item__text strong {
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 900;
+}
+.chest-item__worn {
+  padding: 4px 12px;
+  border-radius: var(--radius-pill);
+  background: rgba(95, 184, 74, 0.16);
+  color: #2f5a1c;
+  font-size: 12px;
+  font-weight: 900;
+}
+/* A cerimônia usa as cores de raridade fora do menu também. */
+.chest-overlay {
+  --rarity-common: #a3927f;
+  --rarity-rare: #3f7fd8;
+  --rarity-epic: #8a4fd6;
+  --rarity-legendary: #e69a1e;
+}
+
+/* --- Boas-vindas ---------------------------------------------------------------------- */
+.welcome-dialog {
+  width: min(430px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  padding: 0;
+  border: 0;
+  border-radius: 30px;
+  background:
+    radial-gradient(100% 60% at 50% 0%, rgba(255, 213, 74, 0.35), rgba(255, 213, 74, 0) 70%),
+    linear-gradient(180deg, #fff8ec 0%, #f8e8d0 100%);
+  color: var(--color-ink);
+  box-shadow: 0 7px 0 rgba(15, 12, 40, 0.28), 0 30px 70px rgba(15, 12, 40, 0.45), inset 0 2px 0 rgba(255, 255, 255, 0.8);
+  overflow: auto;
+}
+.welcome-dialog[open] {
+  animation: dialog-in 420ms var(--ease-out);
+}
+.welcome-dialog::backdrop {
+  background: rgba(15, 12, 40, 0.6);
+  backdrop-filter: blur(3px);
+}
+.welcome-dialog__body {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-3);
+  padding: var(--space-6) var(--space-5) var(--space-5);
+  text-align: center;
+}
+.welcome-dialog__art svg {
+  width: 84px;
+  height: 84px;
+  animation: chest-hop 2.4s var(--ease-spring) infinite;
+}
+.welcome-dialog__title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 26px;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  color: var(--dawn-indigo);
+}
+.welcome-dialog__text {
+  margin: 0;
+  font-size: 14.5px;
+  font-weight: 700;
+  line-height: 1.45;
+  color: var(--color-ink-soft);
+}
+.welcome-dialog__gifts {
+  display: grid;
+  gap: var(--space-2);
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.welcome-dialog__gifts li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 8px 14px 8px 8px;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 2px 0 rgba(43, 42, 94, 0.08);
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 900;
+  text-align: left;
+  animation: reward-pop 520ms var(--ease-spring) backwards;
+}
+.welcome-dialog__gifts li:nth-child(2) {
+  animation-delay: 90ms;
+}
+.welcome-dialog__gifts li:nth-child(3) {
+  animation-delay: 180ms;
+}
+.welcome-dialog__gifts svg {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+}
+.welcome-dialog__season {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.4;
+  color: #9a3a6a;
+  text-align: left;
+}
+.welcome-dialog__season svg {
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+}
+.welcome-dialog .account-actions {
+  width: 100%;
+}
+.welcome-dialog .account-actions > * {
+  flex: 1;
+}
+
+/* Moedas no aviso de conquista. */
+.toast-amount {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 6px;
+}
+.achievement-toast__reward .toast-amount svg {
+  width: 14px;
+  height: 14px;
+  color: inherit;
+}
+
+/* --- Animações ------------------------------------------------------------------------ */
+@keyframes chest-hop {
+  0%,
+  70%,
+  100% {
+    transform: translateY(0) rotate(0);
+  }
+  76% {
+    transform: translateY(-3px) rotate(-6deg);
+  }
+  82% {
+    transform: translateY(0) rotate(5deg);
+  }
+  88% {
+    transform: translateY(-1px) rotate(-2deg);
+  }
+}
+@keyframes armed-pulse {
+  50% {
+    filter: brightness(1.08);
+    transform: translateY(-1px);
+  }
+}
+@keyframes bought-pop {
+  0% {
+    transform: scale(0.96);
+  }
+  50% {
+    transform: scale(1.02);
+  }
+}
+@keyframes bought-spin {
+  from {
+    transform: rotate(-25deg) scale(0.6);
+  }
+}
+@keyframes bloom-sway {
+  50% {
+    transform: rotate(8deg);
+  }
+}
+@keyframes chest-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(40px) scale(0.96);
+  }
+}
+@keyframes reward-pop {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.85);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chest-card .chest-card__art svg,
+  .welcome-dialog__art svg,
+  .pass-hero__art svg,
+  .pass-tier__claim,
+  .buy-button.is-armed {
+    animation: none;
+  }
+}
+
+/* Celular: o cartão do baú ocupa a largura e as placas do provador viram gaveta (menu.css). */
+@media (max-width: 520px) {
+  .chest-card,
+  .chest-offer {
+    grid-template-columns: 46px minmax(0, 1fr);
+  }
+  .chest-card__art {
+    width: 46px;
+    height: 46px;
+  }
+  .chest-card__art svg {
+    width: 38px;
+    height: 38px;
+  }
+  .chest-card__open,
+  .chest-offer__buy {
+    grid-column: 1 / -1;
+    justify-items: stretch;
+  }
+  .chest-offer__buy .buy-button {
+    justify-content: space-between;
+  }
+  .shop-summary,
+  .pass-hero {
+    margin-inline: var(--space-4);
+  }
+  .chest-overlay__card {
+    padding: var(--space-3) var(--space-4) var(--space-4);
+  }
+}

@@ -3,9 +3,11 @@ import { unlockedByAchievement, unlockedByLevels, type Rarity, type Unlock } fro
 
 /**
  * Acessórios do besouro: chapéus, óculos, coisas no pescoço e nas costas. Um
- * por lugar (`slot`), todos só de enfeite. Cada um é liberado por uma conquista
- * ou por nível — de preferência uma que combine (o chapéu de cowboy vem do
- * rodeio em cima da bola, o monóculo do museu completo...).
+ * por lugar (`slot`), todos só de enfeite. Os primeiros são liberados por uma
+ * conquista ou por nível — de preferência uma que combine (o chapéu de cowboy
+ * vem do rodeio em cima da bola, o monóculo do museu completo...); os da
+ * Feirinha se compram, os do passe são prêmio da temporada e alguns só saem de
+ * baú.
  *
  * Os modelos 3D moram em `entities/outfit/`; aqui é só o que o progresso e a
  * interface precisam saber.
@@ -33,6 +35,15 @@ export type AccessoryId =
   | 'halo'
   | 'cangaceiro'
   | 'crown'
+  | 'beret'
+  | 'bucketHat'
+  | 'pirateHat'
+  | 'headphones'
+  | 'unicornHorn'
+  | 'sprout'
+  | 'mushroomCap'
+  | 'frogHat'
+  | 'ufo'
   // Rosto
   | 'sunglasses'
   | 'roundGlasses'
@@ -40,6 +51,12 @@ export type AccessoryId =
   | 'starGlasses'
   | 'mustache'
   | 'monocle'
+  | 'clownNose'
+  | 'eyepatch'
+  | 'aviators'
+  | 'pixelShades'
+  | 'daisyGlasses'
+  | 'cyberVisor'
   // Pescoço
   | 'bowTie'
   | 'bandana'
@@ -47,12 +64,25 @@ export type AccessoryId =
   | 'cowbell'
   | 'lei'
   | 'medal'
+  | 'tie'
+  | 'whistle'
+  | 'pearls'
+  | 'goldChain'
+  | 'petalCollar'
+  | 'scarabAmulet'
   // Costas
   | 'flag'
   | 'backpack'
   | 'cape'
   | 'butterflyWings'
-  | 'bottleRocket';
+  | 'bottleRocket'
+  | 'balloon'
+  | 'snailShell'
+  | 'leafUmbrella'
+  | 'guitar'
+  | 'dragonflyWings'
+  | 'kite'
+  | 'angelWings';
 
 export interface AccessoryDef {
   readonly id: AccessoryId;
@@ -81,6 +111,15 @@ export const ACCESSORIES: readonly AccessoryDef[] = [
   { id: 'halo', slot: 'head', rarity: 'epic', unlock: { achievement: 'purist' }, animated: true },
   { id: 'cangaceiro', slot: 'head', rarity: 'epic', unlock: { achievement: 'level15' } },
   { id: 'crown', slot: 'head', rarity: 'legendary', unlock: { achievement: 'size30' }, animated: true },
+  { id: 'beret', slot: 'head', rarity: 'common', unlock: { shop: { coins: 450 } } },
+  { id: 'bucketHat', slot: 'head', rarity: 'common', unlock: { shop: { coins: 700 } } },
+  { id: 'pirateHat', slot: 'head', rarity: 'rare', unlock: { shop: { coins: 1200 } } },
+  { id: 'headphones', slot: 'head', rarity: 'rare', unlock: { shop: { coins: 1400 } }, animated: true },
+  { id: 'unicornHorn', slot: 'head', rarity: 'epic', unlock: { shop: { dew: 150 } }, animated: true },
+  { id: 'sprout', slot: 'head', rarity: 'common', unlock: { pass: 'florada' }, animated: true },
+  { id: 'mushroomCap', slot: 'head', rarity: 'rare', unlock: { pass: 'florada' } },
+  { id: 'frogHat', slot: 'head', rarity: 'rare', unlock: { chest: true } },
+  { id: 'ufo', slot: 'head', rarity: 'legendary', unlock: { chest: true }, animated: true },
   // --- rosto ------------------------------------------------------------------
   { id: 'sunglasses', slot: 'face', rarity: 'common', unlock: { achievement: 'size12' } },
   { id: 'roundGlasses', slot: 'face', rarity: 'common', unlock: { achievement: 'catalog10' } },
@@ -88,6 +127,12 @@ export const ACCESSORIES: readonly AccessoryDef[] = [
   { id: 'starGlasses', slot: 'face', rarity: 'rare', unlock: { achievement: 'doubleStar' } },
   { id: 'mustache', slot: 'face', rarity: 'rare', unlock: { level: 12 } },
   { id: 'monocle', slot: 'face', rarity: 'legendary', unlock: { achievement: 'catalogAll' } },
+  { id: 'clownNose', slot: 'face', rarity: 'common', unlock: { shop: { coins: 350 } } },
+  { id: 'eyepatch', slot: 'face', rarity: 'common', unlock: { shop: { coins: 500 } } },
+  { id: 'aviators', slot: 'face', rarity: 'rare', unlock: { shop: { coins: 1000 } } },
+  { id: 'pixelShades', slot: 'face', rarity: 'epic', unlock: { shop: { dew: 110 } } },
+  { id: 'daisyGlasses', slot: 'face', rarity: 'rare', unlock: { pass: 'florada' } },
+  { id: 'cyberVisor', slot: 'face', rarity: 'epic', unlock: { chest: true }, animated: true },
   // --- pescoço ----------------------------------------------------------------
   { id: 'bowTie', slot: 'neck', rarity: 'common', unlock: { achievement: 'size8' } },
   { id: 'bandana', slot: 'neck', rarity: 'common', unlock: { achievement: 'onTop' } },
@@ -95,12 +140,25 @@ export const ACCESSORIES: readonly AccessoryDef[] = [
   { id: 'cowbell', slot: 'neck', rarity: 'rare', unlock: { achievement: 'fresh10' }, animated: true },
   { id: 'lei', slot: 'neck', rarity: 'rare', unlock: { achievement: 'flipflop' } },
   { id: 'medal', slot: 'neck', rarity: 'epic', unlock: { achievement: 'bury50' } },
+  { id: 'tie', slot: 'neck', rarity: 'common', unlock: { shop: { coins: 500 } }, animated: true },
+  { id: 'whistle', slot: 'neck', rarity: 'common', unlock: { shop: { coins: 400 } }, animated: true },
+  { id: 'pearls', slot: 'neck', rarity: 'rare', unlock: { shop: { coins: 1300 } } },
+  { id: 'goldChain', slot: 'neck', rarity: 'epic', unlock: { shop: { dew: 130 } }, animated: true },
+  { id: 'petalCollar', slot: 'neck', rarity: 'epic', unlock: { pass: 'florada' } },
+  { id: 'scarabAmulet', slot: 'neck', rarity: 'legendary', unlock: { chest: true }, animated: true },
   // --- costas -----------------------------------------------------------------
   { id: 'flag', slot: 'back', rarity: 'common', unlock: { achievement: 'allRequests' }, animated: true },
   { id: 'backpack', slot: 'back', rarity: 'rare', unlock: { achievement: 'requests50' } },
   { id: 'cape', slot: 'back', rarity: 'rare', unlock: { achievement: 'toys' }, animated: true },
   { id: 'butterflyWings', slot: 'back', rarity: 'epic', unlock: { achievement: 'swarm' }, animated: true },
   { id: 'bottleRocket', slot: 'back', rarity: 'epic', unlock: { achievement: 'riderBury' }, animated: true },
+  { id: 'balloon', slot: 'back', rarity: 'common', unlock: { shop: { coins: 600 } }, animated: true },
+  { id: 'snailShell', slot: 'back', rarity: 'rare', unlock: { shop: { coins: 1100 } } },
+  { id: 'leafUmbrella', slot: 'back', rarity: 'rare', unlock: { shop: { coins: 1300 } }, animated: true },
+  { id: 'guitar', slot: 'back', rarity: 'rare', unlock: { shop: { coins: 1500 } } },
+  { id: 'dragonflyWings', slot: 'back', rarity: 'legendary', unlock: { shop: { dew: 240 } }, animated: true },
+  { id: 'kite', slot: 'back', rarity: 'epic', unlock: { pass: 'florada' }, animated: true },
+  { id: 'angelWings', slot: 'back', rarity: 'legendary', unlock: { chest: true }, animated: true },
 ];
 
 /** O que o besouro está vestindo: um acessório (ou nada) por lugar. */

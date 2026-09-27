@@ -17,10 +17,10 @@ import type { AccessoryModel, OutfitPose } from './types';
  */
 
 /** Casca que envolve as duas cúpulas dos élitros (a capa e a mochila apoiam nela). */
-const SHELL = { cy: -0.25, cz: -0.23, rx: 0.46, ry: 0.33, rz: 0.48 };
+export const SHELL = { cy: -0.25, cz: -0.23, rx: 0.46, ry: 0.33, rz: 0.48 };
 
 /** Espelha um contorno 2D no eixo X (desenha a asa da esquerda a partir da direita). */
-function shapeFrom(points: ReadonlyArray<readonly [number, number]>, mirror: boolean): THREE.Shape {
+export function shapeFrom(points: ReadonlyArray<readonly [number, number]>, mirror: boolean): THREE.Shape {
   const list = mirror ? [...points].reverse().map(([x, y]) => [-x, y] as const) : points;
   const shape = new THREE.Shape();
   shape.moveTo(list[0][0], list[0][1]);
@@ -77,7 +77,7 @@ export function flag(): AccessoryModel {
  * Subdivide as faces compridas de uma geometria ao longo de um eixo, pra ela
  * poder dobrar suave (extrude de triângulo sai com arestas longas demais pro osso).
  */
-function subdivideAlong(geometry: THREE.BufferGeometry, axis: 'x' | 'y' | 'z', maxEdge: number): THREE.BufferGeometry {
+export function subdivideAlong(geometry: THREE.BufferGeometry, axis: 'x' | 'y' | 'z', maxEdge: number): THREE.BufferGeometry {
   let g = geometry.index ? geometry.toNonIndexed() : geometry;
   for (let pass = 0; pass < 6; pass++) {
     const pos = g.getAttribute('position') as THREE.BufferAttribute;

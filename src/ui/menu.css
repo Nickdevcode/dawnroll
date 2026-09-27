@@ -1518,6 +1518,29 @@
   }
 }
 
+/* Notebook com a barra do navegador (~650 px): oito links cabem sem rolar. */
+@media (min-height: 521px) and (max-height: 720px) {
+  .wordmark {
+    font-size: clamp(52px, min(9vw, 12vh), 104px);
+  }
+  .menu__tagline {
+    margin: var(--space-2) 0 var(--space-3);
+  }
+  .menu__actions {
+    gap: 2px;
+  }
+  .menu__link {
+    padding-block: 4px;
+  }
+  .menu__link-icon {
+    width: 34px;
+    height: 34px;
+  }
+  .menu__record {
+    margin-top: var(--space-3);
+  }
+}
+
 /* Celular deitado: pouca altura, tudo mais compacto. */
 @media (max-height: 520px) {
   .wordmark {
@@ -1771,24 +1794,24 @@ button.catalog-tile.is-selected {
   --rarity-epic: #8a4fd6;
   --rarity-legendary: #e69a1e;
 }
-.menu.has-wardrobe .menu__main {
+.menu.has-showcase .menu__main {
   opacity: 0;
   transform: translateX(-18px);
   pointer-events: none;
 }
-.menu.has-wardrobe .menu__sky {
+.menu.has-showcase .menu__sky {
   opacity: 0.28;
   /* Arrastar o dedo gira o besouro: o navegador não pode tomar o gesto pra si. */
   touch-action: none;
 }
 /* Fora da placa, arrastar gira o besouro. */
-.menu.has-wardrobe {
+.menu.has-showcase {
   cursor: grab;
 }
-.menu.has-wardrobe.is-dragging {
+.menu.has-showcase.is-dragging {
   cursor: grabbing;
 }
-.menu.has-wardrobe .sheet {
+.menu.has-showcase .sheet {
   cursor: auto;
 }
 
@@ -2242,7 +2265,7 @@ p.look-detail__find {
 
 /* Celular em pé: a placa vira uma gaveta embaixo e o besouro fica em cima. */
 @media (max-width: 720px) {
-  .sheet--wardrobe {
+  .sheet--showcase {
     top: auto;
     height: min(62vh, 620px);
     border-radius: 26px 26px 0 0;
@@ -2268,7 +2291,7 @@ p.look-detail__find {
 }
 /* Celular deitado: a placa fica do lado (mais estreita) e o besouro à esquerda. */
 @media (max-height: 520px) and (max-width: 900px) {
-  .sheet--wardrobe {
+  .sheet--showcase {
     inset: 0 0 0 auto;
     width: min(56%, 470px);
     height: auto;

@@ -25,7 +25,10 @@ Um besouro rola-bosta de massinha num jardim em miniatura. Você rola uma bola d
 | 🩴 **Soltos pelo jardim** | O **anão de jardim** fica num canto qualquer, longe do começo (é o chefão), e o **chinelo** tem **um pé em cada canto** do mapa |
 | ☀️ **Sol nascente** | O teto da bola subiu pra **30 cm**. Chegando perto, a massinha acende dourada, como o solzinho do nome |
 | 🕳️ **A toca** | Buraco de terra fofa com bandeirinha de folha no monte escavado. Um anel tracejado pulsa quando a bola já pode ser enterrada. Lá embaixo tem **despensa, catálogo, poderes e conquistas** (ver abaixo) |
-| 👗 **Guarda-roupa** | **23 cascos** (alguns vivos, com brilho e partículas) e **33 acessórios** pra personalizar o besouro: chapéu, óculos, gravata, capa, asas... Tudo liberado jogando (e às vezes um acessório aparece brilhando no jardim), dá pra provar antes, e o besouro aparece de frente num provador (ver abaixo) |
+| 👗 **Guarda-roupa** | **38 cascos** (vários vivos, com brilho e partículas) e **61 acessórios** pra personalizar o besouro: chapéu, óculos, gravata, capa, asas, disco voador... Liberados jogando, comprados na Feirinha, ganhos no passe ou saídos de baú (e às vezes um acessório aparece brilhando no jardim). Dá pra provar antes, e o besouro aparece de frente num provador (ver abaixo) |
+| 🛒 **Feirinha e moedas** | Duas moedas (🪙 moedas e 💧 **gotas de orvalho**, as raras), ganhas nas conquistas, nos baús e no passe. A loja vende cascos, acessórios e baús; quem já jogava ganhou tudo retroativo (ver abaixo) |
+| 🎁 **Baús 3D** | Cada nível novo dá um baú (madeira, prata, cristal ou **do Sol**), que **cai no jardim e abre** com moedas espirrando, orvalho boiando e, às vezes, um visual saindo girando |
+| 🌸 **Passe Florada** | Temporada até 27/10 com 20 níveis, 12 desafios e 8 visuais exclusivos (o último é o casco **Girassol**) |
 | 🏆 **Conta e ranking** | Entre com e-mail e senha (ou Google) pra **salvar o besouro na nuvem** e continuar de qualquer aparelho, e dispute o **ranking global** em 4 abas: enterradas, da semana, montanha e coleção (ver abaixo) |
 | 💩 **Montinho fresquinho** | Mais ou menos 1 em cada 10 montinhos nasce fresquinho: mais claro e dourado, com três moscas e um brilho de vez em quando. Vale o dobro de bola e conta como raro |
 | 🌧️ **Clima** | Nada muda de supetão: nuvenzinhas passando no sol → o céu fecha devagar → **garoa que vai engrossando** → chuva que "respira" (trechos fracos e rajadas) → amaina aos poucos → abre. Cada chuva é sorteada: **pancada** curta e fraca ou **tempestade** longa com raio, trovoada ao longe antes de chegar e depois de ir embora. O céu fecha, a luz fica difusa, tudo fica molhado e brilhante |
@@ -33,7 +36,7 @@ Um besouro rola-bosta de massinha num jardim em miniatura. Você rola uma bola d
 | 🔊 **Som** | Tudo sintetizado na hora (nenhum arquivo de áudio) e em 3D. A bola rolando muda com o chão (grama, terra, lama, água), com o tamanho e com a tralha grudada; cada coisa que gruda tem o seu som (pedrinha "toc", graveto estala, tampinha e moeda tilintam, bolinha de gude faz "clink" de vidro, pecinha de plástico faz "clack", bicho de casca faz tique-tique e lagarta faz squelch) e uma notinha que sobe a cada item seguido, estilo Katamari. Passinhos no ritmo das patas, vento e folhas, chuva em camadas com gota na folha e na poça, trovão que rola, passarinhos de dia, cigarras nos dias de sol, grilos e coruja na madrugada do menu, abelha zumbindo, beija-flor, moscas nos montinhos, sapo coaxando no ritmo do papo e gafanhoto cantando |
 | 🎵 **Trilha** | Generativa, em Fá maior, nunca repete igual: madrugada no menu (caixinha de música), dia jogando (marimba, baixo e, conforme a bola cresce, chocalho, bloco, bumbo e melodia de kalimba) e chuva (Ré menor, gotas de kalimba). Amanhecer ao jogar, anoitecer ao pausar, vinheta nos marcos e fanfarra no enterro (maior no recorde) |
 | 🎥 **Câmera e colisões** | A lente é uma esfera (não um raio fino): nunca para dentro de pedra, brinquedo, pétala ou da própria bola de bosta. Espremida contra alguma coisa, ela sobe por cima em vez de entrar no besouro. Todo modelo tem colisão que acompanha a forma dele (a lâmina da pá, as pontas do morango, os dedos da luva, os cogumelinhos) |
-| 🌙 **Menu** | A "madrugada" por cima do jardim ao vivo: logo com o "o" virando um solzinho de massinha, e Jogar faz amanhecer. Toca, Guarda-roupa, Ranking, Configurações e Como jogar abrem em placas por cima, e a conta fica num chip no canto de cima |
+| 🌙 **Menu** | A "madrugada" por cima do jardim ao vivo: logo com o "o" virando um solzinho de massinha, e Jogar faz amanhecer. Toca, Guarda-roupa, Feirinha, Passe, Ranking, Configurações e Como jogar abrem em placas por cima, e a conta fica num chip no canto de cima |
 | 🌅 **Carregando** | A madrugada já aparece no primeiro quadro, antes do download do jogo: logo de massinha, estrelinhas e um **solzinho rolando pelo horizonte**, que é a própria barra de progresso (física, chão, jardim, grama, bichos, shaders). No fim o miolo some e o céu se funde no menu |
 | ⚙️ **Configurações** | Qualidade (Auto, Baixa, Média, Alta, Ultra ou Personalizada), resolução, sombras, oclusão ambiente, desfoque de maquete, brilho, densidade da grama, FPS, volumes (geral, música, efeitos, natureza e clima — cada slider toca uma prévia do próprio canal), sensibilidade e inversão da câmera, tremida de câmera e vibração do controle. Tudo aplica na hora e fica salvo |
 | 🌐 **Idiomas** | Português (Brasil) e inglês. No automático, o jogo segue o idioma do navegador/sistema, e dá pra fixar um nas configurações |
@@ -106,10 +109,11 @@ Um botão novo no menu (com bolinha contando o que chegou). O besouro vira o cen
 
 | | |
 |---|---|
-| 🪲 **23 cascos** | Os 7 de antes + 16 novos: espécies de verdade (Esmeralda, Touro, Pérola), **fantasias pintadas** (joaninha, abelha, toalha de piquenique, melancia, camuflagem, onça-pintada) e os **vivos**, com o desenho se mexendo e brilho próprio: Cristal, Abissal, Magma, Aurora, Holográfico, **Khepri** (agora com um brilho que corre pelo ouro), **Via Láctea** e **Amanhecer** |
+| 🪲 **23 cascos de conquista e nível** | Os 7 de antes + 16 novos: espécies de verdade (Esmeralda, Touro, Pérola), **fantasias pintadas** (joaninha, abelha, toalha de piquenique, melancia, camuflagem, onça-pintada) e os **vivos**, com o desenho se mexendo e brilho próprio: Cristal, Abissal, Magma, Aurora, Holográfico, **Khepri** (agora com um brilho que corre pelo ouro), **Via Láctea** e **Amanhecer** |
 | ✨ **Partículas** | Os cascos vivos soltam o "clima" deles: faísca subindo do magma, estrelinha da galáxia, bolha do abissal, brilho do ouro e do cristal, poeirinha colorida da aurora e do amanhecer |
-| 🎩 **33 acessórios** | Um por lugar: **16 chapéus** (festa, boné, gorro de lã, palha, coroa de flores, cowboy, cartola, chef, gorro de anão, capacete de mineiro com lanterna acesa, viking, **boné de hélice** que gira, mago com estrela que cintila, **auréola** flutuando, **chapéu de cangaceiro** e coroa), **6 de rosto** (óculos escuros, redondos, de coração, de estrela, bigode e monóculo com correntinha), **6 de pescoço** (gravata-borboleta, bandana, cachecol com as pontas voando, sininho que balança, colar havaiano e medalha) e **5 de costas** (bandeirinha tremulando, mochilinha com chaveiro, **capa de herói** que esvoaça correndo, asas de borboleta batendo e o **foguete de garrafa** com fogo de mentirinha) |
+| 🎩 **33 acessórios de conquista e nível** | Um por lugar: **16 chapéus** (festa, boné, gorro de lã, palha, coroa de flores, cowboy, cartola, chef, gorro de anão, capacete de mineiro com lanterna acesa, viking, **boné de hélice** que gira, mago com estrela que cintila, **auréola** flutuando, **chapéu de cangaceiro** e coroa), **6 de rosto** (óculos escuros, redondos, de coração, de estrela, bigode e monóculo com correntinha), **6 de pescoço** (gravata-borboleta, bandana, cachecol com as pontas voando, sininho que balança, colar havaiano e medalha) e **5 de costas** (bandeirinha tremulando, mochilinha com chaveiro, **capa de herói** que esvoaça correndo, asas de borboleta batendo e o **foguete de garrafa** com fogo de mentirinha) |
 | 💎 **Raridade** | Comum, raro, épico e lendário: cor na faixinha de cada quadradinho, selo no cartão e borda dourada nos lendários |
+| 🛒 **E os novos** | +15 cascos e +28 acessórios vêm da **Feirinha**, do **passe** ou **só de baú** (ver 🛒 Feirinha, logo abaixo). No cartão do guarda-roupa eles dizem de onde vêm, com o botão de comprar ou "Ver o passe" / "Ver os baús" |
 | 🔓 **Como libera** | Cada visual vem de uma **conquista que combina** (o chapéu de cowboy é do rodeio em cima da bola, o monóculo é do museu completo, o gorro é de levar o anão, a camuflagem é do bicho-pau...) ou de um **nível** (do 2 ao 12 quase todo nível dá um visual novo; o Amanhecer é do nível 20). O aviso da conquista e o resultado do enterro dizem o que chegou |
 | 👀 **Provar** | Os trancados dá pra **provar**: o besouro veste enquanto a placa está aberta e o cartão mostra como liberar. Fechou, volta pro que estava |
 | ✨ **Achado raro** | De vez em quando (mais ou menos 1 jardim em 5) um **acessório que você ainda não tem** aparece escondido no jardim: longe do começo, baixinho no meio do capim, de preferência encostado numa pedra, flor ou cogumelo. **De longe não há sinal nenhum**; chegando perto ele ganha um brilho dourado macio e um anel no chão, solta um brilhinho de vez em quando e toca um "plim" de sininho que dá pra seguir pelo som. Passou por cima (ou rolou a bola nele), pegou: libera na hora, com confete e aviso. Comum aparece mais, lendário quase nunca, e se a bola for enterrada antes, ele vai embora junto com o jardim. **Cascos não aparecem:** eles continuam só por conquista e nível |
@@ -121,6 +125,59 @@ Um botão novo no menu (com bolinha contando o que chegou). O besouro vira o cen
 | Raro | Arco-íris, Azul da Amazônia, Pérola, Joaninha, Abelha, Toalha de piquenique, Melancia, Camuflagem | coroa de flores, cowboy, cartola, chef, gorro de anão, mineiro, viking, óculos de coração e de estrela, bigode, cachecol, sininho, colar havaiano, mochilinha, capa de herói |
 | Épico | Onça-pintada, Lua, Cristal, Abissal, Magma, Aurora, Holográfico | boné de hélice, mago, auréola, cangaceiro, medalha de ouro, asas de borboleta, foguete de garrafa |
 | Lendário | Khepri, Via Láctea, Amanhecer | coroa, monóculo |
+
+### 🛒 Feirinha, moedas, baús e passe da temporada
+
+O jardim ganhou uma economia de verdade, toda **dentro do jogo** (nada se paga com dinheiro real): duas moedas, uma loja, baús 3D que abrem no jardim e um passe com visuais exclusivos. **Nada disso se ganha no mapa**: as moedas vêm das conquistas, dos baús e do passe.
+
+| | |
+|---|---|
+| 🪙 **Moedas** | As de todo dia. Cada conquista paga **1,5 moeda por ponto de XP** dela (a de 10 XP paga 15; a do museu completo, 375). Compram a maior parte da Feirinha |
+| 💧 **Gotas de orvalho** | As raras, o "diamante" do jardim ao amanhecer (tem tudo a ver com o *Dawn*roll). Conquista grande paga **1 gota a cada 20 XP** (as secretas, 3 a mais). Compram os visuais mais raros e baús melhores |
+| 🎁 **Presente de quem já jogava** | O saldo é **calculado** a partir do save, então as conquistas antigas pagam na hora e **cada nível que você já subiu vira um baú**. Quem abre o jogo com progresso vê uma vez o aviso "Chegou a Feirinha!" com o que ganhou e um botão direto pros baús |
+| 🛒 **Feirinha** | Botão novo no menu (com a carteira do lado e uma bolinha contando os baús fechados). Três abas: **Baús** (os seus pra abrir, os à venda e os que só saem de baú), **Cascos** e **Acessórios**. Tudo **dá pra provar no besouro** antes (mesmo provador do guarda-roupa), comprar pede **dois toques** (o primeiro vira "Confirmar") e comprado já veste. No guarda-roupa os visuais da Feirinha também têm o botão de comprar |
+| 🌸 **Passe da temporada** | Temporada 1: **Florada**, de **27/09 a 27/10/2026** (fim do dia em Brasília). **20 níveis** meio difíceis de propósito (dá pra fechar jogando com frequência o mês todo, não numa tarde), com moedas, orvalho, baús e **8 visuais exclusivos** que depois somem de circulação. Nível alcançado se pega um por um (ou "Pegar tudo") e dá pra provar o visual clicando no prêmio |
+| 🎲 **Baús em 3D** | O baú **cai do céu do lado do besouro**, quica e fica chacoalhando esperando o toque. Tocou: chacoalha, a tampa estoura, sobe um facho de luz da cor dele, as **moedas espirram** e caem rolando em volta, as **gotas de orvalho** sobem e ficam boiando e, quando vem visual, ele **sai girando de dentro** com um brilho atrás (casco novo: o besouro já veste do lado). Aí "Vestir", "Próximo baú" ou "Fechar". Tudo com som (pancada, chacoalho, sininhos, tilintar das moedas) |
+
+**Os baús**
+
+| Baú | Como ganha | Moedas | Orvalho | Chance de visual |
+|---|---|---|---|---|
+| 🟫 **Madeira** | cada nível novo | 40–80 | 25% de 1–3 | 3% (comum/raro) |
+| ⬜ **Prata** | a cada 5 níveis, passe, ou **25 💧** | 120–200 | 60% de 3–8 | 8% (até épico) |
+| 🟪 **Cristal** | a cada 10 níveis, passe, ou **70 💧** | 300–450 | 10–20 | 22% (raro a lendário) |
+| 🟨 **Sol** | a cada 25 níveis, fim do passe, ou **180 💧** | 700–1000 | 30–50 | 60% (épico/lendário) |
+
+O visual que sai é sempre **um que você ainda não tem**: os exclusivos de baú (pesam 3×), os de conquista/nível e os da Feirinha. Os do passe **nunca** saem de baú. As chances ficam escritas na própria Feirinha. O sorteio sai da semente do save + a chave do baú, então **o mesmo baú dá a mesma coisa em qualquer aparelho** e recarregar a página não sorteia de novo.
+
+**O passe Florada**
+
+| Nível | Prêmio | Nível | Prêmio |
+|---|---|---|---|
+| 1 | 🌱 **Brotinho** (acessório) | 11 | 350 moedas |
+| 2 | 150 moedas | 12 | 🌸 **Cerejeira** (casco épico, pétalas caindo) |
+| 3 | Baú de madeira | 13 | Baú de prata |
+| 4 | 15 gotas | 14 | 🌺 **Gola de pétalas** |
+| 5 | 🍯 **Favo de mel** (casco) | 15 | 50 gotas |
+| 6 | 250 moedas | 16 | 500 moedas |
+| 7 | 🍄 **Chapéu de cogumelo** | 17 | 🪁 **Pipa** (voando lá no alto) |
+| 8 | Baú de prata | 18 | Baú de cristal |
+| 9 | 🌼 **Óculos de margarida** | 19 | 80 gotas |
+| 10 | 30 gotas | 20 | 🌻 **Girassol** (casco lendário) + Baú do Sol |
+
+Cada nível pede **500 XP do passe**. Ganha jogando: **30 + 4 por cm** a cada bola enterrada, **+25** por pedido (o dourado vale mais), **+100** no primeiro enterro do dia e **+40** por conquista nova. E tem **12 desafios da temporada** (enterre 10 e 40 bolas, uma bola de 20 cm, 30 pedidos, 3 dourados, 60 flores, 25 bichinhos, um banquete de 6, 10 teias, 3 bolas na chuva, 300 m rolando e enterrar em 7 dias diferentes) que somam **6.300 XP**. O cartão do enterro mostra o XP do passe e avisa quando sobe de nível.
+
+**O que tem na Feirinha e nos exclusivos**
+
+| | Moedas 🪙 | Orvalho 💧 | Passe 🌸 | Só em baú 🎁 |
+|---|---|---|---|---|
+| 🪲 **Cascos** | Canarinho (500), Jeans, Vaquinha, Bala listrada, Zebra (900), Confeitado (1.000), Carpa koi (1.100) | Neon (140), Tempestade (160, com raio), **Orvalho** (300, lendário) | Favo de mel, Cerejeira, Girassol | Vitral, **Opala** |
+| 🎩 **Cabeça** | Boina (450), Chapéu de pescador (700), Chapéu de pirata (1.200), Fones de ouvido (1.400) | Chifre de unicórnio (150) | Brotinho, Chapéu de cogumelo | Chapéu de sapo, **Disco voador** (com ET) |
+| 👓 **Rosto** | Nariz de palhaço (350), Tapa-olho (500), Óculos de aviador (1.000) | Óculos pixelados (110) | Óculos de margarida | Visor neon |
+| 🎀 **Pescoço** | Apito (400), Gravata (500), Colar de pérolas (1.300) | Cordão de ouro (130) | Gola de pétalas | **Amuleto de escaravelho** |
+| 🎒 **Costas** | Balão (600), Casca de caracol (1.100), Guarda-chuva de folha (1.300), Violão (1.500) | **Asas de libélula** (240) | Pipa | **Asas de anjo** |
+
+> 🗓️ **Temporada nova:** é mais uma entrada em `SEASONS` (`src/progression/seasons.ts`: começo, fim, os 20 níveis e os desafios) e os visuais dela com `unlock: { pass: '<id>' }`. Os níveis que o jogador alcançou numa temporada encerrada ainda dá pra pegar.
 
 ### 🏆 Conta, save na nuvem e ranking
 
@@ -279,11 +336,13 @@ src/
 │   ├── colors.ts           # cor da coisa → família (pedidos de cor e bola arco-íris)
 │   ├── requests.ts         # pedidos: quem pede, 17 tipos, desafios do enterro e o dourado do Sol
 │   ├── achievements.ts     # as 51 conquistas (4 secretas) e as recompensas
-│   ├── skins.ts            # os 23 cascos: cores, desenho do shader, brilho, aura, raridade e como libera
-│   ├── accessories.ts      # os 33 acessórios (lugar, raridade, como libera) e o conjunto vestido
+│   ├── skins.ts            # os 38 cascos: cores, desenho do shader, brilho, aura, raridade e como libera
+│   ├── accessories.ts      # os 61 acessórios (lugar, raridade, como libera) e o conjunto vestido
 │   ├── looks.ts            # "visual" = casco ou acessório (chave, "Novo", o que cada conquista/nível libera)
 │   ├── rareFinds.ts        # achado raro: chance por jardim e sorteio por raridade (só acessório trancado)
-│   └── unlocks.ts          # raridade e regra de liberação (conquista ou nível)
+│   ├── economy.ts          # moedas e orvalho: o que cada conquista paga, os baús (raridade, sorteio com semente)
+│   ├── seasons.ts          # passe da temporada: temporadas, níveis e prêmios, desafios, regras de XP
+│   └── unlocks.ts          # raridade, preço e regra de liberação (conquista, nível, Feirinha, passe ou baú)
 ├── core/
 │   ├── Physics.ts          # mundo Rapier, passo fixo 60 Hz, grupos de colisão
 │   ├── Input.ts            # teclado + mouse (pointer lock) + toque + controle; último dispositivo usado
@@ -310,7 +369,8 @@ src/
 │   ├── BeetleModel.ts      # o besouro bonitão + animação procedural das 6 patas + encaixes do visual
 │   ├── outfit/             # acessórios: BeetleOutfit (veste, esconde o chifre, anima), registry,
 │   │                       # hats / faceWear / neckWear / backWear (os modelos), parts (peças e materiais),
-│   │                       # skinned (capa e pontas de pano com osso)
+│   │                       # skinned (capa e pontas de pano com osso), marketHead / marketBody (Feirinha),
+│   │                       # florada (passe) e treasure (só em baú)
 │   ├── Beetle.ts           # controle: andar, pular, agarrar e empurrar
 │   └── DungBall.ts         # a bola: física, crescimento, itens grudados (com voo), derreter, enterro
 ├── world/
@@ -337,6 +397,8 @@ src/
 ├── fx/
 │   ├── Effects.ts          # central de efeitos (eventos do jogo -> partículas)
 │   ├── BeetleAura.ts       # partículas dos cascos vivos (faísca, estrela, bolha, brilho)
+│   ├── ChestStage.ts       # o baú abrindo no jardim: cai, chacoalha, estoura, moedas, orvalho e o visual girando
+│   ├── glow.ts             # luz de mentirinha (mancha e anel aditivos) do achado raro e do baú
 │   ├── SoftParticles.ts    # poeira/fedor/brilho (pool num THREE.Points só)
 │   ├── ChunkParticles.ts   # pedacinhos com física (respingo, torrão, confete, folha)
 │   ├── BallTrail.ts        # rastro da bola no chão
@@ -354,7 +416,7 @@ src/
 │   ├── Music.ts            # trilha generativa e vinhetas
 │   ├── UiSounds.ts         # sons do menu por delegação de eventos
 │   ├── dsp.ts / loops.ts   # ruídos, reverb, onda do pad; peças dos sons contínuos
-│   └── voices/             # receitas de som (foley, natureza, instrumentos, interface)
+│   └── voices/             # receitas de som (foley, natureza, instrumentos, interface, baú e moedas)
 ├── online/                 # conta, save na nuvem e ranking (Supabase)
 │   ├── Online.ts           # fachada: sessão, perfil/apelido, entrar/sair/excluir, ranking (com cache curtinho)
 │   ├── CloudSave.ts        # sobe o save com trava de revisão; junta com a nuvem ao entrar e em conflito
@@ -370,8 +432,16 @@ src/
     ├── RoundPanel.ts       # nível, pedidos (recolhíveis) e poderes da rodada no HUD
     ├── PerkPicker.ts       # as cartas de "escolha um poder"
     ├── BurrowSheet.ts      # placa da toca: despensa, catálogo (com curiosidades), poderes e conquistas
-    ├── WardrobeSheet.ts    # placa do guarda-roupa: abas por lugar, vestir, provar, selo "Novo"
-    ├── lookIcons.ts        # besourinho de cada casco (com desenho e animação) e figurinha de cada acessório
+    ├── WardrobeSheet.ts    # placa do guarda-roupa: abas por lugar, vestir, provar, comprar, selo "Novo"
+    ├── ShopSheet.ts        # Feirinha: baús (abrir e comprar), cascos e acessórios à venda, provar e comprar
+    ├── PassSheet.ts        # passe da temporada: trilha de níveis, pegar prêmio, desafios
+    ├── ChestOverlay.ts     # cartão da cerimônia do baú (abrir, o que saiu, próximo, vestir)
+    ├── WelcomeDialog.ts    # "Chegou a Feirinha!": o presente de quem já jogava
+    ├── purchase.ts         # botão de comprar em dois toques, carteira e chips de valor
+    ├── economyIcons.ts     # moeda, gota de orvalho, os quatro baús, Feirinha e passe
+    ├── iconKit.ts          # kit de desenho dos ícones de massinha (contorno, realce, estrela, flor...)
+    ├── lookIconsEconomy.ts # figurinhas dos acessórios da Feirinha, do passe e dos baús
+    ├── lookIcons.ts        # besourinho de cada casco (com desenho e animação) e figurinha dos acessórios
     ├── lookText.ts         # nome, descrição, raridade e "como libera" de cada visual
     ├── AchievementToast.ts # aviso de conquista (em fila, por cima até do menu)
     ├── BootScreen.ts       # avança a tela de carregamento (o desenho mora no index.html)
@@ -388,7 +458,8 @@ src/
     ├── icons.ts            # ícones SVG
     ├── styles.css          # design tokens + HUD
     ├── menu.css            # o menu "madrugada → amanhecer"
-    └── online.css          # chip da conta, placa da conta, ranking e a janelinha do apelido
+    ├── online.css          # chip da conta, placa da conta, ranking e a janelinha do apelido
+    └── economy.css         # carteira, Feirinha, passe, cerimônia do baú e boas-vindas
 ```
 
 ---
@@ -465,7 +536,7 @@ Ferramentas de medição (descartáveis, em `shots/lead/`, fora do git): `bench.
 - **O limite real da bola é o jardim, não o número:** antes, todos os arrancáveis somavam ~755 de volume e a bola de 24 cm pedia ~905 (o teto era promessa vazia). Os objetos perdidos somam mais ~945 (o anão sozinho, 195), o jardim inteiro vai a ~1680 e aí sim o teto subiu pra 30 cm (1767): 24 cm fica alcançável e 30 cm só varrendo quase tudo e ainda comendo bosta.
 - **Bola que "nunca chegava":** o raio anda até o alvo com suavização exponencial, que nunca encosta nele. No teto a bola ficava em 29,9996 cm e o marco de 30 (e antes o de 24) nunca disparava. Agora o raio encaixa no alvo quando fica a menos de 0,0005, e o diâmetro é arredondado na terceira casa.
 - **Casco sem repintar malha:** o degradê do casco e das patas é assado nos vértices só como sombra (cinza); a cor vem do material. Trocar de casco é mexer em uniforms e na cor de 5 materiais, e as peças fundidas continuam fundidas. A pálpebra ganhou cor branca nos vértices pra dividir o material do casco.
-- **Desenho do casco no shader:** cada vértice do casco guarda `skinPos` = a posição dele no corpo **em repouso** + a parte (élitro, pronoto, cabeça). O desenho fica grudado no casco quando o corpo amassa, inclina ou a pálpebra pisca, e sai espelhado dos dois lados. Um programa só pra todos os 15 desenhos (o tipo vai por uniform): trocar de casco não recompila nada.
+- **Desenho do casco no shader:** cada vértice do casco guarda `skinPos` = a posição dele no corpo **em repouso** + a parte (élitro, pronoto, cabeça). O desenho fica grudado no casco quando o corpo amassa, inclina ou a pálpebra pisca, e sai espelhado dos dois lados. Um programa só pra todos os 29 desenhos (o tipo vai por uniform): trocar de casco não recompila nada.
 - **Materiais do besouro fora do cache:** o `clay()` devolve o mesmo material pra mesma cor. O besouro nascia índigo, então élitro e pronoto dividiam **um** material e o casco Arco-íris saía todo cobre (bug antigo, corrigido: agora o besouro tem materiais próprios, `unique: true`).
 - **Acessório barato:** peças paradas saem dos grupos de montagem e fundem por material (`flattenStatic` + `mergeStaticTree`): quase todo acessório fica em 1 a 4 draw calls. O que mexe (hélice, asa, sino) é junta própria; capa, pontas do cachecol e bandeirinha são malha com **osso** (skinning na GPU vale em sombra, oclusão e contorno). Material novo compila em segundo plano (`compileAsync`) antes da peça aparecer.
 - **Provador sem mexer no jogo:** a câmera do guarda-roupa só "puxa" a câmera normal (mistura suave) e centraliza o besouro no pedaço livre da tela deslocando a **projeção** (`setViewOffset`), não a câmera. Um terceiro "empurrador" na lente deita o capim perto dela.
@@ -480,6 +551,12 @@ Ferramentas de medição (descartáveis, em `shots/lead/`, fora do git): `bench.
 - **Cor por instância antes de compilar:** o fresquinho usa `setColorAt` no `InstancedMesh` dos montinhos. Isso muda o programa do shader (entra o `USE_INSTANCING_COLOR`), então todas as vagas ganham cor já na construção, antes do `renderer.compile` — tingir pela primeira vez no meio do jogo daria engasgo.
 - **Carregamento no HTML:** a tela de carregamento é HTML + CSS inline no `index.html`, então aparece antes do download de ~1,46 MB do jogo. O JS só avança o progresso (`--p`) entre as etapas pesadas, com um `requestAnimationFrame` entre elas pra tela pintar. Ela some em dois tempos (miolo, depois céu) pra não mostrar dois logos junto com o menu.
 - **Conquista retroativa sem enxurrada:** save de antes das conquistas ganha o que já tinha feito (pelo recorde, bolas enterradas e catálogo) de uma vez e em silêncio, com o XP; o aviso na tela é só pro que acontece jogando.
+- **Saldo calculado, nunca guardado:** moedas e orvalho saem do save (conquistas feitas + prêmios do passe pegos + baús abertos − compras). Por isso quem já jogava ganhou tudo de uma vez sem migração, e juntar o save de dois aparelhos é só unir listas: uma nuvem antiga com "mais saldo" não devolve o que foi gasto (se dois aparelhos gastarem o mesmo dinheiro sem internet, o saldo pode ficar negativo e as compras novas esperam). Cada compra guarda quanto custou, então mudar um preço depois não mexe no passado.
+- **Baú com semente:** o resultado sai de `hash(semente do save + chave do baú)` e fica gravado ao abrir. Chave estável (`lvl:12`, `pass:florada:8`, `chest:epic:...`) = o mesmo baú em qualquer aparelho, sem reroll recarregando a página.
+- **Economia no cliente:** como o resto do save (XP, conquistas), a economia vive no navegador e na nuvem sem validação no servidor. Não tem dinheiro de verdade envolvido, então não compensa a complexidade de um servidor autoritativo; se um dia tiver, a economia vai pro banco.
+- **Baú no próprio jardim:** a cerimônia acontece na cena do jogo (pega a luz, o contorno, o bloom e o desfoque), com a câmera do provador rodeando o baú em vez do besouro (e o besouro como obstáculo da lente). O baú cai entre o besouro e a câmera, num lugar livre de pedra e da bola. Os brilhos são aditivos e ficam **atrás** do prêmio (vistos da câmera): na frente, lavavam o visual que sai.
+- **Provador grudando no besouro (corrigido):** a lente evita a bola com uma folga generosa; com o besouro colado nela, o próprio alvo ficava dentro da folga e toda direção dava "sem espaço", então a câmera grudava no casco. Agora, com o alvo dentro da folga, só a bola de verdade bloqueia.
+- **Tampa oca some de costas:** a tampa do baú é meio cilindro oco; aberta, ela mostra o lado de dentro, que o *backface culling* não desenha. Ganhou um fundo sólido.
 - **Online sem atrasar o jogo:** o `supabase-js` é importado sob demanda depois do jardim abrir (pedaço separado do bundle). O navegador continua sendo a cópia de trabalho do save; a nuvem recebe o JSON inteiro alguns segundos depois (espera 3 s, no máximo 15 s mudando sem parar) e ao trocar de aba/fechar.
 - **Sobe quando o jogo grava, não quando o save muda:** o jogo mexe nos contadores de movimento a cada passo sem gravar; comparar o save vivo antes/depois do upload fazia a nuvem receber o save a cada 3 s com a bola rolando. Agora um contador de gravações decide se ficou coisa por subir.
 - **Sair não apaga o que não subiu:** o "Sair" espera o login em andamento, sobe o que falta e só zera o aparelho depois de a nuvem confirmar e o logout dar certo.

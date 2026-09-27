@@ -6,6 +6,7 @@ import { formatCm, onLocaleChange, t, tn, type MessageKey } from '../i18n';
 import type { BurialOutcome } from '../progression/Progression';
 import type { PerkOffer } from '../progression/perks';
 import { Icons } from './icons';
+import { PassIcon } from './economyIcons';
 import { GameIcons, PerkIcons } from './gameIcons';
 import { escapeHtml } from './html';
 import { looksNotice } from './lookText';
@@ -509,6 +510,12 @@ export class Hud {
     if (meal && meal.looks.length > 0) lines.push([GameIcons.sparkle, escapeHtml(looksNotice(meal.looks))]);
     if (outcome.goldenDone) lines.push([GameIcons.star, `<strong>${escapeHtml(t('result.golden'))}</strong>`]);
     if (outcome.requestsDone > 0) lines.push([Icons.check, escapeHtml(tn('result.requests', outcome.requestsDone))]);
+    // Passe da temporada: o XP do enterro e, se subiu, o nível novo.
+    const pass = outcome.pass;
+    if (pass) {
+      lines.push([PassIcon, escapeHtml(t(pass.daily ? 'result.passDaily' : 'result.pass', { xp: pass.xp }))]);
+      if (pass.tierAfter > pass.tierBefore) lines.push([PassIcon, `<strong>${escapeHtml(t('result.passTier', { n: pass.tierAfter }))}</strong>`]);
+    }
     if (outcome.discovered.length > 0) {
       const names = outcome.discovered.slice(0, 3).map((id) => t(`catalog.${id}` as MessageKey));
       const more = outcome.discovered.length > 3 ? '…' : '';

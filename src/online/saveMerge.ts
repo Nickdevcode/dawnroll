@@ -1,15 +1,43 @@
-import type { SaveData } from '../core/save';
+import { PASS_COUNTERS } from '../progression/seasons';
+import { emptyPass, type EconomyState, type PassState, type SaveData } from '../core/save';
+
+/** Economia: compras e baús abertos viram a união (a mesma chave é a mesma coisa nos dois lados). */
+function mergeEconomy(a: EconomyState, b: EconomyState): EconomyState {
+  // Semente: a menor das duas que existem (os dois aparelhos chegam na mesma escolha).
+  const seed = a.seed && b.seed ? Math.min(a.seed, b.seed) : a.seed || b.seed;
+  return {
+    seed,
+    purchases: { ...b.purchases, ...a.purchases },
+    opened: { ...b.opened, ...a.opened },
+    welcomed: a.welcomed || b.welcomed,
+  };
+}
+
+function mergePass(a: PassState | undefined, b: PassState | undefined): PassState {
+  const x = a ?? emptyPass();
+  const y = b ?? emptyPass();
+  const counters = { ...x.counters };
+  for (const counter of PASS_COUNTERS) counters[counter] = Math.max(x.counters[counter], y.counters[counter]);
+  return {
+    xp: Math.max(x.xp, y.xp),
+    claimed: [...new Set([...x.claimed, ...y.claimed])].sort((m, n) => m - n),
+    counters,
+    lastDay: x.lastDay > y.lastDay ? x.lastDay : y.lastDay,
+  };
+}
 
 /**
  * Junta dois saves da mesma pessoa (o do aparelho e o da nuvem, ou os de dois
  * aparelhos que gravaram ao mesmo tempo) sem perder progresso: contadores e
- * recordes ficam com o maior, listas (conquistas, figurinhas, achados...) viram a
- * união. O que não soma — despensa, casco e acessórios vestidos — vem do save
- * "mais adiantado" (mais experiência; empate fica com `a`).
+ * recordes ficam com o maior, listas (conquistas, figurinhas, achados, compras,
+ * baús abertos...) viram a união. O que não soma — despensa, casco e acessórios
+ * vestidos — vem do save "mais adiantado" (mais experiência; empate fica com `a`).
  *
  * Por que o maior e não a soma: não dá pra saber quanto dos dois lados é
  * história em comum. O maior nunca inventa progresso; no pior caso (jogou nos
- * dois aparelhos sem internet) perde a diferença de um contador.
+ * dois aparelhos sem internet) perde a diferença de um contador. O saldo de
+ * moedas não entra aqui: ele é calculado das listas, então gasto num aparelho
+ * continua gasto depois de juntar.
  */
 export function mergeSaves(a: SaveData, b: SaveData): SaveData {
   const primary = b.xp > a.xp ? b : a;
@@ -38,7 +66,16 @@ export function mergeSaves(a: SaveData, b: SaveData): SaveData {
       rideSeconds: Math.max(a.stats.rideSeconds, b.stats.rideSeconds),
       rollUnits: Math.max(a.stats.rollUnits, b.stats.rollUnits),
     },
+    economy: mergeEconomy(a.economy, b.economy),
+    passes: mergePasses(a.passes, b.passes),
   };
+}
+
+function mergePasses(a: SaveData['passes'], b: SaveData['passes']): SaveData['passes'] {
+  const passes: SaveData['passes'] = {};
+  const ids = new Set([...Object.keys(a), ...Object.keys(b)]) as Set<keyof SaveData['passes']>;
+  for (const id of ids) passes[id] = mergePass(a[id], b[id]);
+  return passes;
 }
 
 /** Os dois saves dizem a mesma coisa? (evita gravar na nuvem o que já está lá) */

@@ -3,6 +3,7 @@ import type { AccessoryId } from '../progression/accessories';
 import { buildAccessory } from '../entities/outfit/registry';
 import type { AccessoryModel, OutfitPose } from '../entities/outfit/types';
 import { terrainHeight } from './Terrain';
+import { glowTexture, pulseRingMaterial } from '../fx/glow';
 
 /**
  * O achado raro no jardim: o acessório girando devagar, baixinho, no meio do
@@ -28,51 +29,6 @@ const GLOW_FAR = 14;
 
 const GOLD = new THREE.Color('#ffc94a');
 
-/** Mancha de luz redonda (degradê radial), pro brilho em volta do item. */
-function glowTexture(): THREE.CanvasTexture {
-  const size = 128;
-  const canvas = document.createElement('canvas');
-  canvas.width = canvas.height = size;
-  const ctx = canvas.getContext('2d')!;
-  const g = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
-  g.addColorStop(0, 'rgba(255,255,255,1)');
-  g.addColorStop(0.25, 'rgba(255,255,255,0.55)');
-  g.addColorStop(0.6, 'rgba(255,255,255,0.15)');
-  g.addColorStop(1, 'rgba(255,255,255,0)');
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, size, size);
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  return texture;
-}
-
-function ringMaterial(): THREE.ShaderMaterial {
-  return new THREE.ShaderMaterial({
-    uniforms: { uTime: { value: 0 }, uFade: { value: 0 }, uColor: { value: GOLD.clone().multiplyScalar(2.4) } },
-    vertexShader: /* glsl */ `
-      varying vec2 vUv;
-      void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
-    fragmentShader: /* glsl */ `
-      uniform float uTime;
-      uniform float uFade;
-      uniform vec3 uColor;
-      varying vec2 vUv;
-      void main() {
-        float r = length(vUv - 0.5) * 2.0;
-        // Anel fininho que pulsa pra fora devagar, e um brilho mole no meio.
-        float wave = fract(r - uTime * 0.4);
-        float ring = smoothstep(0.0, 0.06, wave) * (1.0 - smoothstep(0.06, 0.22, wave));
-        float glow = (1.0 - smoothstep(0.0, 1.0, r)) * 0.35;
-        float a = (ring * 0.8 + glow) * (1.0 - smoothstep(0.8, 1.0, r)) * uFade;
-        // Aditivo: a cor entra multiplicada pelo alfa uma vez só (o blend já faz isso).
-        gl_FragColor = vec4(uColor, a);
-      }`,
-    transparent: true,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-  });
-}
-
 interface Placed {
   id: AccessoryId;
   model: AccessoryModel;
@@ -90,7 +46,7 @@ export class RareFind {
   private readonly halo: THREE.Sprite;
   private readonly haloMat: THREE.SpriteMaterial;
   private readonly ring: THREE.Mesh;
-  private readonly ringMat = ringMaterial();
+  private readonly ringMat = pulseRingMaterial(GOLD.clone().multiplyScalar(2.4));
   private readonly pose: OutfitPose = { time: 0, dt: 0, speed: 0, pushBlend: 0, airborne: 0, verticalSpeed: 0, headPitch: 0 };
   private time = 0;
   /** Quanto o brilho está aparecendo agora (0 longe, 1 perto). */

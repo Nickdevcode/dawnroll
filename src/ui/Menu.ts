@@ -22,6 +22,12 @@ import { GameIcons } from './gameIcons';
 import { segmented, slider, toggle, type Control } from './controls';
 import { BurrowSheet } from './BurrowSheet';
 import { WardrobeSheet } from './WardrobeSheet';
+import { ShopSheet } from './ShopSheet';
+import { PassSheet } from './PassSheet';
+import { WelcomeDialog } from './WelcomeDialog';
+import { PassIcon, ShopIcon } from './economyIcons';
+import { amountChip } from './purchase';
+import { shownSeason } from '../progression/seasons';
 import { RankingSheet } from './RankingSheet';
 import { AccountSheet } from './AccountSheet';
 import { NicknameDialog } from './NicknameDialog';
@@ -33,13 +39,16 @@ import { nearestInDirection } from './spatialNav';
 /**
  * Menu de início e de pausa: a "madrugada" por cima do jardim (que continua
  * girando ao vivo atrás). Jogar faz amanhecer; pausar faz a noite voltar.
- * Tem seis placas que deslizam por cima: Toca (despensa, catálogo, poderes e
+ * Tem oito placas que deslizam por cima: Toca (despensa, catálogo, poderes e
  * conquistas), Guarda-roupa (casco e acessórios, com o besouro no provador),
+ * Feirinha (baús e o que se compra com moedas e orvalho), Passe da temporada,
  * Ranking, Conta (a do chip no canto de cima), Configurações (com abas) e Como jogar.
  */
 
-export type SheetName = 'burrow' | 'wardrobe' | 'ranking' | 'account' | 'settings' | 'help';
-const SHEETS: readonly SheetName[] = ['burrow', 'wardrobe', 'ranking', 'account', 'settings', 'help'];
+export type SheetName = 'burrow' | 'wardrobe' | 'shop' | 'pass' | 'ranking' | 'account' | 'settings' | 'help';
+const SHEETS: readonly SheetName[] = ['burrow', 'wardrobe', 'shop', 'pass', 'ranking', 'account', 'settings', 'help'];
+/** Placas com o besouro no provador (a câmera vem pra frente dele e o menu principal sai de cena). */
+export const SHOWCASE_SHEETS: ReadonlySet<SheetName> = new Set(['wardrobe', 'shop', 'pass']);
 type TabName = 'graphics' | 'audio' | 'controls' | 'language';
 
 const TABS: ReadonlyArray<{ name: TabName; icon: string; label: MessageKey }> = [
@@ -81,6 +90,8 @@ export class Menu {
   onSheetChange: ((sheet: SheetName | null) => void) | null = null;
   /** Arrastou no provador (fora da placa): gira o besouro (px na horizontal). */
   onShowcaseDrag: ((dx: number) => void) | null = null;
+  /** Pediu pra abrir um baú (Feirinha ou boas-vindas): o jogo faz a cerimônia. */
+  onOpenChest: ((key: string) => void) | null = null;
 
   private readonly playButton: HTMLButtonElement;
   private readonly playLabel: HTMLElement;
@@ -88,10 +99,20 @@ export class Menu {
   private readonly burrowMeta: HTMLElement;
   private readonly burrowBadge: HTMLElement;
   private readonly wardrobeBadge: HTMLElement;
+  private readonly shopBadge: HTMLElement;
+  private readonly shopMeta: HTMLElement;
+  private readonly passBadge: HTMLElement;
+  private readonly passMeta: HTMLElement;
+  private shownWallet = '';
   /** Placa da toca (o jogo liga o `onMeal` dela). */
   readonly burrow: BurrowSheet;
   /** Guarda-roupa (o jogo liga o provador e o "provar"). */
   readonly wardrobe: WardrobeSheet;
+  /** Feirinha (baús e compras; também prova no besouro). */
+  readonly shop: ShopSheet;
+  /** Passe da temporada. */
+  readonly pass: PassSheet;
+  private readonly welcome: WelcomeDialog;
   private readonly ranking: RankingSheet;
   private readonly account: AccountSheet;
   private readonly nicknameDialog: NicknameDialog;
@@ -143,6 +164,14 @@ export class Menu {
             <span class="menu__link-icon">${HangerIcon}<span class="menu__link-badge" data-wardrobe-badge hidden></span></span>
             <span data-t="menu.wardrobe"></span>
           </button>
+          <button class="menu__link" type="button" data-open="shop" aria-expanded="false" aria-controls="sheet-shop">
+            <span class="menu__link-icon">${ShopIcon}<span class="menu__link-badge" data-shop-badge hidden></span></span>
+            <span data-t="menu.shop"></span><span class="menu__link-meta menu__link-meta--wallet" data-shop-meta></span>
+          </button>
+          <button class="menu__link" type="button" data-open="pass" aria-expanded="false" aria-controls="sheet-pass">
+            <span class="menu__link-icon">${PassIcon}<span class="menu__link-badge" data-pass-badge hidden></span></span>
+            <span data-t="menu.passLink"></span><span class="menu__link-meta" data-pass-meta></span>
+          </button>
           <button class="menu__link" type="button" data-open="ranking" aria-expanded="false" aria-controls="sheet-ranking" hidden>
             <span class="menu__link-icon">${Icons.podium}</span><span data-t="menu.ranking"></span>
           </button>
@@ -166,11 +195,25 @@ export class Menu {
     // A placa da toca entra antes da coleta dos textos (ela também usa data-t).
     this.burrow = new BurrowSheet(progression);
     this.wardrobe = new WardrobeSheet(progression);
+    this.shop = new ShopSheet(progression);
+    this.pass = new PassSheet(progression);
     this.ranking = new RankingSheet(online);
     this.account = new AccountSheet(online, progression);
-    this.element.append(this.burrow.element, this.wardrobe.element, this.ranking.element, this.account.element);
+    this.element.append(this.burrow.element, this.wardrobe.element, this.shop.element, this.pass.element, this.ranking.element, this.account.element);
     parent.append(this.element);
     this.nicknameDialog = new NicknameDialog(parent, online, progression, () => this.isVisible);
+    // Boas-vindas das moedas: não briga com a janelinha do apelido (espera ela fechar).
+    this.welcome = new WelcomeDialog(parent, progression, () => this.isVisible && !this.nicknameDialog.isOpen);
+    this.welcome.onOpenChests = () => {
+      this.open('shop');
+      this.shop.prepare('chests');
+    };
+    this.shop.onOpenChest = (key) => this.onOpenChest?.(key);
+    // Do guarda-roupa: "Ver passe" / "Ver baús" nos visuais que vêm de lá.
+    this.wardrobe.onNavigate = (target) => {
+      this.open(target === 'chests' ? 'shop' : 'pass');
+      if (target === 'chests') this.shop.prepare('chests');
+    };
     this.ranking.onOpenAccount = () => this.open('account');
     this.account.onOpenRanking = () => this.open('ranking');
 
@@ -181,10 +224,16 @@ export class Menu {
     this.burrowMeta = $('[data-burrow-meta]');
     this.burrowBadge = $('[data-burrow-badge]');
     this.wardrobeBadge = $('[data-wardrobe-badge]');
+    this.shopBadge = $('[data-shop-badge]');
+    this.shopMeta = $('[data-shop-meta]');
+    this.passBadge = $('[data-pass-badge]');
+    this.passMeta = $('[data-pass-meta]');
     this.accountChip = $('[data-open="account"]');
     this.sheets = {
       burrow: this.burrow.element,
       wardrobe: this.wardrobe.element,
+      shop: this.shop.element,
+      pass: this.pass.element,
       ranking: this.ranking.element,
       account: this.account.element,
       settings: $('#sheet-settings'),
@@ -193,6 +242,8 @@ export class Menu {
     this.openers = {
       burrow: $('[data-open="burrow"]'),
       wardrobe: $('[data-open="wardrobe"]'),
+      shop: $('[data-open="shop"]'),
+      pass: $('[data-open="pass"]'),
       ranking: $('[data-open="ranking"]'),
       account: this.accountChip,
       settings: $('[data-open="settings"]'),
@@ -227,6 +278,7 @@ export class Menu {
     this.playButton.disabled = false;
     this.updatePlayLabel();
     this.playButton.focus({ preventScroll: true });
+    this.welcome.check();
   }
 
   /** Mostra o menu (a noite cai). `paused` troca Jogar por Continuar. */
@@ -238,11 +290,39 @@ export class Menu {
     if (this.ready) this.playButton.focus({ preventScroll: true });
     // Entrou pelo Google e foi jogar antes do apelido carregar: a janelinha aparece na pausa.
     this.nicknameDialog?.check();
+    // Boas-vindas só com o menu pronto (no carregamento ela cobriria a tela de loading).
+    if (this.ready) this.welcome?.check();
+  }
+
+  /** Placa aberta agora (null = só o menu principal). */
+  get currentSheet(): SheetName | null {
+    return this.openSheet;
+  }
+
+  /** Placa do provador aberta (o jogo centraliza o besouro no pedaço da tela livre dela). */
+  get showcaseSheet(): HTMLElement | null {
+    return this.openSheet && SHOWCASE_SHEETS.has(this.openSheet) ? this.sheets[this.openSheet] : null;
+  }
+
+  /**
+   * Cerimônia do baú: a placa e o menu principal saem de cena (o baú em 3D é o
+   * centro) e voltam como estavam no fim.
+   */
+  setChestMode(on: boolean): void {
+    this.element.classList.toggle('is-chest', on);
+    if (on) this.element.setAttribute('inert', '');
+    else if (!this.element.hidden) this.element.removeAttribute('inert');
+    if (!on && this.openSheet) {
+      const sheet = this.sheets[this.openSheet];
+      (sheet.querySelector<HTMLElement>('[data-open-chest]') ?? sheet.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]'))?.focus({ preventScroll: true });
+    }
   }
 
   /** Esconde o menu (amanhece) e fecha qualquer placa aberta. */
   hide(): void {
     this.closeSheet(false);
+    // Começou a jogar com as boas-vindas abertas (atalho de teclado): ela volta na próxima pausa.
+    this.welcome.hide();
     this.element.hidden = true;
     this.element.setAttribute('inert', '');
   }
@@ -270,8 +350,8 @@ export class Menu {
    */
   handleGamepad(action: MenuAction): boolean {
     document.documentElement.classList.add('using-gamepad');
-    // Janelinha do apelido aberta: o controle anda só dentro dela (B = "Depois").
-    const dialog = this.nicknameDialog.isOpen ? this.nicknameDialog.element : null;
+    // Janelinha aberta (apelido, boas-vindas): o controle anda só dentro dela (B = "Depois").
+    const dialog = this.nicknameDialog.isOpen ? this.nicknameDialog.element : this.welcome.isOpen ? this.welcome.element : null;
     const sheet = dialog ?? (this.openSheet ? this.sheets[this.openSheet] : null);
     const focusables = sheet
       ? this.gamepadFocusables(sheet)
@@ -320,7 +400,8 @@ export class Menu {
       }
       case 'back':
         if (dialog) {
-          this.nicknameDialog.close();
+          if (this.nicknameDialog.isOpen) this.nicknameDialog.close();
+          else this.welcome.close();
           return true;
         }
         if (!this.openSheet) return false;
@@ -609,9 +690,11 @@ export class Menu {
     }
     if (name === 'ranking') this.ranking.prepare();
     if (name === 'account') this.account.prepare();
-    // Guarda-roupa: o menu principal sai de cena e o besouro vira o centro (provador).
-    this.element.classList.toggle('has-wardrobe', name === 'wardrobe');
+    // Provador (guarda-roupa, Feirinha, passe): o menu principal sai de cena e o besouro vira o centro.
+    this.element.classList.toggle('has-showcase', SHOWCASE_SHEETS.has(name));
     if (name === 'wardrobe') this.wardrobe.prepare();
+    if (name === 'shop') this.shop.prepare();
+    if (name === 'pass') this.pass.prepare();
     this.onSheetChange?.(name);
     this.openers[name].setAttribute('aria-expanded', 'true');
     this.element.classList.add('has-sheet');
@@ -627,10 +710,12 @@ export class Menu {
     if (!name) return;
     this.openSheet = null;
     if (name === 'wardrobe') this.wardrobe.close();
+    if (name === 'shop') this.shop.close();
+    if (name === 'pass') this.pass.close();
     if (name === 'account') this.account.close();
     this.sheets[name].hidden = true;
     this.openers[name].setAttribute('aria-expanded', 'false');
-    this.element.classList.remove('has-sheet', 'has-tabs', 'has-wardrobe');
+    this.element.classList.remove('has-sheet', 'has-tabs', 'has-showcase');
     this.onSheetChange?.(null);
     if (returnFocus) this.openers[name].focus({ preventScroll: true });
   }
@@ -643,7 +728,7 @@ export class Menu {
     let pointer: number | null = null;
     let lastX = 0;
     this.element.addEventListener('pointerdown', (e) => {
-      if (this.openSheet !== 'wardrobe' || (e.target as HTMLElement).closest('.sheet, button')) return;
+      if (!this.openSheet || !SHOWCASE_SHEETS.has(this.openSheet) || (e.target as HTMLElement).closest('.sheet, button')) return;
       pointer = e.pointerId;
       lastX = e.clientX;
       this.element.setPointerCapture(e.pointerId);
@@ -679,6 +764,24 @@ export class Menu {
     this.wardrobeBadge.hidden = fresh === 0;
     this.wardrobeBadge.textContent = String(fresh);
     this.wardrobeBadge.parentElement!.parentElement!.setAttribute('aria-label', fresh > 0 ? `${t('menu.wardrobe')}: ${tn('wardrobe.newCount', fresh)}` : t('menu.wardrobe'));
+    // Feirinha: baús esperando na bolinha e a carteira do lado.
+    const chests = this.progression.chests.length;
+    this.shopBadge.hidden = chests === 0;
+    this.shopBadge.textContent = String(chests);
+    const wallet = this.progression.wallet;
+    // O progresso avisa a cada coisa que a bola pega: só redesenha a carteira quando ela muda.
+    const walletKey = `${wallet.coins}|${wallet.dew}`;
+    if (walletKey !== this.shownWallet) {
+      this.shownWallet = walletKey;
+      this.shopMeta.innerHTML = `${amountChip('coins', Math.max(0, wallet.coins))}${amountChip('dew', Math.max(0, wallet.dew))}`;
+    }
+    this.shopBadge.parentElement!.parentElement!.setAttribute('aria-label', chests > 0 ? `${t('menu.shop')}: ${tn('shop.chestsWaiting', chests)}` : t('menu.shop'));
+    // Passe: níveis pra pegar na bolinha e o nível do lado.
+    const season = shownSeason(Date.now());
+    const claimable = this.progression.claimableTierCount(season);
+    this.passBadge.hidden = claimable === 0;
+    this.passBadge.textContent = String(claimable);
+    this.passMeta.textContent = season ? t('menu.passLevel', { n: this.progression.passView(season).tier, total: season.tiers.length }) : '';
   }
 
   /**
@@ -718,6 +821,8 @@ export class Menu {
     }
     for (const control of this.controls) control.refresh();
     this.updatePlayLabel();
+    // Idioma novo formata os números de outro jeito (1.075 x 1,075): a carteira redesenha.
+    this.shownWallet = '';
     this.updateBurrowLink();
     this.updateAccountChip();
     if (this.lastSave) this.setProgress(this.lastSave);

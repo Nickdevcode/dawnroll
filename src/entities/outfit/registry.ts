@@ -6,6 +6,10 @@ import { beanie, cangaceiroHat, cap, chefHat, cowboyHat, crown, flowerCrown, gno
 import { backpack, bottleRocket, butterflyWings, cape, flag } from './backWear';
 import { heartGlasses, monocle, mustache, roundGlasses, starGlasses, sunglasses } from './faceWear';
 import { bandana, bowTie, cowbell, lei, medal, scarf } from './neckWear';
+import { aviators, beret, bucketHat, clownNose, eyepatch, headphones, pirateHat, pixelShades, unicornHorn } from './marketHead';
+import { balloon, dragonflyWings, goldChain, guitar, leafUmbrella, pearls, snailShell, tie, whistle } from './marketBody';
+import { daisyGlasses, kite, mushroomCap, petalCollar, sprout } from './florada';
+import { angelWings, cyberVisor, frogHat, scarabAmulet, ufo } from './treasure';
 import type { AccessoryModel } from './types';
 
 /** Quem monta cada acessório (o TypeScript cobra se faltar algum). */
@@ -43,6 +47,37 @@ const BUILDERS: Record<AccessoryId, () => AccessoryModel> = {
   cape,
   butterflyWings,
   bottleRocket,
+  // Feirinha
+  beret,
+  bucketHat,
+  pirateHat,
+  headphones,
+  unicornHorn,
+  clownNose,
+  eyepatch,
+  aviators,
+  pixelShades,
+  tie,
+  whistle,
+  pearls,
+  goldChain,
+  balloon,
+  snailShell,
+  leafUmbrella,
+  guitar,
+  dragonflyWings,
+  // Temporada Florada
+  sprout,
+  mushroomCap,
+  daisyGlasses,
+  petalCollar,
+  kite,
+  // Só em baú
+  frogHat,
+  ufo,
+  cyberVisor,
+  scarabAmulet,
+  angelWings,
 };
 
 /**

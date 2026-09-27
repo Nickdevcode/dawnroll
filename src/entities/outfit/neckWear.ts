@@ -13,30 +13,30 @@ import type { AccessoryModel, OutfitPose } from './types';
  * Origem = centro da cabeça.
  */
 
-const COLLAR = {
+export const COLLAR = {
   center: new THREE.Vector3(0, 0.03, 0.05),
   rx: 0.268,
   ry: 0.2,
   /** Inclinação: o topo vai pra trás, a frente desce pro queixo. */
   tilt: -0.8,
 };
-const TILT = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), COLLAR.tilt);
+export const TILT = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), COLLAR.tilt);
 
 /** Ponto da gola no ângulo `a` (0 = lado direito, PI/2 = topo, -PI/2 = queixo), com folga `grow`. */
-function collarPoint(a: number, grow = 0): THREE.Vector3 {
+export function collarPoint(a: number, grow = 0): THREE.Vector3 {
   return new THREE.Vector3(Math.cos(a) * (COLLAR.rx + grow), Math.sin(a) * (COLLAR.ry + grow), 0).applyQuaternion(TILT).add(COLLAR.center);
 }
 
 /** Direção "pra fora" da gola no ângulo `a` (do centro dela pro ponto). */
-function collarOut(a: number): THREE.Vector3 {
+export function collarOut(a: number): THREE.Vector3 {
   return collarPoint(a).sub(COLLAR.center).normalize();
 }
 
 /** Onde as coisas penduradas nascem: a frente da gola, embaixo do sorriso. */
-const CHIN_ANGLE = -Math.PI / 2;
+export const CHIN_ANGLE = -Math.PI / 2;
 
 /** Tubo fechado seguindo a gola (raio `tube`); `flatten` achata numa fita (0 = redondo). */
-function collarTube(tube: number, flatten = 0, segments = 72): THREE.BufferGeometry {
+export function collarTube(tube: number, flatten = 0, segments = 72): THREE.BufferGeometry {
   const points: THREE.Vector3[] = [];
   for (let i = 0; i < segments; i++) points.push(collarPoint((i / segments) * Math.PI * 2));
   const curve = new THREE.CatmullRomCurve3(points, true);

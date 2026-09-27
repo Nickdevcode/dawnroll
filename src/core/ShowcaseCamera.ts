@@ -35,6 +35,10 @@ export const SHOWCASE_FRAMES = {
   face: { yaw: 16, up: 0.3, distance: 1.2, targetY: 0.47, targetZ: 0.45 },
   neck: { yaw: 22, up: 0.22, distance: 1.3, targetY: 0.4, targetZ: 0.42 },
   back: { yaw: 150, up: 0.62, distance: 2.1, targetY: 0.45, targetZ: -0.12 },
+  /** Cerimônia do baú: o "besouro" aqui é o ponto do baú (a câmera olha a frente dele, com o besouro do lado). */
+  chest: { yaw: -14, up: 0.85, distance: 1.6, targetY: 0.3, targetZ: 0 },
+  /** O visual novo girando em cima do baú aberto: a câmera sobe junto. */
+  chestItem: { yaw: -10, up: 0.5, distance: 1.7, targetY: 0.72, targetZ: 0 },
 } satisfies Record<string, ShowcaseFrame>;
 
 export type ShowcaseFrameName = keyof typeof SHOWCASE_FRAMES;
@@ -53,6 +57,8 @@ export class ShowcaseCamera {
   collision: CameraCollision | null = null;
   /** A bola de bosta (esfera com o que está grudado nela), ou null. */
   ball: CameraBall | null = null;
+  /** Outras esferas que a lente evita (o besouro, quando quem está no centro é o baú). */
+  obstacles: readonly CameraBall[] = [];
 
   private weight = 0;
   private readonly frame: ShowcaseFrame = { ...SHOWCASE_FRAMES.skins };
@@ -86,9 +92,10 @@ export class ShowcaseCamera {
     this.spinTarget += dx * 0.45;
   }
 
-  /** Volta pro ângulo da aba (ao abrir o guarda-roupa de novo). */
+  /** Volta pro ângulo da aba (ao abrir o guarda-roupa de novo, ao trocar o que ela rodeia). */
   resetSpin(): void {
     this.spin = this.spinTarget = 0;
+    this.dodge = this.dodgeTarget = 0;
     this.dodgeTimer = 0;
   }
 
@@ -102,20 +109,29 @@ export class ShowcaseCamera {
     if (solid !== null) free = Math.min(free, solid - MARGIN);
     const soft = this.collision?.castSoft(from, dir, max + MARGIN) ?? null;
     if (soft !== null) free = Math.min(free, soft - MARGIN);
-    const ball = this.ball;
-    if (ball && ball.radius > 0) {
-      // Esfera da bola com folga pro que está grudado (graveto, folha...).
-      const r = ball.radius * 1.35 + 0.2;
-      const mx = from.x - ball.center.x;
-      const my = from.y - ball.center.y;
-      const mz = from.z - ball.center.z;
-      const b = mx * dir.x + my * dir.y + mz * dir.z;
-      const c = mx * mx + my * my + mz * mz - r * r;
-      const disc = b * b - c;
-      if (c > 0 && b < 0 && disc > 0) free = Math.min(free, -b - Math.sqrt(disc) - MARGIN);
-      else if (c <= 0) free = 0;
-    }
+    if (this.ball) free = Math.min(free, this.sphereRoom(from, dir, this.ball, this.ball.radius * 1.35 + 0.2));
+    for (const sphere of this.obstacles) free = Math.min(free, this.sphereRoom(from, dir, sphere, sphere.radius));
     return Math.max(free, 0);
+  }
+
+  /**
+   * Quanto dá pra andar de `from` na direção `dir` até encostar na esfera (com
+   * folga `padded`). Se o alvo já está dentro da folga (besouro colado na bola),
+   * vale só a esfera de verdade: com a folga, toda direção dava "sem espaço" e a
+   * câmera grudava no besouro.
+   */
+  private sphereRoom(from: THREE.Vector3, dir: THREE.Vector3, sphere: CameraBall, padded: number): number {
+    if (sphere.radius <= 0) return Infinity;
+    const mx = from.x - sphere.center.x;
+    const my = from.y - sphere.center.y;
+    const mz = from.z - sphere.center.z;
+    const b = mx * dir.x + my * dir.y + mz * dir.z;
+    const m2 = mx * mx + my * my + mz * mz;
+    const r = m2 <= padded * padded ? sphere.radius * 1.03 : padded;
+    const c = m2 - r * r;
+    const disc = b * b - c;
+    if (c > 0 && b < 0 && disc > 0) return -b - Math.sqrt(disc) - MARGIN;
+    return c <= 0 ? 0 : Infinity;
   }
 
   /** Direção (mundo) do alvo pra câmera num ângulo `yawDeg` do enquadramento atual. */

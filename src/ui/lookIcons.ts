@@ -1,6 +1,8 @@
 import type { AccessoryId, AccessorySlot } from '../progression/accessories';
 import type { Look } from '../progression/looks';
 import { DEFAULT_CLUB, skin, type SkinDef } from '../progression/skins';
+import { EYE, INK, dots, filled, flower, heartPath, lightness, line, mirrored, r2, shine, starPath, stroke } from './iconKit';
+import { EconomyAccessoryIcons } from './lookIconsEconomy';
 
 /**
  * Ícones do guarda-roupa: o besourinho de cada casco (com o desenho do casco e,
@@ -8,56 +10,6 @@ import { DEFAULT_CLUB, skin, type SkinDef } from '../progression/skins';
  * das figurinhas do catálogo (`gameIcons.ts`): 24×24, contorno fino de tinta,
  * realce claro, cores chapadas.
  */
-
-const INK = 'rgba(58,42,34,0.55)';
-const EYE = '#2b2230';
-const CREASE = 'rgba(58,42,34,0.32)';
-
-const filled = (paths: string, extraClass = '') =>
-  `<svg viewBox="0 0 24 24" aria-hidden="true"${extraClass ? ` class="${extraClass}"` : ''} stroke="${INK}" stroke-width="1.1" stroke-linejoin="round" stroke-linecap="round">${paths}</svg>`;
-
-const stroke = (paths: string, width = 2.2) =>
-  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${width}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`;
-
-const r2 = (value: number) => Math.round(value * 100) / 100;
-
-/** Claridade (0..1) de uma cor #rrggbb: a média do canal mais forte com o mais fraco. */
-const lightness = (hex: string) => {
-  const n = parseInt(hex.slice(1), 16);
-  const c = [(n >> 16) & 255, (n >> 8) & 255, n & 255];
-  return (Math.max(...c) + Math.min(...c)) / 510;
-};
-
-const line = (d: string, color = CREASE, width = 1.1) => `<path d="${d}" fill="none" stroke="${color}" stroke-width="${width}"/>`;
-
-const dots = (points: ReadonlyArray<readonly [number, number]>, r: number, fill: string) =>
-  points.map(([x, y]) => `<circle cx="${r2(x)}" cy="${r2(y)}" r="${r}" fill="${fill}" stroke="none"/>`).join('');
-
-const shine = (cx: number, cy: number, rx: number, ry: number, angle = 0, alpha = 0.45) =>
-  `<ellipse cx="${cx}" cy="${cy}" rx="${rx}" ry="${ry}" fill="rgba(255,255,255,${alpha})" stroke="none"${angle ? ` transform="rotate(${angle} ${cx} ${cy})"` : ''}/>`;
-
-const mirrored = (paths: string, cx = 12) => `${paths}<g transform="matrix(-1 0 0 1 ${cx * 2} 0)">${paths}</g>`;
-
-/** Estrela de `count` pontas como caminho. */
-const starPath = (count: number, outer: number, inner: number, cx: number, cy: number, turn = -Math.PI / 2) =>
-  Array.from({ length: count * 2 }, (_, i) => {
-    const angle = turn + (i / (count * 2)) * Math.PI * 2;
-    const radius = i % 2 === 0 ? outer : inner;
-    return `${i === 0 ? 'M' : 'L'}${r2(cx + Math.cos(angle) * radius)} ${r2(cy + Math.sin(angle) * radius)}`;
-  }).join('') + 'z';
-
-/** Coração (ponta pra baixo) centrado em (cx, cy), com `w` de largura. */
-const heartPath = (cx: number, cy: number, w: number) => {
-  const s = w / 2;
-  return `M${r2(cx)} ${r2(cy + s * 0.9)}C${r2(cx - s * 0.4)} ${r2(cy + s * 0.55)} ${r2(cx - s)} ${r2(cy + s * 0.15)} ${r2(cx - s)} ${r2(cy - s * 0.3)}C${r2(cx - s)} ${r2(cy - s * 0.85)} ${r2(cx - s * 0.3)} ${r2(cy - s)} ${r2(cx)} ${r2(cy - s * 0.5)}C${r2(cx + s * 0.3)} ${r2(cy - s)} ${r2(cx + s)} ${r2(cy - s * 0.85)} ${r2(cx + s)} ${r2(cy - s * 0.3)}C${r2(cx + s)} ${r2(cy + s * 0.15)} ${r2(cx + s * 0.4)} ${r2(cy + s * 0.55)} ${r2(cx)} ${r2(cy + s * 0.9)}z`;
-};
-
-/** Florzinha de 5 pétalas (colar, coroa, chapéu de palha). */
-const flower = (cx: number, cy: number, r: number, petal: string, center: string) =>
-  Array.from({ length: 5 }, (_, i) => {
-    const a = (i / 5) * Math.PI * 2 - Math.PI / 2;
-    return `<circle cx="${r2(cx + Math.cos(a) * r * 0.62)}" cy="${r2(cy + Math.sin(a) * r * 0.62)}" r="${r2(r * 0.5)}" fill="${petal}"/>`;
-  }).join('') + `<circle cx="${cx}" cy="${cy}" r="${r2(r * 0.38)}" fill="${center}"/>`;
 
 // --- cascos ------------------------------------------------------------------------
 
@@ -174,6 +126,123 @@ function skinPattern(def: SkinDef, id: string): { elytra: string; pronotum: stri
         ...none,
         elytra: onE(`<rect x="2" y="9" width="3" height="15" fill="rgba(255,255,255,.55)" transform="rotate(20 12 16)" class="look-anim-sweep"/>`),
       };
+    case 'denim':
+      return {
+        ...none,
+        elytra: onE(
+          `<path d="M4 15l6-6M4 19l10-10M6 22l12-12M10 22l9-9M14 22l6-6" stroke="${b}" stroke-width=".5" opacity=".6"/><path d="M10.9 11v10.4M13.1 11v10.4" stroke="${a}" stroke-width=".7" stroke-dasharray="1 .7"/>`,
+        ),
+      };
+    case 'cow':
+      return {
+        ...none,
+        elytra: onE(`<path d="M6 13.2c1.6-1.4 3.8-.6 3.6 1.2-.2 1.6-2.6 2.2-3.6 1z" fill="${a}"/><ellipse cx="15.2" cy="16.4" rx="2.2" ry="1.7" fill="${a}" transform="rotate(-20 15.2 16.4)"/><ellipse cx="10.4" cy="19.6" rx="1.6" ry="1.1" fill="${a}"/><ellipse cx="15.8" cy="12.2" rx="1" ry=".8" fill="${a}"/>`),
+        pronotum: onP(`<ellipse cx="14" cy="8.8" rx="1.8" ry="1.2" fill="${a}"/>`),
+      };
+    case 'swirl':
+      return {
+        ...none,
+        elytra: onE(`<path d="M4 15l7-5M4 19.4l11-8M6 23l13-9.4M11 23l9-6.6" stroke="${a}" stroke-width="1.5"/><path d="M4 17.2l9-6.4M5 21.4l12-8.6" stroke="${b}" stroke-width=".6"/>`),
+        pronotum: onP(`<path d="M6 10.4l6-4.4M9 12l8-5.8" stroke="${a}" stroke-width="1.4"/>`),
+      };
+    case 'sprinkles': {
+      const sprinkle = (x: number, y: number, angle: number, fill: string) =>
+        `<rect x="${x - 0.9}" y="${y - 0.3}" width="1.8" height=".6" rx=".3" fill="${fill}" transform="rotate(${angle} ${x} ${y})"/>`;
+      return {
+        ...none,
+        elytra: onE(
+          sprinkle(8.4, 13, 30, a) + sprinkle(11.4, 12.2, -40, b) + sprinkle(15, 13.4, 70, c) + sprinkle(9.4, 16.4, -10, c) + sprinkle(13.4, 16, 45, a) +
+            sprinkle(16, 17.4, -60, b) + sprinkle(10.6, 19.4, 80, b) + sprinkle(13.6, 20, -25, a),
+        ),
+        pronotum: onP(sprinkle(9.6, 9, 20, b) + sprinkle(12.6, 8.2, -50, a) + sprinkle(14.6, 10, 60, c)),
+      };
+    }
+    case 'koi':
+      return {
+        ...none,
+        elytra: onE(
+          `<path d="M5 12.4c2.4-.6 4.6.6 4.8 2.6.2 1.8-2.4 2.8-4.8 2z" fill="${a}"/><ellipse cx="15" cy="17.6" rx="2.6" ry="2" fill="${a}"/><ellipse cx="14.2" cy="12.8" rx="1.3" ry="1" fill="${b}"/><ellipse cx="9.6" cy="20" rx="1.2" ry=".9" fill="${b}"/>` +
+            `<path d="M7 16.2a1.2 1.2 0 0 1 2.4 0M9.4 16.2a1.2 1.2 0 0 1 2.4 0M11.8 14.4a1.2 1.2 0 0 1 2.4 0M8.2 18.6a1.2 1.2 0 0 1 2.4 0M12.2 19a1.2 1.2 0 0 1 2.4 0" fill="none" stroke="${c}" stroke-width=".5"/>`,
+        ),
+      };
+    case 'zebra':
+      return {
+        ...none,
+        elytra: onE(`<path d="M5 13c2 .4 3.4-.6 5-.2M5 15.8c2.6.2 3.4 1 6 .2M5 18.8c2 .8 3.6-.4 5.6.4M13 12.4c2 .6 3.8-.2 6 .4M12.6 15.4c2.4.8 3.6-.2 6.4.6M13 18.8c2.2.2 3.2 1 6 .2M8 21.6c2 .2 5-.4 8 0" fill="none" stroke="${a}" stroke-width="1.2"/>`),
+        pronotum: onP(`<path d="M6.6 8.6c2 .6 3.6-.2 5.4.2M12.2 7.6c1.6.6 3.4.2 5 .6M7.4 11c1.8-.4 3.6.4 5.2 0" fill="none" stroke="${a}" stroke-width="1.1"/>`),
+      };
+    case 'neon':
+      return {
+        ...none,
+        elytra: onE(`<g class="look-anim-pulse"><path d="M5 13.4h14M5 16.6h14M5 19.8h14M8.6 10v12M12 10v12M15.4 10v12" stroke="${a}" stroke-width=".55"/></g><path d="M5 15h14" stroke="${b}" stroke-width="1" class="look-anim-sweep"/>`),
+        pronotum: onP(`<path d="M6 9h12M9 6v6M15 6v6" stroke="${b}" stroke-width=".55" class="look-anim-pulse"/>`),
+      };
+    case 'storm':
+      return {
+        ...none,
+        elytra: onE(
+          `<ellipse cx="9" cy="13.4" rx="4" ry="2.4" fill="${b}" opacity=".7"/><ellipse cx="15" cy="15.6" rx="4.2" ry="2.6" fill="${c}" opacity=".8"/><ellipse cx="10.6" cy="19" rx="3.4" ry="2" fill="${b}" opacity=".55"/>` +
+            `<path d="M12.6 11.4 10.4 15.6h2l-1.6 4.8 4-5.6h-2.2l1.6-3.4z" fill="${a}" stroke="none" class="look-anim-pulse"/>`,
+        ),
+      };
+    case 'dew':
+      return {
+        ...none,
+        elytra: onE(
+          `<path d="M9 11v10M9 14l-3 2M9 17.4l-3 2M15 11v10M15 14l3 2M15 17.4l3 2" stroke="rgba(255,255,255,.25)" stroke-width=".6"/>` +
+            [[8.4, 13.4, 1.3], [15.6, 14.6, 1.6], [11, 18.2, 1.2], [14.6, 19.8, 0.9], [7.4, 18, 0.8]]
+              .map(([x, y, r]) => `<circle cx="${x}" cy="${y}" r="${r}" fill="${b}" opacity=".75"/><circle cx="${x - r * 0.35}" cy="${y - r * 0.35}" r="${r * 0.35}" fill="${a}"/>`)
+              .join(''),
+        ),
+        pronotum: onP(`<circle cx="13.6" cy="8.8" r="1.1" fill="${b}" opacity=".75"/><circle cx="13.2" cy="8.4" r=".4" fill="${a}"/>`),
+        animated: `<path class="look-anim-twinkle" d="${starPath(4, 1.8, 0.45, 15.2, 14)}" fill="${c}" stroke="none"/>`,
+      };
+    case 'honeycomb': {
+      const hex = (x: number, y: number) =>
+        `<path d="M${x} ${r2(y - 1.4)}l1.2.7v1.4l-1.2.7-1.2-.7v-1.4z" fill="${b}" fill-opacity=".45" stroke="${a}" stroke-width=".55"/>`;
+      return {
+        ...none,
+        elytra: onE([[7.8, 12.6], [10.2, 12.6], [12.6, 12.6], [15, 12.6], [17.4, 12.6], [9, 14.8], [11.4, 14.8], [13.8, 14.8], [16.2, 14.8], [7.8, 17], [10.2, 17], [12.6, 17], [15, 17], [9, 19.2], [11.4, 19.2], [13.8, 19.2], [16.2, 19.2], [10.2, 21.4], [12.6, 21.4]].map(([x, y]) => hex(x, y)).join('')),
+        pronotum: onP([[9, 8.6], [11.4, 8.6], [13.8, 8.6], [10.2, 10.8], [12.6, 10.8], [15, 10.8]].map(([x, y]) => hex(x, y)).join('')),
+      };
+    }
+    case 'petals': {
+      const petal = (x: number, y: number, angle: number, fill: string) => `<ellipse cx="${x}" cy="${y}" rx="1.3" ry=".7" fill="${fill}" transform="rotate(${angle} ${x} ${y})"/>`;
+      return {
+        ...none,
+        elytra: onE(`<g class="look-anim-shift">${petal(8.6, 13, 30, a) + petal(14.8, 14.2, -30, b) + petal(10.6, 17, 70, a) + petal(16, 18.6, 10, a) + petal(8.4, 19.8, -50, b) + petal(12.8, 20.6, 40, a)}</g>`),
+        pronotum: onP(petal(10.4, 9, -20, a) + petal(14, 8.4, 40, b)),
+      };
+    }
+    case 'sunflower':
+      return {
+        ...none,
+        elytra: onE(`<g stroke="none">${Array.from({ length: 9 }, (_, i) => {
+          const angle = -60 + i * 15;
+          return `<ellipse cx="12" cy="16.8" rx=".95" ry="5.2" fill="${i % 2 ? a : def.elytra}" transform="rotate(${angle} 12 10.6)"/>`;
+        }).join('')}</g>`),
+        pronotum: onP(dots([[9.6, 8.6], [11.2, 7.8], [12.8, 7.8], [14.4, 8.6], [10.4, 10], [12, 9.4], [13.6, 10], [12, 11]], 0.55, b)),
+        animated: `<path class="look-anim-twinkle" d="${starPath(4, 1.9, 0.45, 16.4, 13.2)}" fill="${c}" stroke="none"/>`,
+      };
+    case 'stained':
+      return {
+        ...none,
+        elytra: onE(
+          `<path d="M5 10h7v5.4H5z" fill="${a}"/><path d="M12 10h7v3.6h-7z" fill="${b}"/><path d="M12 13.6h7v4.6l-7 1z" fill="${c}"/><path d="M5 15.4h7v3.8l-7 1.2z" fill="${c}"/><path d="M5 20.4l7-1.2v3.8H5zM12 19.2l7-1v4.8h-7z" fill="${b}"/>` +
+            `<path d="M5 15.4h7M12 13.6h7M5 20.4l14-2.4M12 10v13" stroke="${def.elytra}" stroke-width=".9" class="look-anim-pulse"/>`,
+        ),
+        pronotum: onP(`<path d="M6 6h6v6H6z" fill="${b}"/><path d="M12 6h6v6h-6z" fill="${a}"/><path d="M12 6v6" stroke="${def.elytra}" stroke-width=".8"/>`),
+      };
+    case 'opal':
+      return {
+        ...none,
+        elytra: onE(
+          `<g class="look-anim-hue">${[[8.4, 13, a], [14.6, 12.8, b], [11.4, 15.8, c], [16, 17, a], [8.8, 18.4, b], [13, 20, c]]
+            .map(([x, y, fill]) => `<ellipse cx="${x}" cy="${y}" rx="1.4" ry=".8" fill="${fill}" opacity=".7" transform="rotate(${Number(x) * 17} ${x} ${y})"/>`)
+            .join('')}</g>`,
+        ),
+        pronotum: onP(`<g class="look-anim-hue"><ellipse cx="10.6" cy="8.8" rx="1.2" ry=".7" fill="${b}" opacity=".6"/><ellipse cx="14" cy="9.4" rx="1" ry=".6" fill="${a}" opacity=".6"/></g>`),
+      };
   }
 }
 
@@ -211,7 +280,7 @@ export function skinIcon(def: SkinDef): string {
 const GOLD = '#f2c14e';
 const GOLD_DEEP = '#d9a232';
 
-export const AccessoryIcons: Record<AccessoryId, string> = {
+const BaseAccessoryIcons: Record<Exclude<AccessoryId, keyof typeof EconomyAccessoryIcons>, string> = {
   partyHat: filled(
     `<path d="M12 3.6 5.6 19.4h12.8z" fill="#ff6fa5"/>` +
       `<path d="M10.6 7.1l2.5.9.7 1.7-3.9-1.4zM8.6 12l5.4 1.9.8 2-6.9-2.4zM6.8 16.6l7.8 2.7H6z" fill="#ffd54a" stroke="none"/>` +
@@ -460,6 +529,9 @@ export const AccessoryIcons: Record<AccessoryId, string> = {
       shine(14.6, 8, 0.5, 1.8, 0, 0.6),
   ),
 };
+
+/** Figurinha de cada acessório (os de conquista/nível aqui; os da economia em `lookIconsEconomy.ts`). */
+export const AccessoryIcons: Record<AccessoryId, string> = { ...BaseAccessoryIcons, ...EconomyAccessoryIcons };
 
 /** Ícone de "nada" (lugar vazio): o contorno do lugar, tracejado. */
 export const EmptySlotIcon = stroke('<circle cx="12" cy="12" r="7.5" stroke-dasharray="3 3"/><path d="M8.5 15.5l7-7"/>', 1.8);
