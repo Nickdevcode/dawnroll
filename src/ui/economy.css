@@ -763,6 +763,9 @@
   justify-content: center;
   padding: var(--space-5) var(--space-4) max(var(--space-5), env(safe-area-inset-bottom));
   cursor: pointer;
+  /* Mora no #ui (pointer-events: none) e cobre a tela toda: sem isso o mouse atravessa
+     os botões e o "tocar pra abrir" direto pro canvas (pelo controle funcionava). */
+  pointer-events: auto;
 }
 .chest-overlay[hidden] {
   display: none;
