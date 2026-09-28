@@ -52,6 +52,11 @@ export class ChestOverlay {
   private result: ChestResult | null = null;
   private worn = false;
   private counting = 0;
+  /**
+   * Os números do próximo desenho saem do zero (vão subir contando). Fora da
+   * primeira vez (troca de idioma, por exemplo) já saem no valor final.
+   */
+  private countFromZero = false;
 
   constructor(parent: HTMLElement) {
     this.element = document.createElement('div');
@@ -140,6 +145,7 @@ export class ChestOverlay {
     this.mode = 'reveal';
     this.reward = reward;
     this.left = left;
+    this.countFromZero = true;
     this.render();
     this.countUp();
     this.focusPrimary();
@@ -152,6 +158,7 @@ export class ChestOverlay {
     this.remaining = remaining;
     this.reward = null;
     this.worn = false;
+    this.countFromZero = true;
     this.render();
     this.countUp();
     const focus = this.bottom.querySelector<HTMLElement>('[data-chest-action="wear"]') ?? this.actionButton();
@@ -199,12 +206,26 @@ export class ChestOverlay {
     else if (action === 'advance') this.onAdvance?.();
     else if (action === 'next') this.onNext?.();
     else if (action === 'close') this.onClose?.();
-    else if (action === 'wear' && this.result?.look) {
+    else if (action === 'wear' && this.result?.look && !this.worn) {
       this.worn = true;
       this.onWear?.(lookFromKey(this.result.look));
-      this.render();
+      // Só o botão vira o selo "Vestindo": redesenhar o cartão inteiro repetiria a
+      // entrada dele e zeraria os números.
+      this.bottom.querySelector('[data-chest-action="wear"]')?.replaceWith(this.wornBadge());
       this.actionButton()?.focus({ preventScroll: true });
     }
+  }
+
+  private wornBadge(): HTMLElement {
+    const badge = document.createElement('span');
+    badge.className = 'chest-item__worn';
+    badge.textContent = t('wardrobe.wearing');
+    return badge;
+  }
+
+  /** Número que conta subindo (`countUp`): sai do zero só quando vai contar. */
+  private countMarkup(amount: number): string {
+    return `<strong data-count="${amount}" aria-hidden="true">+${formatInteger(this.countFromZero ? 0 : amount)}</strong>`;
   }
 
   private focusPrimary(): void {
@@ -218,6 +239,8 @@ export class ChestOverlay {
 
   private render(): void {
     if (this.mode === 'hidden') return;
+    // Redesenho no meio da contagem: os números novos já saem no valor final.
+    cancelAnimationFrame(this.counting);
     this.element.dataset.rarity = this.rarity;
     this.element.dataset.mode = this.mode;
     this.title.innerHTML = /* html */ `
@@ -262,7 +285,7 @@ export class ChestOverlay {
       const unit = t(reward.kind === 'coins' ? 'money.coinsLabel' : 'money.dewLabel');
       return /* html */ `
         <div class="reward-label is-${reward.kind}">
-          <span class="reward-label__amount"><span class="reward-label__icon" aria-hidden="true">${icon}</span><strong data-count="${reward.amount}" aria-hidden="true">+0</strong></span>
+          <span class="reward-label__amount"><span class="reward-label__icon" aria-hidden="true">${icon}</span>${this.countMarkup(reward.amount)}</span>
           <span class="reward-label__unit" aria-hidden="true">${escapeHtml(unit)}</span>
           <span class="sr-only">${escapeHtml(amountText(reward.kind, reward.amount))}</span>
         </div>`;
@@ -283,10 +306,10 @@ export class ChestOverlay {
 
   private summaryCard(result: ChestResult): string {
     const rows: string[] = [
-      `<li class="chest-reward is-coins"><span aria-hidden="true">${CurrencyIcons.coins}</span><strong data-count="${result.coins}" aria-hidden="true">+0</strong><span class="sr-only">${escapeHtml(amountText('coins', result.coins))}</span><span aria-hidden="true">${escapeHtml(t('money.coinsLabel'))}</span></li>`,
+      `<li class="chest-reward is-coins"><span aria-hidden="true">${CurrencyIcons.coins}</span>${this.countMarkup(result.coins)}<span class="sr-only">${escapeHtml(amountText('coins', result.coins))}</span><span aria-hidden="true">${escapeHtml(t('money.coinsLabel'))}</span></li>`,
     ];
     if (result.dew > 0) {
-      rows.push(`<li class="chest-reward is-dew"><span aria-hidden="true">${CurrencyIcons.dew}</span><strong data-count="${result.dew}" aria-hidden="true">+0</strong><span class="sr-only">${escapeHtml(amountText('dew', result.dew))}</span><span aria-hidden="true">${escapeHtml(t('money.dewLabel'))}</span></li>`);
+      rows.push(`<li class="chest-reward is-dew"><span aria-hidden="true">${CurrencyIcons.dew}</span>${this.countMarkup(result.dew)}<span class="sr-only">${escapeHtml(amountText('dew', result.dew))}</span><span aria-hidden="true">${escapeHtml(t('money.dewLabel'))}</span></li>`);
     }
     let item = '';
     if (result.look) {
@@ -300,7 +323,7 @@ export class ChestOverlay {
             <strong>${escapeHtml(lookName(look))}</strong>
             <span class="rarity-chip is-${rarity}">${escapeHtml(rarityName(rarity))}</span>
           </span>
-          ${this.worn ? `<span class="chest-item__worn">${escapeHtml(t('wardrobe.wearing'))}</span>` : `<button class="chest-stage__primary is-small" type="button" data-chest-action="wear">${escapeHtml(t('shop.wear'))}</button>`}
+          ${this.worn ? this.wornBadge().outerHTML : `<button class="chest-stage__primary is-small" type="button" data-chest-action="wear">${escapeHtml(t('shop.wear'))}</button>`}
         </div>`;
     }
     const next =
@@ -322,6 +345,7 @@ export class ChestOverlay {
   /** Os números sobem de 0 até o prêmio (meio segundo e pouco). */
   private countUp(): void {
     cancelAnimationFrame(this.counting);
+    this.countFromZero = false;
     const targets = [...this.element.querySelectorAll<HTMLElement>('[data-count]')];
     if (targets.length === 0) return;
     const start = performance.now();

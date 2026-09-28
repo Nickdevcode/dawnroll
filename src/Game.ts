@@ -1703,9 +1703,16 @@ export class Game {
     chest.skip = false;
     this.chestStage.open(result, chest.rewards);
     this.chestOverlay.showOpening();
-    // Casco novo: o besouro já veste (provando) pra mostrar do lado do baú.
-    if (result.look?.startsWith('skin:')) this.setLookPreview({ kind: 'skin', id: result.look.slice(5) as SkinId });
     this.chestFirstTimer = CHEST_CHARGE_TIME + CHEST_FIRST_REWARD_DELAY;
+  }
+
+  /**
+   * Casco novo: o besouro prova do lado do baú. Só quando o prêmio aparece (ou
+   * no resumo, se pulou): vestir antes entregava o suspense.
+   */
+  private previewChestSkin(): void {
+    const look = this.chest?.result?.look;
+    if (look?.startsWith('skin:')) this.setLookPreview({ kind: 'skin', id: look.slice(5) as SkinId });
   }
 
   /** Tira o prêmio `index` do baú; a legenda entra quando ele aparece (depois do suspense, nos raros). */
@@ -1743,6 +1750,7 @@ export class Game {
     this.chestLabelTimer = 0;
     this.chestStage.showSummary();
     this.chestOverlay.showSummary(chest.result, this.progression.chests.length);
+    this.previewChestSkin();
   }
 
   private resetChestTimers(): void {
@@ -1895,6 +1903,7 @@ export class Game {
       case 'reveal':
         this.audio.itemReveal();
         this.effects.sparkle(at, new THREE.Color('#ffe7a3'));
+        this.previewChestSkin();
         break;
     }
   }

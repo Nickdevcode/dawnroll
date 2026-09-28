@@ -53,6 +53,15 @@ const DODGES = [0, 25, -25, 50, -50, 75, -75, 105, -105, 140, -140, 180];
 const STEADY_DODGES = [0, 18, -18, 36, -36];
 /** De quanto em quanto tempo procura de novo um lado livre (s). */
 const DODGE_INTERVAL = 0.35;
+/** Balanço automático de um lado pro outro (graus, e a velocidade dele). */
+const SWAY_DEGREES = 14;
+const SWAY_SPEED = 0.35;
+/**
+ * Pontos do balanço conferidos em cada desvio: o lado só serve se estiver livre
+ * no balanço inteiro. Conferindo só o meio, a bola colada no besouro entrava na
+ * frente quando a câmera balançava pra lá e ela pulava pra um close enorme.
+ */
+const SWAY_PROBES = [0, -0.5, 0.5, -1, 1];
 
 export class ShowcaseCamera {
   /** Pedido de estar no provador (o peso vai até 1 ou volta pra 0 suave). */
@@ -189,7 +198,11 @@ export class ShowcaseCamera {
       let best = this.dodgeTarget;
       let bestFree = -1;
       for (const offset of this.steady ? STEADY_DODGES : DODGES) {
-        const room = this.clearance(this.aim, this.directionAt(root, base + offset, this.probeDir), want);
+        let room = want;
+        for (const sway of this.steady ? [0] : SWAY_PROBES) {
+          room = Math.min(room, this.clearance(this.aim, this.directionAt(root, base + offset + sway * SWAY_DEGREES, this.probeDir), want));
+          if (room < want * 0.9) break;
+        }
         if (room >= want * 0.9) {
           best = offset;
           bestFree = room;
@@ -203,7 +216,7 @@ export class ShowcaseCamera {
       this.dodgeTarget = best;
     }
     this.dodge = damp(this.dodge, this.dodgeTarget, 2.5, dt);
-    const sway = this.steady ? 0 : Math.sin(this.time * 0.35) * 14;
+    const sway = this.steady ? 0 : Math.sin(this.time * SWAY_SPEED) * SWAY_DEGREES;
     const yaw = THREE.MathUtils.degToRad(f.yaw + this.spin + this.dodge + sway);
     const offset = this.dir.set(Math.sin(yaw) * f.distance, f.up, f.targetZ + Math.cos(yaw) * f.distance);
     this.position.set(offset.x, f.targetY + offset.y, offset.z);
@@ -212,7 +225,10 @@ export class ShowcaseCamera {
     this.dir.subVectors(this.position, this.aim);
     let distance = this.dir.length() * squeeze;
     this.dir.normalize();
-    distance = Math.max(0.6, Math.min(distance, this.clearance(this.aim, this.dir, distance)));
+    const room = this.clearance(this.aim, this.dir, distance);
+    // Tapou de repente (troca de aba no meio do caminho, giro arrastando): procura outro lado já.
+    if (room < distance * 0.6) this.dodgeTimer = Math.min(this.dodgeTimer, 0.1);
+    distance = Math.max(0.6, Math.min(distance, room));
     this.position.copy(this.aim).addScaledVector(this.dir, distance);
     this.position.y = Math.max(this.position.y, terrainHeight(this.position.x, this.position.z) + 0.25);
 
