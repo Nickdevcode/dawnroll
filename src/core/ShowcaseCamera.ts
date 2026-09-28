@@ -35,10 +35,12 @@ export const SHOWCASE_FRAMES = {
   face: { yaw: 16, up: 0.3, distance: 1.2, targetY: 0.47, targetZ: 0.45 },
   neck: { yaw: 22, up: 0.22, distance: 1.3, targetY: 0.4, targetZ: 0.42 },
   back: { yaw: 150, up: 0.62, distance: 2.1, targetY: 0.45, targetZ: -0.12 },
-  /** Cerimônia do baú: o "besouro" aqui é o ponto do baú (a câmera olha a frente dele, com o besouro do lado). */
-  chest: { yaw: -14, up: 0.85, distance: 1.6, targetY: 0.3, targetZ: 0 },
-  /** O visual novo girando em cima do baú aberto: a câmera sobe junto. */
-  chestItem: { yaw: -10, up: 0.5, distance: 1.7, targetY: 0.72, targetZ: 0 },
+  /**
+   * Cerimônia do baú: o "besouro" aqui é o ponto do baú. A câmera olha a
+   * frente dele um pouco de cima, mirando entre o baú e o lugar onde os
+   * prêmios param no ar (os dois cabem no palco).
+   */
+  chest: { yaw: -10, up: 0.14, distance: 1.3, targetY: 0.62, targetZ: 0.04 },
 } satisfies Record<string, ShowcaseFrame>;
 
 export type ShowcaseFrameName = keyof typeof SHOWCASE_FRAMES;
@@ -47,6 +49,8 @@ export type ShowcaseFrameName = keyof typeof SHOWCASE_FRAMES;
 const MARGIN = 0.15;
 /** Desvios (graus) tentados, em ordem, quando o ângulo da aba está tapado. */
 const DODGES = [0, 25, -25, 50, -50, 75, -75, 105, -105, 140, -140, 180];
+/** Na câmera firme (cerimônia do baú) o desvio é pouco: ela nunca vai parar de lado ou atrás. */
+const STEADY_DODGES = [0, 18, -18, 36, -36];
 /** De quanto em quanto tempo procura de novo um lado livre (s). */
 const DODGE_INTERVAL = 0.35;
 
@@ -59,6 +63,11 @@ export class ShowcaseCamera {
   ball: CameraBall | null = null;
   /** Outras esferas que a lente evita (o besouro, quando quem está no centro é o baú). */
   obstacles: readonly CameraBall[] = [];
+  /**
+   * Câmera firme (cerimônia do baú): sem o balanço de um lado pro outro e com
+   * desvio curtinho — é uma cena montada, de frente pro palco.
+   */
+  steady = false;
 
   private weight = 0;
   private readonly frame: ShowcaseFrame = { ...SHOWCASE_FRAMES.skins };
@@ -179,7 +188,7 @@ export class ShowcaseCamera {
       const base = f.yaw + this.spin;
       let best = this.dodgeTarget;
       let bestFree = -1;
-      for (const offset of DODGES) {
+      for (const offset of this.steady ? STEADY_DODGES : DODGES) {
         const room = this.clearance(this.aim, this.directionAt(root, base + offset, this.probeDir), want);
         if (room >= want * 0.9) {
           best = offset;
@@ -194,7 +203,8 @@ export class ShowcaseCamera {
       this.dodgeTarget = best;
     }
     this.dodge = damp(this.dodge, this.dodgeTarget, 2.5, dt);
-    const yaw = THREE.MathUtils.degToRad(f.yaw + this.spin + this.dodge + Math.sin(this.time * 0.35) * 14);
+    const sway = this.steady ? 0 : Math.sin(this.time * 0.35) * 14;
+    const yaw = THREE.MathUtils.degToRad(f.yaw + this.spin + this.dodge + sway);
     const offset = this.dir.set(Math.sin(yaw) * f.distance, f.up, f.targetZ + Math.cos(yaw) * f.distance);
     this.position.set(offset.x, f.targetY + offset.y, offset.z);
     root.localToWorld(this.position);

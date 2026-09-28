@@ -96,6 +96,17 @@ export interface ChestResult {
   look: LookKey | null;
 }
 
+/** Um prêmio da cerimônia: o baú entrega um por vez. */
+export type ChestReward = { kind: 'coins'; amount: number } | { kind: 'dew'; amount: number } | { kind: 'look'; look: LookKey };
+
+/** A ordem em que o baú entrega: moedas, orvalho e, por último, o visual (o melhor fica pro fim). */
+export function chestRewards(result: ChestResult): ChestReward[] {
+  const rewards: ChestReward[] = [{ kind: 'coins', amount: result.coins }];
+  if (result.dew > 0) rewards.push({ kind: 'dew', amount: result.dew });
+  if (result.look) rewards.push({ kind: 'look', look: result.look });
+  return rewards;
+}
+
 /** Raridade do baú de cada nível: a cada 5 um de prata, a cada 10 um de cristal, a cada 25 o do Sol. */
 export function levelChestRarity(level: number): Rarity {
   if (level % 25 === 0) return 'legendary';

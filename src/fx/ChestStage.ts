@@ -1,70 +1,68 @@
 import * as THREE from 'three';
-import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { buildAccessory } from '../entities/outfit/registry';
 import type { AccessoryModel, OutfitPose } from '../entities/outfit/types';
 import { lathe, starShape, extrude } from '../entities/outfit/parts';
-import type { ChestResult } from '../progression/economy';
-import { lookFromKey } from '../progression/looks';
-import { skin, type SkinId } from '../progression/skins';
+import type { ChestResult, ChestReward } from '../progression/economy';
+import { lookFromKey, lookRarity } from '../progression/looks';
+import { skin } from '../progression/skins';
+import { BeetleModel, type BeetlePose } from '../entities/BeetleModel';
 import type { Rarity } from '../progression/unlocks';
 import { clay } from '../render/clayMaterial';
-import { claySphere, paintVertices } from '../render/geometry';
 import { clamp, damp } from '../utils/math';
-import { glowTexture, markAsLight, pulseRingMaterial } from './glow';
+import { buildChestModel, CHEST_D, CHEST_H, CHEST_STYLES, CHEST_W, type ChestModel } from './chestModels';
+import { glowTexture, markAsLight, pulseRingMaterial, raysTexture } from './glow';
 
 /**
- * O baú abrindo no jardim, em 3D: ele cai do céu do lado do besouro, quica,
- * fica chacoalhando esperando o toque; ao abrir a tampa estoura, sobe um facho
- * de luz da cor do baú, as moedas espirram e caem rolando em volta, as gotas de
- * orvalho sobem e ficam boiando e, quando vem visual, ele sai girando de dentro
- * com um brilho atrás.
+ * O baú abrindo no jardim, em 3D, no jeito do Clash Royale: ele cai do céu do
+ * lado do besouro, quica e fica chacoalhando esperando o toque; ao abrir a
+ * tampa estoura, sobe um facho de luz da cor do baú e as moedas espirram. Aí
+ * os prêmios saem UM POR VEZ da boca do baú e param no ar em cima dele, com
+ * raios de luz atrás: a moedona, a gota de orvalho e, por último, o visual. O
+ * visual épico ou lendário faz suspense antes (uma bola de luz que pulsa e
+ * cresce) e estoura num clarão. No fim, o resumo: o visual (ou a moedona) fica
+ * boiando em cima do baú aberto.
  *
  * Mora na cena do jogo (pega a luz, o contorno e o bloom de tudo), num grupo
  * que fica escondido fora da cerimônia. Quem manda é o `Game`: `present` (cai),
- * `open` (abre com o resultado já sorteado) e `dismiss` (some).
+ * `open` (abre com o resultado já sorteado), `showReward` (o próximo prêmio),
+ * `showSummary` e `dismiss` (some).
  */
 
-export type ChestStageEvent = 'land' | 'rattle' | 'burst' | 'coin' | 'dew' | 'reveal';
+/**
+ * Momentos do show: `burst` = a tampa estourou; `coin`/`dew` = moedona/gota
+ * saindo; `suspense` = o visual raro começou a carregar; `flash` = estourou o
+ * clarão do visual épico/lendário; `reveal` = o visual apareceu.
+ */
+export type ChestStageEvent = 'land' | 'rattle' | 'burst' | 'coin' | 'dew' | 'suspense' | 'flash' | 'reveal';
 
-type Phase = 'hidden' | 'drop' | 'idle' | 'charge' | 'open' | 'rest' | 'leave';
+type Phase = 'hidden' | 'drop' | 'idle' | 'charge' | 'open' | 'leave';
 
-interface ChestStyle {
-  body: string;
-  lid: string;
-  band: string;
-  trim: string;
-  glow: string;
-  gem?: string;
-}
-
-const STYLES: Record<Rarity, ChestStyle> = {
-  common: { body: '#9c5f31', lid: '#b0703a', band: '#6a3f22', trim: '#d9a441', glow: '#ffd27a' },
-  rare: { body: '#7f93ad', lid: '#a4b6cc', band: '#56657c', trim: '#f1f5fa', glow: '#bfe3ff' },
-  epic: { body: '#6a3fc4', lid: '#8a5fe0', band: '#3e2585', trim: '#e8dbff', glow: '#c89bff', gem: '#6ff0ff' },
-  legendary: { body: '#e8962a', lid: '#ffc44a', band: '#b8621a', trim: '#fff4c2', glow: '#ffd45a', gem: '#ff7a3d' },
-};
-
-/** Medidas do baú (o besouro tem ~0,8 de comprimento). */
-const W = 0.56;
-const D = 0.38;
-const H = 0.26;
+const W = CHEST_W;
+const D = CHEST_D;
+const H = CHEST_H;
 /** Altura de onde ele cai. */
 const DROP_HEIGHT = 1.8;
 const DROP_TIME = 0.55;
 const CHARGE_TIME = 0.42;
-/** Tempo do estouro até os prêmios estarem "no lugar" (o painel mostra depois disso). */
-export const CHEST_REVEAL_DELAY = 0.95;
+/** Do toque até a tampa estourar (a carga). */
+export const CHEST_CHARGE_TIME = CHARGE_TIME;
+/** Do estouro até o primeiro prêmio começar a sair. */
+export const CHEST_FIRST_REWARD_DELAY = 0.3;
 const MAX_COINS = 16;
 /** Tamanho (maior medida) do visual que sai do baú. */
-const ITEM_SIZE = 0.6;
-const MAX_DROPS = 8;
+const ITEM_SIZE = 0.72;
 const GRAVITY = 7;
-
-interface ChestModel {
-  root: THREE.Group;
-  lid: THREE.Group;
-  gem: THREE.Mesh | null;
-}
+/** Onde o prêmio para no ar (em cima do baú, um tiquinho pra frente). */
+const PRESENT = new THREE.Vector3(0, H + 0.66, 0.16);
+/** Subindo da boca do baú até o lugar / saindo pra dar vez ao próximo (s). */
+const ENTER_TIME = 0.5;
+const EXIT_TIME = 0.24;
+/** Suspense do visual (bola de luz carregando) por raridade (s). */
+const SUSPENSE: Record<Rarity, number> = { common: 0, rare: 0, epic: 0.9, legendary: 1.4 };
+/** Cor dos raios atrás do prêmio. */
+const RAY_COLORS: Record<Rarity, string> = { common: '#fff1d0', rare: '#9fd0ff', epic: '#c89bff', legendary: '#ffd45a' };
+const COIN_RAYS = '#ffcf5a';
+const DEW_RAYS = '#8fdcff';
 
 interface Coin {
   mesh: THREE.Mesh;
@@ -74,81 +72,19 @@ interface Coin {
   bounced: boolean;
 }
 
-interface Drop {
-  mesh: THREE.Mesh;
-  target: THREE.Vector3;
-  phase: number;
-  delay: number;
-}
-
-/** Tábuas de madeira pintadas nos vértices (linhas mais escuras entre elas). */
-function planks(geometry: THREE.BufferGeometry, color: string, rarity: Rarity): THREE.BufferGeometry {
-  const base = new THREE.Color(color);
-  const dark = base.clone().multiplyScalar(0.72);
-  return paintVertices(geometry, (p, _n, c) => {
-    if (rarity !== 'common') return c.copy(base).multiplyScalar(0.94 + 0.06 * Math.sin(p.x * 40 + p.y * 17));
-    const seam = Math.abs(Math.sin((p.y + 0.02) * Math.PI * 14)) < 0.12 ? 1 : 0;
-    return c.copy(base).lerp(dark, seam * 0.8).multiplyScalar(0.95 + 0.05 * Math.sin(p.x * 60));
-  });
-}
-
-function buildChest(rarity: Rarity): ChestModel {
-  const style = STYLES[rarity];
-  const root = new THREE.Group();
-  root.name = `chest-${rarity}`;
-  const shiny = rarity !== 'common';
-  const bodyMat = clay(0xffffff, { vertexColors: true, roughness: shiny ? 0.35 : 0.75, sheen: 0.5, bump: 0.25, mottle: 0.05, mottleScale: 18, clearcoat: shiny ? 0.6 : 0.1 });
-  const bandMat = clay(style.band, { roughness: 0.3, sheen: 0.3, bump: 0.08, clearcoat: 0.8, mottle: 0.03, mottleScale: 20 });
-  const trimMat = clay(style.trim, { roughness: 0.22, sheen: 0.25, bump: 0.04, clearcoat: 1, mottle: 0.02, mottleScale: 20 });
-
-  const body = new THREE.Mesh(planks(new RoundedBoxGeometry(W, H, D, 3, 0.035).translate(0, H / 2, 0), style.body, rarity), bodyMat);
-  root.add(body);
-  for (const x of [-0.19, 0.19]) {
-    root.add(new THREE.Mesh(new RoundedBoxGeometry(0.05, H + 0.012, D + 0.018, 2, 0.012).translate(x, H / 2, 0), bandMat));
-  }
-  // Borda de cima (onde a tampa fecha).
-  root.add(new THREE.Mesh(new RoundedBoxGeometry(W + 0.016, 0.03, D + 0.016, 2, 0.01).translate(0, H - 0.012, 0), trimMat));
-
-  // Tampa: meio cilindro deitado, com a dobradiça na borda de trás.
-  const lid = new THREE.Group();
-  lid.position.set(0, H, -D / 2);
-  const R = D / 2;
-  const dome = new THREE.CylinderGeometry(R, R, W, 28, 1, false, 0, Math.PI).rotateZ(Math.PI / 2).translate(0, 0, R);
-  lid.add(new THREE.Mesh(planks(dome, style.lid, rarity), bodyMat));
-  for (const x of [-0.19, 0.19]) {
-    lid.add(new THREE.Mesh(new THREE.CylinderGeometry(R + 0.008, R + 0.008, 0.05, 28, 1, false, 0, Math.PI).rotateZ(Math.PI / 2).translate(x, 0, R), bandMat));
-  }
-  // Fundo da tampa (o lado de dentro aparece com ela aberta; sem ele a cúpula oca some de costas).
-  const inner = clay(new THREE.Color(style.band).multiplyScalar(0.8), { roughness: 0.8, sheen: 0.3, bump: 0.2, mottle: 0.05, mottleScale: 18 });
-  lid.add(new THREE.Mesh(new RoundedBoxGeometry(W - 0.01, 0.024, D - 0.01, 2, 0.008).translate(0, 0.012, R), inner));
-  // Fecho na frente da tampa.
-  lid.add(new THREE.Mesh(new RoundedBoxGeometry(0.085, 0.1, 0.026, 2, 0.01).translate(0, -0.02, D + 0.006), trimMat));
-  lid.add(new THREE.Mesh(new THREE.CylinderGeometry(0.009, 0.009, 0.03, 8).rotateX(Math.PI / 2).translate(0, -0.03, D + 0.02), clay('#2a2230', { roughness: 0.5 })));
-  let gem: THREE.Mesh | null = null;
-  if (style.gem) {
-    gem = new THREE.Mesh(claySphere(0.028, 2, 0), new THREE.MeshBasicMaterial({ color: new THREE.Color(style.gem).multiplyScalar(2.2) }));
-    gem.position.set(0, R * 0.78, R + R * 0.62);
-    lid.add(gem);
-  }
-  if (rarity === 'legendary') {
-    // O solzinho do jogo gravado na tampa.
-    const sun = new THREE.Mesh(extrude(starShape(10, 0.07, 0.045), 0.012, 0.004), trimMat);
-    sun.position.set(0, R * 0.95, R);
-    sun.rotation.x = -Math.PI / 2;
-    lid.add(sun);
-  }
-  root.add(lid);
-  // Boca do baú: luz da cor dele lá dentro (só aparece com a tampa aberta).
-  const mouth = new THREE.Mesh(new THREE.PlaneGeometry(W - 0.07, D - 0.07).rotateX(-Math.PI / 2).translate(0, H + 0.004, 0), new THREE.MeshBasicMaterial({ color: new THREE.Color(style.glow).multiplyScalar(1.8) }));
-  root.add(mouth);
-  root.traverse((o) => {
-    const mesh = o as THREE.Mesh;
-    if (!mesh.isMesh) return;
-    const glowing = mesh.material instanceof THREE.MeshBasicMaterial;
-    mesh.castShadow = !glowing;
-    mesh.receiveShadow = !glowing;
-  });
-  return { root, lid, gem };
+/** Um prêmio em cena: entrando, parado no ar ou saindo. */
+interface Presented {
+  object: THREE.Object3D;
+  kind: ChestReward['kind'];
+  /** Relógio desde que começou a entrar (ou a sair). */
+  t: number;
+  leaving: boolean;
+  /** Segundos de suspense antes de aparecer (0 = aparece direto). */
+  suspense: number;
+  revealed: boolean;
+  rays: string;
+  /** Visual animado (hélice, asas...) que roda enquanto está em cena. */
+  model: AccessoryModel | null;
 }
 
 /** Facho de luz subindo do baú: cone aberto que some pra cima. */
@@ -164,9 +100,11 @@ function beamMaterial(): THREE.ShaderMaterial {
       uniform float uTime;
       varying vec2 vUv;
       void main() {
-        float up = pow(1.0 - vUv.y, 1.6);
+        // max(): pow de base negativa é NaN, e um NaN no alvo da cena se espalha pelo
+        // bloom e pelo desfoque até apagar a tela inteira.
+        float up = pow(max(1.0 - vUv.y, 0.0), 1.6);
         float rays = 0.65 + 0.35 * sin(vUv.x * 62.83 + uTime * 3.0);
-        gl_FragColor = vec4(uColor, up * rays * uFade * 0.55);
+        gl_FragColor = vec4(uColor, clamp(up * rays * uFade * 0.55, 0.0, 1.0));
       }`,
     transparent: true,
     depthWrite: false,
@@ -175,34 +113,56 @@ function beamMaterial(): THREE.ShaderMaterial {
   });
 }
 
-/** Casquinho do besouro de enfeite (prêmio de casco): élitros, pronoto e cabeça nas cores do casco. */
-function shellToken(id: SkinId): THREE.Group {
-  const def = skin(id);
+/** Moedona do prêmio de moedas: disco com a borda levantada e o solzinho em relevo dos dois lados. */
+function bigCoin(material: THREE.Material): THREE.Group {
   const group = new THREE.Group();
-  const opts = { roughness: def.roughness, sheen: 0.4, bump: 0.1, clearcoat: 0.8, mottle: 0.03, mottleScale: 20, iridescence: def.iridescence };
-  const elytra = clay(def.elytra, opts);
+  const disc = lathe(
+    [
+      [0.001, 0.011],
+      [0.1, 0.011],
+      [0.112, 0.02],
+      [0.128, 0.017],
+      [0.132, 0],
+      [0.128, -0.017],
+      [0.112, -0.02],
+      [0.1, -0.011],
+      [0.001, -0.011],
+    ],
+    40,
+    0,
+  ).rotateX(Math.PI / 2);
+  group.add(new THREE.Mesh(disc, material));
+  const sun = extrude(starShape(10, 0.066, 0.046), 0.008, 0.003);
   for (const side of [1, -1]) {
-    const half = new THREE.Mesh(claySphere(0.16, 4, 0.02, 2, side), elytra);
-    half.scale.set(0.62, 0.62, 1.1);
-    half.position.set(side * 0.085, 0, -0.05);
-    group.add(half);
+    const face = new THREE.Mesh(sun, material);
+    face.position.z = side * 0.013;
+    group.add(face);
   }
-  const pronotum = new THREE.Mesh(claySphere(0.13, 4, 0.02), clay(def.pronotum, opts));
-  pronotum.scale.set(1.05, 0.62, 0.72);
-  pronotum.position.set(0, 0.01, 0.15);
-  group.add(pronotum);
-  const head = new THREE.Mesh(claySphere(0.09, 3, 0.02), clay(def.head ?? def.pronotum, opts));
-  head.scale.set(1.2, 0.5, 0.8);
-  head.position.set(0, -0.01, 0.27);
-  group.add(head);
-  const accent = def.accents?.[0];
-  if (accent && def.glow) {
-    const spark = new THREE.Mesh(extrude(starShape(4, 0.05, 0.012), 0.004, 0.001), new THREE.MeshBasicMaterial({ color: new THREE.Color(accent).multiplyScalar(2.4) }));
-    spark.position.set(0.1, 0.12, 0);
-    group.add(spark);
-  }
+  // Do tamanho de um prêmio de verdade no palco (a moeda solta do chão é bem menor).
+  group.scale.setScalar(1.75);
   return group;
 }
+
+/** Gotona do prêmio de orvalho, com três gotinhas girando em volta. */
+function bigDrop(geometry: THREE.BufferGeometry, material: THREE.Material): { group: THREE.Group; orbit: THREE.Group } {
+  const group = new THREE.Group();
+  const drop = new THREE.Mesh(geometry, material);
+  drop.scale.setScalar(6);
+  drop.position.y = -0.02;
+  group.add(drop);
+  const orbit = new THREE.Group();
+  for (let i = 0; i < 3; i++) {
+    const a = (i / 3) * Math.PI * 2;
+    const small = new THREE.Mesh(geometry, material);
+    small.position.set(Math.cos(a) * 0.27, Math.sin(a * 2) * 0.05, Math.sin(a) * 0.27);
+    small.scale.setScalar(1.7);
+    orbit.add(small);
+  }
+  group.add(orbit);
+  return { group, orbit };
+}
+
+type LookKeyOf = Extract<ChestReward, { kind: 'look' }>['look'];
 
 export class ChestStage {
   readonly group = new THREE.Group();
@@ -210,8 +170,6 @@ export class ChestStage {
   compile: ((object: THREE.Object3D) => Promise<void>) | null = null;
   /** Momentos do show (o jogo toca o som e solta as partículas). A posição é no mundo. */
   onEvent: ((event: ChestStageEvent, at: THREE.Vector3, rarity: Rarity) => void) | null = null;
-  /** Onde a câmera mira (no mundo): o baú e, depois de aberto, o prêmio. */
-  readonly focus = new THREE.Vector3();
 
   private readonly models = new Map<Rarity, ChestModel>();
   private model: ChestModel | null = null;
@@ -224,7 +182,6 @@ export class ChestStage {
   private rattleTimer = 0;
   private readonly holder = new THREE.Group();
   private readonly coins: Coin[] = [];
-  private readonly drops: Drop[] = [];
   private readonly coinGeo = new THREE.CylinderGeometry(0.058, 0.058, 0.016, 24);
   private readonly coinMat = clay('#ffc94a', { roughness: 0.28, sheen: 0.3, bump: 0.04, clearcoat: 1, mottle: 0.03, mottleScale: 20 });
   private readonly dropGeo = lathe(
@@ -244,15 +201,37 @@ export class ChestStage {
   private readonly beamMat = beamMaterial();
   private readonly ring: THREE.Mesh;
   private readonly ringMat = pulseRingMaterial(new THREE.Color(1, 1, 1));
+  /** Brilho mole: atrás do prêmio (ou a própria bola de luz, no suspense). */
   private readonly halo: THREE.Sprite;
   private readonly haloMat: THREE.SpriteMaterial;
+  /** Raios girando atrás do prêmio. */
+  private readonly rays: THREE.Sprite;
+  private readonly raysMat: THREE.SpriteMaterial;
+  private readonly coinPresenter: THREE.Group;
+  private readonly dewPresenter: THREE.Group;
+  private readonly dewOrbit: THREE.Group;
+  /** Onde o visual do prêmio entra (centrado no giro). */
   private readonly itemSpinner = new THREE.Group();
   private item: THREE.Object3D | null = null;
   private itemModel: AccessoryModel | null = null;
-  private itemRise = 0;
+  /**
+   * Prêmio de casco: um besourinho de verdade vestindo o casco que saiu (o
+   * desenho do casco vem do shader dele). Montado na primeira vez e reaproveitado.
+   */
+  private mannequin: BeetleModel | null = null;
+  private readonly mannequinPose: BeetlePose = { speed: 0, grounded: true, pushBlend: 0, pushSpeed: 0, verticalSpeed: 0, strain: 0 };
+  private rewards: readonly ChestReward[] = [];
+  private current: Presented | null = null;
+  private outgoing: Presented | null = null;
   private readonly pose: OutfitPose = { time: 0, dt: 0, speed: 0, pushBlend: 0, airborne: 0, verticalSpeed: 0, headPitch: 0 };
   private readonly tmp = new THREE.Vector3();
+  private readonly tmp2 = new THREE.Vector3();
   private readonly cameraAt = new THREE.Vector3();
+  private readonly rayColor = new THREE.Color();
+  private pendingResult: ChestResult | null = null;
+  private warming = false;
+  /** Tilintar da moedona (três "plins" em sequência): segundos até cada um. */
+  private coinChimes: number[] = [];
 
   constructor() {
     this.group.name = 'chest-stage';
@@ -262,11 +241,25 @@ export class ChestStage {
     this.ring = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 1.6).rotateX(-Math.PI / 2).translate(0, 0.015, 0), this.ringMat);
     this.haloMat = new THREE.SpriteMaterial({ map: glowTexture(), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0 });
     this.halo = new THREE.Sprite(this.haloMat);
-    for (const light of [this.beam, this.ring, this.halo]) {
+    this.raysMat = new THREE.SpriteMaterial({ map: raysTexture(), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0 });
+    this.rays = new THREE.Sprite(this.raysMat);
+    for (const light of [this.beam, this.ring, this.rays, this.halo]) {
       markAsLight(light);
       this.group.add(light);
     }
-    this.group.add(this.itemSpinner);
+    // No suspense o brilho é a própria bola de luz, na frente do resto.
+    this.halo.renderOrder = 12;
+    this.coinPresenter = bigCoin(this.coinMat);
+    const dew = bigDrop(this.dropGeo, this.dropMat);
+    this.dewPresenter = dew.group;
+    this.dewOrbit = dew.orbit;
+    for (const presenter of [this.coinPresenter, this.dewPresenter, this.itemSpinner]) {
+      presenter.visible = false;
+      presenter.traverse((o) => {
+        if ((o as THREE.Mesh).isMesh) o.castShadow = true;
+      });
+      this.group.add(presenter);
+    }
     for (let i = 0; i < MAX_COINS; i++) {
       const mesh = new THREE.Mesh(this.coinGeo, this.coinMat);
       mesh.castShadow = true;
@@ -274,17 +267,6 @@ export class ChestStage {
       this.group.add(mesh);
       this.coins.push({ mesh, velocity: new THREE.Vector3(), spin: new THREE.Vector3(), resting: false, bounced: false });
     }
-    for (let i = 0; i < MAX_DROPS; i++) {
-      const mesh = new THREE.Mesh(this.dropGeo, this.dropMat);
-      mesh.visible = false;
-      this.group.add(mesh);
-      this.drops.push({ mesh, target: new THREE.Vector3(), phase: i * 1.7, delay: 0 });
-    }
-  }
-
-  /** Tem um visual saindo do baú agora (a câmera sobe pra mostrar). */
-  get showingItem(): boolean {
-    return this.item !== null && this.phase !== 'leave';
   }
 
   /** Está no meio de uma cerimônia (de cair até sumir)? */
@@ -295,6 +277,12 @@ export class ChestStage {
   /** Esperando o toque pra abrir (já caiu e parou). */
   get waiting(): boolean {
     return this.phase === 'idle';
+  }
+
+  /** O prêmio da vez já apareceu e quase parou (dá pra passar pro próximo sem atropelar). */
+  get rewardSettled(): boolean {
+    const c = this.current;
+    return c !== null && !c.leaving && c.revealed && c.t >= c.suspense + ENTER_TIME * 0.55;
   }
 
   /**
@@ -308,8 +296,9 @@ export class ChestStage {
     this.holder.add(model.root);
     this.group.position.set(0, -60, 0);
     this.group.visible = true;
+    const presenters = [this.coinPresenter, this.dewPresenter];
     for (const coin of this.coins) coin.mesh.visible = true;
-    for (const drop of this.drops) drop.mesh.visible = true;
+    for (const p of presenters) p.visible = true;
     try {
       await this.compile?.(this.group);
     } catch {
@@ -319,7 +308,7 @@ export class ChestStage {
     // Começou uma cerimônia enquanto compilava: ela já arrumou tudo.
     if (this.phase !== 'hidden') return;
     for (const coin of this.coins) coin.mesh.visible = false;
-    for (const drop of this.drops) drop.mesh.visible = false;
+    for (const p of presenters) p.visible = false;
     this.holder.remove(model.root);
     this.group.visible = false;
   }
@@ -336,24 +325,87 @@ export class ChestStage {
     this.group.rotation.set(0, yaw, 0);
     this.group.scale.setScalar(1);
     this.group.visible = true;
-    const glow = new THREE.Color(STYLES[rarity].glow);
+    const glow = new THREE.Color(CHEST_STYLES[rarity].glow);
     this.beamMat.uniforms.uColor.value.copy(glow).multiplyScalar(1.6);
     this.ringMat.uniforms.uColor.value.copy(glow).multiplyScalar(2);
-    this.haloMat.color.copy(glow).multiplyScalar(1.5);
     this.beamMat.uniforms.uFade.value = 0;
     this.ringMat.uniforms.uFade.value = 0;
-    this.haloMat.opacity = 0;
     this.squash = 0;
     this.squashVelocity = 0;
     this.setPhase('drop');
-    this.updateFocus();
   }
 
-  /** Toque: chacoalha, estoura a tampa e solta o que saiu (resultado já sorteado). */
-  open(result: ChestResult): void {
+  /** Toque: chacoalha e estoura a tampa (resultado já sorteado; os prêmios saem com `showReward`). */
+  open(result: ChestResult, rewards: readonly ChestReward[]): void {
     if (this.phase !== 'idle' && this.phase !== 'drop') return;
     this.pendingResult = result;
+    this.rewards = rewards;
     this.setPhase('charge');
+  }
+
+  /**
+   * Tira o prêmio `index` do baú (o anterior sai de cena). Devolve em quantos
+   * segundos ele fica à mostra (depois do suspense, nos raros), pra legenda
+   * entrar junto.
+   */
+  showReward(index: number): number {
+    const reward = this.rewards[index];
+    if (!reward) return 0;
+    this.retireCurrent();
+    let object: THREE.Object3D;
+    let suspense = 0;
+    let rays = COIN_RAYS;
+    let model: AccessoryModel | null = null;
+    if (reward.kind === 'coins') {
+      object = this.coinPresenter;
+      this.coinChimes = [0.05, 0.17, 0.3];
+    } else if (reward.kind === 'dew') {
+      object = this.dewPresenter;
+      rays = DEW_RAYS;
+      this.emit('dew', PRESENT.y, PRESENT.z);
+    } else {
+      const rarity = lookRarity(lookFromKey(reward.look));
+      model = this.mountItem(reward.look);
+      object = this.itemSpinner;
+      suspense = SUSPENSE[rarity];
+      rays = RAY_COLORS[rarity];
+      if (suspense > 0) this.emit('suspense', PRESENT.y, PRESENT.z);
+    }
+    object.visible = true;
+    object.position.set(0, H, 0);
+    object.scale.setScalar(0.001);
+    this.current = { object, kind: reward.kind, t: 0, leaving: false, suspense, revealed: suspense === 0, rays, model };
+    if (reward.kind === 'look' && suspense === 0) this.emit('reveal', PRESENT.y, PRESENT.z);
+    return suspense + ENTER_TIME * 0.6;
+  }
+
+  /**
+   * Fim da fila (ou pulou): o visual fica boiando em cima do baú aberto; sem
+   * visual, a moedona. Quem pulou quer ver na hora: o suspense acaba ali.
+   */
+  showSummary(): void {
+    const look = this.rewards.find((r): r is Extract<ChestReward, { kind: 'look' }> => r.kind === 'look');
+    const wanted: ChestReward['kind'] = look ? 'look' : 'coins';
+    const c = this.current;
+    if (c && c.kind === wanted && !c.leaving) {
+      if (!c.revealed) c.suspense = Math.min(c.suspense, c.t);
+      return;
+    }
+    this.retireCurrent();
+    let object: THREE.Object3D = this.coinPresenter;
+    let rays = COIN_RAYS;
+    let model: AccessoryModel | null = null;
+    if (look) {
+      // O visual pode estar saindo ainda (voltou pro resumo): tira da saída antes de montar de novo.
+      if (this.outgoing?.object === this.itemSpinner) this.finishOutgoing();
+      model = this.mountItem(look.look);
+      object = this.itemSpinner;
+      rays = RAY_COLORS[lookRarity(lookFromKey(look.look))];
+    } else if (this.outgoing?.object === this.coinPresenter) this.finishOutgoing();
+    object.visible = true;
+    object.position.set(0, H, 0);
+    object.scale.setScalar(0.001);
+    this.current = { object, kind: wanted, t: 0, leaving: false, suspense: 0, revealed: true, rays, model };
   }
 
   /** Some (fim da cerimônia ou próximo baú). */
@@ -369,7 +421,7 @@ export class ChestStage {
     this.phase = 'hidden';
   }
 
-  /** `camera` = posição da câmera no mundo (o brilho do prêmio fica atrás dele, visto de lá). */
+  /** `camera` = posição da câmera no mundo (o brilho e os raios ficam atrás do prêmio, vistos de lá). */
   update(dt: number, camera: THREE.Vector3): void {
     if (this.phase === 'hidden' || !this.model) return;
     this.cameraAt.copy(camera);
@@ -420,16 +472,13 @@ export class ChestStage {
         if (k >= 1) this.burst();
         break;
       }
-      case 'open':
-      case 'rest': {
+      case 'open': {
         const t = this.phaseTime;
         // Tampa: abre de uma vez com um repique, depois assenta aberta.
-        const open = -2.05 + Math.exp(-t * 7) * Math.cos(t * 18) * 0.5;
-        model.lid.rotation.x = open;
-        // O facho some antes do prêmio assentar (senão lava o visual que está saindo).
+        model.lid.rotation.x = -2.05 + Math.exp(-t * 7) * Math.cos(t * 18) * 0.5;
+        // O facho some antes do primeiro prêmio assentar (senão lava o que está saindo).
         this.beamMat.uniforms.uFade.value = Math.max(0, 1 - Math.max(0, t - 0.25) / 0.9) * Math.min(1, t * 6);
         this.ringMat.uniforms.uFade.value = damp(this.ringMat.uniforms.uFade.value, 0.45, 1.5, dt);
-        if (this.phase === 'open' && t > CHEST_REVEAL_DELAY) this.setPhase('rest');
         break;
       }
       case 'leave': {
@@ -441,17 +490,16 @@ export class ChestStage {
     }
     this.beamMat.uniforms.uTime.value = this.time;
     this.ringMat.uniforms.uTime.value = this.time;
-    if (model.gem) model.gem.scale.setScalar(0.85 + 0.25 * Math.sin(this.time * 3.2));
+    // Facho apagado não desenha (é só no estouro).
+    this.beam.visible = this.beamMat.uniforms.uFade.value > 0.002;
+    const pulse = 0.85 + 0.25 * Math.sin(this.time * 3.2);
+    if (model.gem) model.gem.scale.set(pulse, pulse, pulse * 0.55);
+    for (const glow of model.glows) glow.scale.set(pulse, pulse, pulse * 0.45);
     this.updateCoins(dt);
-    this.updateDrops(dt);
-    this.updateItem(dt);
-    this.updateFocus();
+    this.updatePresented(dt);
   }
 
   // ---------------------------------------------------------------------------
-
-  private pendingResult: ChestResult | null = null;
-  private warming = false;
 
   private burst(): void {
     const result = this.pendingResult;
@@ -471,21 +519,11 @@ export class ChestStage {
       coin.resting = false;
       coin.bounced = false;
     });
-    const dropCount = result.dew > 0 ? Math.min(MAX_DROPS, 1 + Math.round(result.dew / 6)) : 0;
-    this.drops.forEach((drop, i) => {
-      drop.mesh.visible = i < dropCount;
-      if (i >= dropCount) return;
-      const a = (i / Math.max(1, dropCount)) * Math.PI * 2 + 0.4;
-      drop.target.set(Math.cos(a) * (0.22 + (i % 2) * 0.1), 0.62 + (i % 3) * 0.12, Math.sin(a) * 0.18 + 0.05);
-      drop.mesh.position.set(0, H, 0);
-      drop.mesh.scale.setScalar(0.01);
-      drop.delay = 0.15 + i * 0.07;
-    });
-    if (dropCount > 0) this.emit('dew', 0.7, 0.35);
-    if (result.look) this.showItem(result.look);
   }
 
-  private showItem(key: NonNullable<ChestResult['look']>): void {
+  /** Monta o visual do prêmio no giro (do mesmo tamanho que todo prêmio, centrado). */
+  private mountItem(key: LookKeyOf): AccessoryModel | null {
+    this.unmountItem();
     const look = lookFromKey(key);
     let object: THREE.Object3D;
     if (look.kind === 'acc') {
@@ -493,24 +531,152 @@ export class ChestStage {
       object = this.itemModel.object;
     } else {
       this.itemModel = null;
-      object = shellToken(look.id);
+      this.mannequin ??= new BeetleModel(skin(look.id));
+      this.mannequin.setSkin(skin(look.id));
+      this.mannequin.setOutfit({ head: null, face: null, neck: null, back: null });
+      object = this.mannequin.root;
+      object.position.set(0, 0, 0);
+      object.rotation.set(0, 0, 0);
+      object.scale.setScalar(1);
     }
     // Todo prêmio do mesmo tamanho na vitrine (uma capa é bem maior que um óculos)
     // e centrado no giro (cada acessório tem a origem no ponto de encaixe).
+    // Vitrine inclinada pra câmera (giro de toca-discos torto): asa deitada, óculos e
+    // colar não aparecem de quina.
+    this.itemSpinner.rotation.set(0, 0, 0);
     const box = new THREE.Box3().setFromObject(object);
-    const size = box.getSize(new THREE.Vector3());
+    const size = box.getSize(this.tmp);
     object.scale.multiplyScalar(ITEM_SIZE / Math.max(size.x, size.y, size.z, 0.01));
     object.updateMatrixWorld(true);
     const center = new THREE.Box3().setFromObject(object).getCenter(this.tmp);
     object.position.sub(center);
-    this.itemSpinner.add(object);
-    this.item = object;
-    this.itemRise = 0;
-    this.itemSpinner.position.set(0, H, 0);
-    this.itemSpinner.scale.setScalar(0.01);
-    this.haloMat.opacity = 0;
+    object.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      if (mesh.isMesh && !(mesh.material instanceof THREE.MeshBasicMaterial)) mesh.castShadow = true;
+    });
+    // tilt (inclina) → turn (gira no próprio eixo) → o visual centrado.
+    const turn = new THREE.Group();
+    turn.add(object);
+    const tilt = new THREE.Group();
+    tilt.rotation.x = 0.42;
+    tilt.add(turn);
+    this.itemSpinner.add(tilt);
+    this.item = tilt;
     void this.compile?.(object).catch(() => undefined);
-    this.emit('reveal', 0.9, 0.55);
+    return this.itemModel;
+  }
+
+  private unmountItem(): void {
+    if (!this.item) return;
+    this.itemSpinner.remove(this.item);
+    // O manequim é reaproveitado: sai antes de a geometria do resto ser descartada.
+    this.mannequin?.root.removeFromParent();
+    // Geometria é só dele (os materiais da massinha são compartilhados e ficam).
+    this.item.traverse((o) => (o as THREE.Mesh).geometry?.dispose());
+    this.item = null;
+    this.itemModel = null;
+  }
+
+  /** O prêmio em cena sobe e some (dá vez ao próximo). */
+  private retireCurrent(): void {
+    if (!this.current) return;
+    if (this.outgoing) this.finishOutgoing();
+    this.current.leaving = true;
+    this.current.t = 0;
+    this.outgoing = this.current;
+    this.current = null;
+  }
+
+  private finishOutgoing(): void {
+    const out = this.outgoing;
+    if (!out) return;
+    out.object.visible = false;
+    if (out.object === this.itemSpinner) this.unmountItem();
+    this.outgoing = null;
+  }
+
+  private updatePresented(dt: number): void {
+    const out = this.outgoing;
+    if (out) {
+      out.t += dt;
+      const k = clamp(out.t / EXIT_TIME, 0, 1);
+      const e = k * k;
+      out.object.position.set(PRESENT.x, PRESENT.y + e * 0.35, PRESENT.z);
+      out.object.scale.setScalar(Math.max(0.001, 1 - e));
+      out.object.rotation.y += dt * 8;
+      if (k >= 1) this.finishOutgoing();
+    }
+    // Tilintar da moedona.
+    for (let i = this.coinChimes.length - 1; i >= 0; i--) {
+      this.coinChimes[i] -= dt;
+      if (this.coinChimes[i] <= 0) {
+        this.coinChimes.splice(i, 1);
+        this.emit('coin', PRESENT.y, PRESENT.z);
+      }
+    }
+    const c = this.current;
+    const leaving = this.phase === 'leave';
+    let raysTarget = 0;
+    if (c) {
+      c.t += dt;
+      const inSuspense = c.t < c.suspense;
+      if (!c.revealed && !inSuspense) {
+        c.revealed = true;
+        this.squashVelocity = 2.5;
+        this.emit('flash', PRESENT.y, PRESENT.z);
+        this.emit('reveal', PRESENT.y, PRESENT.z);
+      }
+      this.rayColor.set(c.rays);
+      if (inSuspense) {
+        // Bola de luz subindo da boca do baú, pulsando cada vez mais rápido e crescendo.
+        const k = c.t / c.suspense;
+        c.object.scale.setScalar(0.001);
+        c.object.position.set(PRESENT.x, H + (PRESENT.y - H) * Math.min(1, k * 1.6), PRESENT.z);
+        const beat = 0.5 + 0.5 * Math.sin(c.t * (8 + k * 22));
+        this.halo.position.copy(c.object.position);
+        this.haloMat.opacity = 0.65 + beat * 0.35;
+        this.halo.scale.setScalar(0.2 + k * 0.45 + beat * 0.12 * (0.5 + k));
+        this.haloMat.color.copy(this.rayColor).multiplyScalar(1.8);
+        raysTarget = k * 0.55;
+        c.object.getWorldPosition(this.tmp);
+        this.tmp2.copy(this.tmp).sub(this.cameraAt).normalize();
+        this.rays.position.copy(this.group.worldToLocal(this.tmp.addScaledVector(this.tmp2, 0.55)));
+      } else {
+        // Sobe da boca do baú até o lugar com um passinho a mais (volta de mola) e fica boiando, girando.
+        const k = clamp((c.t - c.suspense) / ENTER_TIME, 0, 1);
+        const back = 1.70158;
+        const e = 1 + (back + 1) * (k - 1) ** 3 + back * (k - 1) ** 2;
+        const flashPop = c.suspense > 0 ? Math.max(0, 1 - (c.t - c.suspense) / 0.25) : 0;
+        const bob = Math.sin(this.time * 1.7) * 0.025 * k;
+        c.object.position.set(PRESENT.x, H + (PRESENT.y - H) * Math.min(1, e) + bob, PRESENT.z);
+        c.object.scale.setScalar(Math.max(0.001, e * (1 + flashPop * 0.25)));
+        if (c.object === this.itemSpinner && this.item) this.item.children[0].rotation.y += dt * 1.3;
+        else c.object.rotation.y += dt * (c.kind === 'coins' ? 2.2 : 1.3);
+        if (c.kind === 'dew') this.dewOrbit.rotation.y += dt * 1.6;
+        raysTarget = leaving ? 0 : 0.85;
+        // Brilho e raios atrás do prêmio (do lado oposto da câmera): aditivo na frente lavaria.
+        c.object.getWorldPosition(this.tmp);
+        this.tmp2.copy(this.tmp).sub(this.cameraAt).normalize();
+        this.halo.position.copy(this.group.worldToLocal(this.tmp2.clone().multiplyScalar(0.4).add(this.tmp)));
+        this.rays.position.copy(this.group.worldToLocal(this.tmp.addScaledVector(this.tmp2, 0.55)));
+        this.haloMat.opacity = damp(this.haloMat.opacity, leaving ? 0 : 0.6 + flashPop * 0.4, 6, dt);
+        this.halo.scale.setScalar(ITEM_SIZE * (1.5 + flashPop * 2.2));
+        this.haloMat.color.copy(this.rayColor).multiplyScalar(1.4);
+      }
+      this.raysMat.color.copy(this.rayColor).multiplyScalar(1.3);
+      if (c.model?.update) {
+        this.pose.time = this.time;
+        this.pose.dt = dt;
+        c.model.update(this.pose);
+      }
+      // Manequim de casco: respira e pisca parado.
+      if (this.mannequin?.root.parent) this.mannequin.update(dt, this.mannequinPose);
+    } else {
+      this.haloMat.opacity = damp(this.haloMat.opacity, 0, 6, dt);
+    }
+    this.raysMat.opacity = damp(this.raysMat.opacity, raysTarget, 4, dt);
+    this.raysMat.rotation += dt * 0.35;
+    this.rays.scale.setScalar(1.25 + 0.06 * Math.sin(this.time * 1.9));
   }
 
   private updateCoins(dt: number): void {
@@ -547,51 +713,6 @@ export class ChestStage {
     }
   }
 
-  private updateDrops(dt: number): void {
-    for (const drop of this.drops) {
-      if (!drop.mesh.visible) continue;
-      if (this.phase === 'leave') continue;
-      drop.delay -= dt;
-      if (drop.delay > 0) continue;
-      drop.phase += dt;
-      const p = drop.mesh.position;
-      p.lerp(this.tmp.copy(drop.target).setY(drop.target.y + Math.sin(this.time * 1.8 + drop.phase * 2) * 0.03), 1 - Math.exp(-dt * 3.5));
-      const s = damp(drop.mesh.scale.x, 1, 6, dt);
-      drop.mesh.scale.setScalar(s);
-      drop.mesh.rotation.y += dt * 1.2;
-    }
-  }
-
-  private updateItem(dt: number): void {
-    if (!this.item) return;
-    if (this.phase !== 'leave') {
-      this.itemRise = Math.min(1, this.itemRise + dt / 0.9);
-      const e = 1 - (1 - this.itemRise) ** 3;
-      this.itemSpinner.position.y = H + e * 0.7 + Math.sin(this.time * 1.6) * 0.02 * e;
-      this.itemSpinner.scale.setScalar(Math.max(0.01, e));
-    }
-    this.itemSpinner.rotation.y += dt * 1.4;
-    // O brilho fica atrás do prêmio (do lado oposto da câmera): aditivo na frente lavaria o visual.
-    this.itemSpinner.getWorldPosition(this.tmp);
-    this.tmp.addScaledVector(this.tmp.clone().sub(this.cameraAt).normalize(), 0.45);
-    this.halo.position.copy(this.group.worldToLocal(this.tmp));
-    // Do tamanho do prêmio (grande demais, na tela em pé do celular o brilho cobria tudo).
-    this.halo.scale.setScalar(ITEM_SIZE * 1.6 + 0.08 * Math.sin(this.time * 2.4));
-    this.haloMat.opacity = damp(this.haloMat.opacity, this.phase === 'leave' ? 0 : 0.75, 3, dt);
-    if (this.itemModel?.update) {
-      this.pose.time = this.time;
-      this.pose.dt = dt;
-      this.itemModel.update(this.pose);
-    }
-  }
-
-  private updateFocus(): void {
-    // Antes de abrir, o baú; depois, o meio entre o baú e o prêmio.
-    const y = this.item ? H + 0.45 : H * 0.8;
-    this.focus.set(0, y, 0);
-    this.group.localToWorld(this.focus);
-  }
-
   private setPhase(phase: Phase): void {
     this.phase = phase;
     this.phaseTime = 0;
@@ -608,23 +729,22 @@ export class ChestStage {
 
   private clearRewards(): void {
     for (const coin of this.coins) coin.mesh.visible = false;
-    for (const drop of this.drops) drop.mesh.visible = false;
     this.pendingResult = null;
-    if (this.item) {
-      this.itemSpinner.remove(this.item);
-      // Geometria é só dele (os materiais da massinha são compartilhados e ficam).
-      this.item.traverse((o) => (o as THREE.Mesh).geometry?.dispose());
-      this.item = null;
-      this.itemModel = null;
-    }
+    this.rewards = [];
+    this.coinChimes = [];
+    this.outgoing = null;
+    this.current = null;
+    for (const presenter of [this.coinPresenter, this.dewPresenter, this.itemSpinner]) presenter.visible = false;
+    this.unmountItem();
     this.haloMat.opacity = 0;
+    this.raysMat.opacity = 0;
     this.beamMat.uniforms.uFade.value = 0;
   }
 
   private modelFor(rarity: Rarity): ChestModel {
     let model = this.models.get(rarity);
     if (!model) {
-      model = buildChest(rarity);
+      model = buildChestModel(rarity);
       this.models.set(rarity, model);
     }
     return model;

@@ -1,9 +1,10 @@
 import * as THREE from 'three';
 import { claySphere, clayCapsule, paintVertices, taperedTube } from '../../render/geometry';
 import { smoothstep } from '../../utils/math';
-import { EYE_TURN, bridgeAndArms, lensCenter, lensEdge, lensGlint, perEye } from './faceWear';
+import { EYE_TURN, bridgeAndArms, lensCenter, lensGlint, perEye } from './faceWear';
 import { radial } from './hats';
 import { Mat, brim, extrude, flatRing, joint, lathe, part, starShape } from './parts';
+import { slab } from './skinned';
 import type { AccessoryModel, OutfitPose } from './types';
 
 /**
@@ -74,52 +75,150 @@ export function bucketHat(): AccessoryModel {
 }
 
 /**
- * Chapéu de pirata de desenho animado: a meia-lua preta de feltro em pé (o
- * bicorne), com o galão dourado na borda e a caveirinha com os ossos na frente.
- * De frente é a silhueta que todo mundo reconhece.
+ * Tricórnio de pirata: a aba presa pra cima em três paredes (a da frente com a
+ * caveira), os três cantos deitados apontando pra fora, galão dourado na borda
+ * e uma pena vermelha enfiada do lado. De frente lê como o chapéu de pirata dos
+ * desenhos; de lado e de costas tem volume (copa e as outras duas paredes).
  */
 export function pirateHat(): AccessoryModel {
   const object = new THREE.Group();
-  const felt = Mat.felt('#1f1c24');
-  const gold = Mat.metal('#e0b44a');
-  // Meia-lua: arco em cima, base levemente curva (abraça a cabeça).
-  const W = 0.25;
-  const T = 0.17;
-  const moon = new THREE.Shape();
-  moon.moveTo(-W, 0.01);
-  moon.bezierCurveTo(-W * 0.9, T * 0.95, -W * 0.35, T * 1.12, 0, T * 1.08);
-  moon.bezierCurveTo(W * 0.35, T * 1.12, W * 0.9, T * 0.95, W, 0.01);
-  moon.bezierCurveTo(W * 0.6, -0.02, -W * 0.6, -0.02, -W, 0.01);
-  const body = extrude(moon, 0.07, 0.022, 28);
-  // Curva de leve pra trás nas pontas (acompanha a cabeça).
-  const pos = body.getAttribute('position') as THREE.BufferAttribute;
-  for (let i = 0; i < pos.count; i++) pos.setZ(i, pos.getZ(i) - (pos.getX(i) / W) ** 2 * 0.06);
-  body.computeVertexNormals();
-  object.add(part(body, felt));
-  // Galão: um fio dourado seguindo o arco, na frente e atrás.
-  const arc = new THREE.CatmullRomCurve3(
-    moon.getSpacedPoints(60).filter((p) => p.y > 0.03).map((p) => new THREE.Vector3(p.x, p.y, 0)),
+  const felt = Mat.felt('#221e29');
+  const gold = Mat.metal('#e3b54c');
+  const brimGeo = tricornBrim();
+  object.add(part(brimGeo.geometry, felt));
+  object.add(
+    part(
+      lathe(
+        [
+          [0.114, -0.006],
+          [0.118, 0.03],
+          [0.113, 0.07],
+          [0.096, 0.104],
+          [0.058, 0.127],
+          [0, 0.133],
+        ],
+        44,
+        0.003,
+        29,
+      ),
+      felt,
+    ),
   );
-  for (const z of [0.047, -0.047]) {
-    const trim = taperedTube(arc, 60, () => 0.007, 6);
-    const tp = trim.getAttribute('position') as THREE.BufferAttribute;
-    for (let i = 0; i < tp.count; i++) tp.setZ(i, tp.getZ(i) + z - (tp.getX(i) / W) ** 2 * 0.06);
-    trim.computeVertexNormals();
-    object.add(part(trim, gold, [0, -0.004, 0]));
-  }
-  // Caveirinha com os ossos cruzados, na frente.
+  // Galão: um cordão dourado seguindo a borda inteira (paredes e cantos).
+  object.add(part(taperedTube(brimGeo.edge, 220, () => 0.0065, 6, true), gold));
+  // Caveira com os ossos cruzados na parede da frente, deitada nela.
   const bone = Mat.clay('#f6f1e6');
-  const emblem = joint([0, 0.085, 0.05]);
-  emblem.add(part(claySphere(0.028, 2, 0.04), bone, [0, 0.008, 0], [0, 0, 0], [1, 0.95, 0.5]));
-  emblem.add(part(new THREE.BoxGeometry(0.03, 0.016, 0.012), bone, [0, -0.018, -0.002]));
+  const hole = Mat.clay('#221e29');
+  const emblem = joint(brimGeo.front.position.toArray() as [number, number, number]);
+  emblem.quaternion.copy(brimGeo.front.quaternion);
+  emblem.add(part(claySphere(0.024, 2, 0.03), bone, [0, 0.009, 0.004], [0, 0, 0], [1, 0.92, 0.45]));
+  emblem.add(part(claySphere(0.014, 2, 0.03), bone, [0, -0.012, 0.004], [0, 0, 0], [1, 0.7, 0.4]));
   for (const side of [1, -1]) {
-    emblem.add(part(claySphere(0.0075, 1, 0), Mat.clay('#1f1c24'), [side * 0.01, 0.008, 0.013]));
-    emblem.add(part(clayCapsule(0.006, 0.075, 0, 0, 6), bone, [0, -0.008, -0.008], [0, 0, side * 0.75 + Math.PI / 2]));
+    emblem.add(part(claySphere(0.0068, 1, 0), hole, [side * 0.0092, 0.008, 0.014], [0, 0, 0], [1, 1.1, 0.5]));
+    const boneBar = part(clayCapsule(0.0048, 0.074, 0, 0, 6), bone, [0, 0.0, -0.001], [0, 0, side * 0.72 + Math.PI / 2]);
+    emblem.add(boneBar);
+    for (const end of [1, -1]) {
+      const a = side * 0.72 + Math.PI / 2;
+      const ex = -Math.sin(a) * 0.041 * end;
+      const ey = Math.cos(a) * 0.041 * end;
+      emblem.add(part(claySphere(0.0062, 1, 0), bone, [ex + Math.cos(a) * 0.004, ey + Math.sin(a) * 0.004, -0.001]));
+      emblem.add(part(claySphere(0.0062, 1, 0), bone, [ex - Math.cos(a) * 0.004, ey - Math.sin(a) * 0.004, -0.001]));
+    }
   }
+  emblem.add(part(claySphere(0.0035, 1, 0), hole, [0, -0.002, 0.015], [0, 0, 0], [1, 0.8, 0.5]));
+  emblem.scale.setScalar(0.82);
   object.add(emblem);
-  object.position.set(0, 0.0, -0.01);
-  object.rotation.set(-0.12, 0, 0.06);
+  // Pena vermelha enfiada atrás da parede da direita, subindo e varrendo pra trás.
+  object.add(part(plume(), Mat.painted(0.7), [0.07, 0.07, -0.04], [0, 0, -0.35]));
+  object.position.set(0, 0.0, -0.012);
+  object.rotation.set(-0.1, 0, 0.05);
   return { object, hidesHorn: true };
+}
+
+/**
+ * Aba do tricórnio: anel que sai da copa deitado e dobra pra cima nas três
+ * paredes. Cada parede é reta (plana) entre dois cantos, como a aba presa de
+ * verdade: a dobra fica a `WALL` do centro no meio da parede e se afasta até o
+ * canto, onde a aba já acabou antes de dobrar (o canto fica deitado, em ponta).
+ * Devolve também a borda (pro galão) e onde fica o meio da parede da frente.
+ */
+function tricornBrim(): { geometry: THREE.BufferGeometry; edge: THREE.Curve<THREE.Vector3>; front: { position: THREE.Vector3; quaternion: THREE.Quaternion } } {
+  const INNER = 0.108;
+  const WIDTH = 0.138;
+  const WALL = 0.124;
+  const RISE = 1.42; // quanto a parede fica em pé (rad, quase vertical, levemente aberta)
+  const STEPS = 28;
+  // Ângulo a partir da frente (+Z) girando pra +X; paredes centradas em 0 e ±120°.
+  const fold = (theta: number) => {
+    const sector = (2 * Math.PI) / 3;
+    const d = ((((theta % sector) + sector * 1.5) % sector) - sector / 2);
+    return WALL / Math.cos(d);
+  };
+  const section = (theta: number, v: number, target: THREE.Vector3) => {
+    const f = fold(theta);
+    const bendAt = f - INNER;
+    let r = INNER - 0.004;
+    let y = 0;
+    const len = v * WIDTH;
+    const step = len / STEPS;
+    for (let i = 0; i < STEPS; i++) {
+      const l = (i + 0.5) * step;
+      // Deitada até a dobra, sobe numa curva curtinha; os cantos levantam só um pouco.
+      const a = 0.12 + (RISE - 0.12) * smoothstep(bendAt - 0.012, bendAt + 0.018, l);
+      r += Math.cos(a) * step;
+      y += Math.sin(a) * step;
+    }
+    return target.set(Math.sin(theta) * r, y, Math.cos(theta) * r);
+  };
+  const geometry = slab((u, v, target) => section(u * Math.PI, v, target), 150, 14, 0.012);
+  const edgePoints: THREE.Vector3[] = [];
+  for (let i = 0; i < 180; i++) edgePoints.push(section((i / 180) * Math.PI * 2, 1, new THREE.Vector3()));
+  const edge = new THREE.CatmullRomCurve3(edgePoints, true);
+  // Meio da parede da frente: ponto a ~55% da altura e a normal pra fora (pra deitar a caveira).
+  const a = section(0, 0.52, new THREE.Vector3());
+  const b = section(0, 0.72, new THREE.Vector3());
+  const up = b.clone().sub(a).normalize();
+  const out = new THREE.Vector3(0, 0, 1).addScaledVector(up, -up.z).normalize();
+  const position = a.clone().lerp(b, 0.5).addScaledVector(out, 0.007);
+  const basis = new THREE.Matrix4().makeBasis(new THREE.Vector3().crossVectors(up, out), up, out);
+  return { geometry, edge, front: { position, quaternion: new THREE.Quaternion().setFromRotationMatrix(basis) } };
+}
+
+/**
+ * Pluma: chapa curvada ao longo da nervura (sobe e cai pra trás), com a
+ * largura deitada a 45° (aparece de lado e da câmera de trás), a nervura clara
+ * no meio e as barbas escurecendo pras bordas.
+ */
+function plume(): THREE.BufferGeometry {
+  const spine = (v: number) => new THREE.Vector3(v * 0.05, Math.sin(v * 1.9) * 0.15, -v * 0.24);
+  const side = new THREE.Vector3(0.65, 0.75, 0.1).normalize();
+  const geometry = slab(
+    (u, v, target) => {
+      const width = 0.05 * Math.sin(Math.PI * Math.min(1, v * 1.05 + 0.04)) ** 0.6 * (1 - v * 0.2);
+      const droop = Math.abs(u) ** 2 * 0.012;
+      return target.copy(spine(v)).addScaledVector(side, u * width).setY(target.y - droop);
+    },
+    10,
+    22,
+    0.004,
+  );
+  const crimson = new THREE.Color('#d0293b');
+  const deep = new THREE.Color('#7e1224');
+  const shaft = new THREE.Color('#f7d9c4');
+  const uv = geometry.getAttribute('uv') as THREE.BufferAttribute;
+  const colors = new Float32Array(uv.count * 3);
+  const c = new THREE.Color();
+  for (let i = 0; i < uv.count; i++) {
+    const u = uv.getX(i) * 2 - 1;
+    const v = uv.getY(i);
+    // Barbas: listrinhas finas oblíquas (a pena "penteada").
+    const barb = 0.5 + 0.5 * Math.sin((v * 34 - Math.abs(u) * 3) * Math.PI);
+    c.copy(crimson).lerp(deep, smoothstep(0.45, 1, Math.abs(u)) * 0.65 + barb * 0.12);
+    c.lerp(shaft, (1 - smoothstep(0.05, 0.14, Math.abs(u))) * (1 - v * 0.5));
+    c.toArray(colors, i * 3);
+  }
+  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  return geometry;
 }
 
 /**
@@ -240,31 +339,50 @@ export function clownNose(): AccessoryModel {
   return { object };
 }
 
-/** Tapa-olho de pirata no olho direito, com a tira passando por cima da cabeça. */
+/**
+ * Tapa-olho de pirata: uma calota de couro abraçando o olho direito (por fora
+ * da pálpebra, senão o brilho do olho vaza), o rebite dourado no meio e a tira
+ * saindo da borda: por cima da testa de um lado, pra trás do outro.
+ */
 export function eyepatch(): AccessoryModel {
   const object = new THREE.Group();
   const cloth = Mat.leather('#1f1c24');
-  const outline = new THREE.Shape();
-  outline.moveTo(-0.07, 0.03);
-  outline.bezierCurveTo(-0.07, 0.07, 0.07, 0.07, 0.07, 0.03);
-  outline.bezierCurveTo(0.07, -0.04, 0.02, -0.075, 0, -0.075);
-  outline.bezierCurveTo(-0.02, -0.075, -0.07, -0.04, -0.07, 0.03);
-  const patch = joint();
-  patch.position.copy(lensCenter(1, 0.075));
-  patch.rotation.y = EYE_TURN;
-  patch.add(part(extrude(outline, 0.012, 0.005, 16), cloth));
-  patch.add(part(claySphere(0.01, 1, 0), Mat.metal('#c9a24a'), [0, 0.035, 0.012]));
+  // Calota: casca esférica de raio um tiquinho maior que a pálpebra (0,094), aberta em ~41°.
+  const R = 0.102;
+  const OPEN = 0.72;
+  const THICK = 0.008;
+  const profile: Array<[number, number]> = [];
+  for (let i = 0; i <= 12; i++) {
+    const t = (i / 12) * OPEN;
+    profile.push([Math.sin(t) * R, Math.cos(t) * R]);
+  }
+  for (let i = 12; i >= 0; i--) {
+    const t = (i / 12) * OPEN;
+    profile.push([Math.sin(t) * (R - THICK), Math.cos(t) * (R - THICK)]);
+  }
+  const patch = joint(lensCenter(1, 0).toArray() as [number, number, number]);
+  const out = new THREE.Vector3(Math.sin(EYE_TURN), 0.04, Math.cos(EYE_TURN)).normalize();
+  patch.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), out);
+  patch.add(part(lathe(profile, 32, 0.0015, 7), cloth, [0, 0, 0], [0, 0, 0], [1, 1, 0.9]));
+  patch.add(part(claySphere(0.011, 1, 0), Mat.metal('#c9a24a'), [0, R + 0.002, 0]));
   object.add(patch);
-  // Tira: da borda de dentro, sobe pela testa e passa por cima; da borda de fora, vai pra trás.
-  const inner = lensEdge(1, Math.PI * 0.85, 0.07);
-  const outer = lensEdge(1, -0.1, 0.075);
+  // Onde a tira sai: o ponto da borda mais pra testa/nariz e o mais pro lado de fora.
+  patch.updateMatrix();
+  const rim: THREE.Vector3[] = [];
+  for (let i = 0; i < 32; i++) {
+    const a = (i / 32) * Math.PI * 2;
+    rim.push(new THREE.Vector3(Math.sin(OPEN) * R * Math.cos(a), Math.cos(OPEN) * R, Math.sin(OPEN) * R * Math.sin(a) * 0.9).applyMatrix4(patch.matrix));
+  }
+  const pick = (score: (p: THREE.Vector3) => number) => rim.reduce((best, p) => (score(p) > score(best) ? p : best));
+  const inner = pick((p) => p.y * 0.7 - p.x);
+  const outer = pick((p) => p.x - p.z * 0.4 + p.y * 0.2);
   const over = new THREE.CatmullRomCurve3([
     inner,
-    new THREE.Vector3(0, -0.005, 0.035),
-    new THREE.Vector3(-0.12, 0.02, -0.1),
-    new THREE.Vector3(-0.2, -0.04, -0.18),
+    new THREE.Vector3(0.02, inner.y + 0.02, inner.z - 0.02),
+    new THREE.Vector3(-0.12, 0.03, -0.1),
+    new THREE.Vector3(-0.2, -0.03, -0.18),
   ]);
-  const back = new THREE.CatmullRomCurve3([outer, new THREE.Vector3(outer.x + 0.03, outer.y + 0.005, outer.z - 0.08), new THREE.Vector3(outer.x + 0.02, outer.y + 0.01, outer.z - 0.18)]);
+  const back = new THREE.CatmullRomCurve3([outer, new THREE.Vector3(outer.x + 0.025, outer.y + 0.005, outer.z - 0.07), new THREE.Vector3(outer.x + 0.02, outer.y + 0.01, outer.z - 0.18)]);
   object.add(part(taperedTube(over, 24, () => 0.006, 6), cloth));
   object.add(part(taperedTube(back, 16, () => 0.006, 6), cloth));
   return { object };

@@ -1,7 +1,9 @@
 import * as THREE from 'three';
 import { claySphere, clayCapsule, lumpify, paintVertices, taperedTube } from '../../render/geometry';
 import { smoothstep } from '../../utils/math';
+import { clay } from '../../render/clayMaterial';
 import { Mat, arcOver, brim, crownBand, extrude, flatRing, flower, joint, lathe, orient, part, starShape } from './parts';
+import { slab as slabSurface } from './skinned';
 import type { AccessoryModel, OutfitPose } from './types';
 
 /**
@@ -608,52 +610,164 @@ export function halo(): AccessoryModel {
 }
 
 /**
- * Chapéu de cangaceiro: copa de couro e a aba levantada na frente e atrás (a
- * "meia-lua"), com a estrela de seis pontas e as tachinhas de metal.
+ * Chapéu de cangaceiro (o de couro do Lampião): copa redonda e a aba oval
+ * dobrada pra cima na frente e atrás, em duas "meias-luas" quase em pé e bem
+ * mais altas que a copa; dos lados ela fica deitada e estreita. Na meia-lua da
+ * frente, o signo de Salomão (estrela de seis pontas) no meio, moedas dos lados
+ * e tachinhas seguindo o debrum de couro escuro; atrás, uma estrela menor.
  */
 export function cangaceiroHat(): AccessoryModel {
   const object = new THREE.Group();
-  const leather = Mat.leather('#8a5a33');
-  const dark = Mat.leather('#5e3a1e');
-  const metal = Mat.metal('#e0bd5a');
+  const THICKNESS = 0.012;
+  const brimGeo = slabSurface((u, v, target) => cangaceiroBrim(u * Math.PI, v, target), 180, 18, THICKNESS);
+  // Couro claro na face e o debrum escuro na borda; cor por vértice pelo (u, v) da chapa.
+  const tan = new THREE.Color('#a8703c');
+  const deep = new THREE.Color('#4a2b14');
+  paintByUv(brimGeo, (u, v, c) => {
+    const span = cangaceiroRadius(u * Math.PI) - CANGACEIRO.inner;
+    const fromEdge = (1 - v) * span;
+    return c.copy(tan).lerp(deep, Math.max(1 - smoothstep(0.007, 0.014, fromEdge), (1 - smoothstep(0, 0.03, v * span)) * 0.45));
+  });
+  object.add(part(brimGeo, clay(0xffffff, { vertexColors: true, roughness: 0.6, sheen: 0.45, bump: 0.3, clearcoat: 0.18, mottle: 0.1, mottleScale: 16 })));
+  const leather = Mat.leather('#6b4222');
   object.add(
     part(
       lathe(
         [
-          [0.108, -0.004],
+          [0.108, -0.006],
           [0.112, 0.03],
-          [0.104, 0.07],
-          [0.08, 0.1],
-          [0.045, 0.114],
-          [0, 0.117],
+          [0.106, 0.07],
+          [0.086, 0.1],
+          [0.05, 0.116],
+          [0, 0.12],
         ],
         44,
         0.002,
         29,
       ),
-      dark,
+      leather,
     ),
   );
-  const lift = (angle: number, t: number) => Math.pow(t, 1.4) * 0.17 * Math.sin(angle) ** 2;
-  object.add(part(brim(0.1, 0.225, 0.016, lift, 64), leather));
-  // Estrela de seis pontas na aba da frente, deitada na parede que sobe.
-  const frontAt = (t: number) => new THREE.Vector3(0, lift(Math.PI / 2, t), 0.1 + 0.125 * t);
-  const star = part(extrude(starShape(6, 0.042, 0.024), 0.008, 0.003), metal);
-  star.position.copy(frontAt(0.62)).add(new THREE.Vector3(0, 0, 0.012));
-  star.rotation.x = -0.72;
-  object.add(star);
-  // Tachinhas ao longo da borda levantada (frente e trás).
-  const stud = claySphere(0.008, 1, 0.05);
+  object.add(part(flatRing(0.111, 0.009, 8, 48), Mat.leather('#3f2410'), [0, 0.012, 0], [0, 0, 0], [1, 1.3, 1]));
+  const metal = Mat.metal('#e6c35c');
+  const lift = THICKNESS / 2;
+  // Signo de Salomão: o hexagrama (as pontas de dentro a 1/√3 das de fora) com o botão no meio.
+  const star = extrude(starShape(6, 0.046, 0.046 / Math.sqrt(3)), 0.007, 0.0025);
+  const front = cangaceiroWall(1, 0, 0.085, lift + 0.004);
+  object.add(placed(part(star, metal), front));
+  object.add(placed(part(claySphere(0.011, 2, 0.02), Mat.metal('#c9962e'), [0, 0, 0.006], [0, 0, 0], [1, 1, 0.55]), front));
+  object.add(placed(part(star, metal, [0, 0, 0], [0, 0, 0], 0.62), cangaceiroWall(-1, 0, 0.08, lift + 0.004)));
+  // Moedas dos lados da estrela (disco com o aro), deitadas na parede.
+  const coin = new THREE.CylinderGeometry(0.016, 0.016, 0.004, 20).rotateX(Math.PI / 2);
+  const rim = new THREE.TorusGeometry(0.016, 0.0022, 6, 24);
   for (const side of [1, -1]) {
-    for (let i = -4; i <= 4; i++) {
-      const a = (side > 0 ? Math.PI / 2 : -Math.PI / 2) + i * 0.16;
-      const r = 0.212;
-      object.add(part(stud, metal, [Math.cos(a) * r, lift(a, 0.9) + 0.004, Math.sin(a) * r]));
+    for (const [x, d, size] of [
+      [0.075, 0.07, 1],
+      [0.118, 0.045, 0.78],
+    ] as const) {
+      const at = cangaceiroWall(1, side * x, d, lift + 0.003);
+      object.add(placed(part(coin, metal, [0, 0, 0], [0, 0, 0], size), at));
+      object.add(placed(part(rim, metal, [0, 0, 0.001], [0, 0, 0], size), at));
+    }
+  }
+  // Tachinhas seguindo o debrum das duas meias-luas (só onde a aba está em pé).
+  const stud = claySphere(0.0062, 1, 0.05);
+  for (const face of [1, -1] as const) {
+    for (let i = -7; i <= 7; i++) {
+      const x = i * 0.02;
+      const d = cangaceiroEdge(x) - 0.016;
+      if (d < 0.02) continue;
+      object.add(placed(part(stud, metal), cangaceiroWall(face, x, d, lift + 0.002)));
     }
   }
   object.scale.setScalar(0.95);
   object.rotation.x = -0.06;
   return { object, hidesHorn: true };
+}
+
+/** Medidas da aba do cangaceiro. */
+const CANGACEIRO = {
+  inner: 0.106,
+  /** Linha da dobra (reta, de lado a lado), a essa distância do centro na frente e atrás. */
+  fold: 0.112,
+  /** Quanto a meia-lua fica em pé (rad; um tico aberta pra fora). */
+  rise: 1.32,
+  /** Semieixos da aba oval deitada: estreita dos lados, comprida na frente e atrás (vira a meia-lua). */
+  rx: 0.168,
+  rz: 0.28,
+};
+
+/** Raio da aba oval (ainda deitada) no ângulo `theta` a partir de +Z. */
+function cangaceiroRadius(theta: number): number {
+  return 1 / Math.hypot(Math.sin(theta) / CANGACEIRO.rx, Math.cos(theta) / CANGACEIRO.rz);
+}
+
+/**
+ * Dobra: um ponto que estava `d` depois da linha da dobra, deitado, vai pra
+ * `along` (pra fora) e `up` (pra cima). A dobra é uma curvinha, não um vinco.
+ */
+function cangaceiroFold(d: number): { along: number; up: number } {
+  const START = -0.01;
+  if (d <= START) return { along: d, up: 0 };
+  const STEPS = 20;
+  const step = (d - START) / STEPS;
+  let along = START;
+  let up = 0;
+  for (let i = 0; i < STEPS; i++) {
+    const t = START + (i + 0.5) * step;
+    const a = CANGACEIRO.rise * smoothstep(-0.006, 0.018, t);
+    along += Math.cos(a) * step;
+    up += Math.sin(a) * step;
+  }
+  return { along, up };
+}
+
+/** Superfície do meio da aba: `theta` na volta, `v` (0..1) da copa até a borda oval. */
+function cangaceiroBrim(theta: number, v: number, target: THREE.Vector3): THREE.Vector3 {
+  const r = CANGACEIRO.inner - 0.004 + v * (cangaceiroRadius(theta) - CANGACEIRO.inner + 0.004);
+  const x = Math.sin(theta) * r;
+  const z = Math.cos(theta) * r;
+  const f = cangaceiroFold(Math.abs(z) - CANGACEIRO.fold);
+  return target.set(x, f.up, Math.sign(z) * (CANGACEIRO.fold + f.along));
+}
+
+/** Até onde a meia-lua vai (distância depois da dobra) na altura lateral `x`. */
+function cangaceiroEdge(x: number): number {
+  const k = 1 - (x / CANGACEIRO.rx) ** 2;
+  return k <= 0 ? 0 : CANGACEIRO.rz * Math.sqrt(k) - CANGACEIRO.fold;
+}
+
+/**
+ * Lugar na face de fora da meia-lua (`face` 1 = frente, -1 = trás), na
+ * posição lateral `x` e a `d` depois da dobra, `lift` acima da superfície do
+ * meio: +Z da peça sai da parede, +Y sobe por ela.
+ */
+function cangaceiroWall(face: 1 | -1, x: number, d: number, lift: number): { position: THREE.Vector3; quaternion: THREE.Quaternion } {
+  const f = cangaceiroFold(d);
+  const up = new THREE.Vector3(0, Math.sin(CANGACEIRO.rise), face * Math.cos(CANGACEIRO.rise));
+  const out = new THREE.Vector3(0, -Math.cos(CANGACEIRO.rise), face * Math.sin(CANGACEIRO.rise));
+  const side = new THREE.Vector3().crossVectors(up, out);
+  return {
+    position: new THREE.Vector3(x, f.up, face * (CANGACEIRO.fold + f.along)).addScaledVector(out, lift),
+    quaternion: new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(side, up, out)),
+  };
+}
+
+/** Põe a peça no lugar/orientação dados (a posição/rotação próprias dela viram deslocamento local). */
+function placed(mesh: THREE.Mesh, frame: { position: THREE.Vector3; quaternion: THREE.Quaternion }): THREE.Mesh {
+  const local = mesh.position.clone().applyQuaternion(frame.quaternion);
+  mesh.quaternion.premultiply(frame.quaternion);
+  mesh.position.copy(frame.position).add(local);
+  return mesh;
+}
+
+/** Pinta por vértice a partir do `uv` da chapa (u na volta, v da copa pra borda). */
+function paintByUv(geometry: THREE.BufferGeometry, fn: (u: number, v: number, color: THREE.Color) => THREE.Color): void {
+  const uv = geometry.getAttribute('uv') as THREE.BufferAttribute;
+  const colors = new Float32Array(uv.count * 3);
+  const c = new THREE.Color();
+  for (let i = 0; i < uv.count; i++) fn(uv.getX(i) * 2 - 1, uv.getY(i), c).toArray(colors, i * 3);
+  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
 }
 
 /** Coroa de ouro com cinco pontas, pérolas, pedras e um brilho que corre pelas pedras. Deixa o chifre de fora. */

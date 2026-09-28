@@ -3,6 +3,7 @@ import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeom
 import { claySphere, lumpify, paintVertices, taperedTube } from '../../render/geometry';
 import { smoothstep } from '../../utils/math';
 import { Mat, extrude, joint, lathe, part } from './parts';
+import { bend } from './hats';
 import { chainSkin, slab } from './skinned';
 import type { AccessoryModel, OutfitPose } from './types';
 
@@ -132,20 +133,50 @@ export function subdivideAlong(geometry: THREE.BufferGeometry, axis: 'x' | 'y' |
   return g;
 }
 
-/** Mochilinha vermelha: bolso amarelo, tampa, alças pelos lados do pronoto e um chaveiro de sol balançando. */
+/**
+ * Mochila de escoteiro deitada nas costas (o "de cima" dela olha pro céu, que é
+ * o que a câmera de trás vê): corpo fofo de lona vermelha com o vivo escuro na
+ * borda, a aba de cima com duas fivelas, o bolso da frente com zíper, a alça
+ * de mão, a garrafinha no bolso do lado e as alças descendo pelos ombros.
+ */
 export function backpack(): AccessoryModel {
   const object = new THREE.Group();
   const red = Mat.fabric('#e5483f');
-  const pack = joint([0, 0.085, -0.22], [-0.12, 0, 0]);
-  pack.add(part(lumpify(new RoundedBoxGeometry(0.3, 0.13, 0.26, 4, 0.045), 0.003, 25, 2), red));
-  pack.add(part(new RoundedBoxGeometry(0.2, 0.05, 0.13, 3, 0.02), Mat.fabric('#ffc23d'), [0, 0.07, -0.03]));
-  pack.add(part(new RoundedBoxGeometry(0.29, 0.03, 0.1, 3, 0.012), Mat.fabric('#b8322f'), [0, 0.066, 0.085], [0.18, 0, 0]));
+  const deep = Mat.fabric('#b8322f');
+  const trim = Mat.fabric('#3a3a44');
+  const yellow = Mat.fabric('#ffc23d');
   const metal = Mat.metal('#d9dde3');
-  pack.add(part(new THREE.BoxGeometry(0.028, 0.02, 0.01), metal, [0, 0.07, 0.137]));
-  // Zíper do bolso.
-  pack.add(part(new THREE.BoxGeometry(0.16, 0.006, 0.006), metal, [0, 0.096, -0.03]));
+  const pack = joint([0, 0.1, -0.24], [-0.12, 0, 0]);
+  pack.scale.setScalar(1.2);
+  // Corpo fofo (estufado no meio) e o vivo escuro na volta da costura.
+  const body = lumpify(new RoundedBoxGeometry(0.3, 0.13, 0.27, 5, 0.055), 0.003, 25, 2);
+  bend(body, (p) => {
+    const bulge = (1 - (p.x / 0.15) ** 2) * (1 - (p.z / 0.135) ** 2);
+    if (p.y > 0) p.y += Math.max(0, bulge) * 0.018;
+  });
+  pack.add(part(body, red));
+  pack.add(part(new RoundedBoxGeometry(0.305, 0.012, 0.275, 3, 0.006), trim, [0, 0.0, 0]));
+  // Aba de cima: cai por cima da frente (a borda do lado da cabeça), com as duas tiras e fivelas.
+  const flap = new RoundedBoxGeometry(0.27, 0.022, 0.15, 4, 0.01);
+  bend(flap, (p) => {
+    p.y -= Math.max(0, p.z) ** 2 * 1.6;
+  });
+  pack.add(part(flap, deep, [0, 0.083, 0.06]));
+  for (const x of [-0.075, 0.075]) {
+    pack.add(part(new RoundedBoxGeometry(0.03, 0.006, 0.16, 2, 0.002), trim, [x, 0.088, 0.02]));
+    pack.add(part(new RoundedBoxGeometry(0.038, 0.012, 0.024, 2, 0.004), metal, [x, 0.07, 0.132], [0.9, 0, 0]));
+  }
+  // Bolso da frente (pro lado da câmera) com o zíper e o puxador.
+  pack.add(part(new RoundedBoxGeometry(0.2, 0.05, 0.1, 3, 0.02), yellow, [0, 0.07, -0.075]));
+  pack.add(part(new THREE.BoxGeometry(0.15, 0.005, 0.005), metal, [0, 0.096, -0.075]));
+  pack.add(part(new RoundedBoxGeometry(0.012, 0.004, 0.022, 2, 0.0015), metal, [0.05, 0.098, -0.085]));
+  // Alça de mão em cima, perto da cabeça.
+  pack.add(part(new THREE.TorusGeometry(0.03, 0.006, 6, 16, Math.PI), trim, [0, 0.07, 0.13], [0, 0, 0]));
+  // Garrafinha d'água no bolso de tela do lado.
+  pack.add(part(new RoundedBoxGeometry(0.026, 0.07, 0.07, 2, 0.01), deep, [0.162, 0.0, -0.04]));
+  pack.add(part(new THREE.CylinderGeometry(0.018, 0.018, 0.09, 12).rotateZ(Math.PI / 2).rotateY(Math.PI / 2), Mat.glossy('#5fb4ff'), [0.168, 0.03, -0.05]));
+  pack.add(part(new THREE.CylinderGeometry(0.011, 0.011, 0.02, 10).rotateX(Math.PI / 2), Mat.plastic('#2f7fd6'), [0.168, 0.03, -0.105]));
   object.add(pack);
-  const strap = Mat.fabric('#3a3a44');
   for (const side of [1, -1]) {
     const curve = new THREE.CatmullRomCurve3([
       new THREE.Vector3(side * 0.12, 0.05, -0.11),
@@ -153,7 +184,9 @@ export function backpack(): AccessoryModel {
       new THREE.Vector3(side * 0.29, -0.1, 0.05),
       new THREE.Vector3(side * 0.31, -0.22, 0.04),
     ]);
-    object.add(part(taperedTube(curve, 20, () => 0.013, 6), strap, [0, 0, 0], [0, 0, 0], [1, 1, 1]));
+    object.add(part(taperedTube(curve, 20, () => 0.013, 6), trim));
+    // Fivela de regular a alça.
+    object.add(part(new RoundedBoxGeometry(0.03, 0.03, 0.012, 2, 0.004), metal, [side * 0.245, -0.035, 0.018], [0, side * 0.9, 0.3 * side]));
   }
   // Chaveiro: argolinha e o solzinho, pendurado no canto de trás.
   const charm = joint([0.15, 0.08, -0.32], [0, 0, 0], true);

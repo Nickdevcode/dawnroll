@@ -117,9 +117,12 @@ export const EconomyAccessoryIcons = {
   guitar: filled(
     `<path d="M16.2 2.6l2.2 2.2-5.6 5.6-2.2-2.2z" fill="#5a3a22"/>` +
       `<path d="M17.6 1.6l3.2 3.2-1.4 1.4-3.2-3.2z" fill="#3a2418"/>` +
-      `<path d="M10.6 8.2c1.2 1.2 1 2.6.2 3.4 1.8.4 3 2.2 2.4 4.4-.8 3-4.2 5-7 4.2-2.8-.8-3.6-3.8-2.2-6.4.9-1.6 2.4-2.4 3.8-2.2-.2-1.2.6-2.6 1.8-3 .5-.2 .9-.4 1-.4z" fill="#e0a35c"/>` +
-      `<circle cx="8.6" cy="14.6" r="1.7" fill="#3a2418"/>` +
-      line('M5.2 18.6 17 6.4', '#e8e2d6', 0.5),
+      `<path d="M10.6 8.2c1.2 1.2 1 2.6.2 3.4 1.8.4 3 2.2 2.4 4.4-.8 3-4.2 5-7 4.2-2.8-.8-3.6-3.8-2.2-6.4.9-1.6 2.4-2.4 3.8-2.2-.2-1.2.6-2.6 1.8-3 .5-.2 .9-.4 1-.4z" fill="#8a4318" stroke="#f3e6c9" stroke-width=".5"/>` +
+      `<ellipse cx="8.4" cy="14.6" rx="3.4" ry="3.9" transform="rotate(45 8.4 14.6)" fill="#e39a45"/>` +
+      `<ellipse cx="8.4" cy="14.4" rx="2" ry="2.4" transform="rotate(45 8.4 14.4)" fill="#f4c46a"/>` +
+      `<circle cx="9.6" cy="13.2" r="1.5" fill="#2f7a5c"/><circle cx="9.6" cy="13.2" r="1.05" fill="#1c110b"/>` +
+      `<path d="M5.4 17.4l1.4 1.4" stroke="#2a160c" stroke-width="1.1" stroke-linecap="round"/>` +
+      line('M5.8 18.2 17 6.4', '#ece7dc', 0.45),
   ),
   dragonflyWings: filled(
     mirrored(
@@ -194,7 +197,7 @@ export const EconomyAccessoryIcons = {
       `<path d="M3 3.6c2.4 3.4 5.4 5 9 5s6.6-1.6 9-5" fill="none" stroke="${GOLD}" stroke-width="1" stroke-dasharray="1.4 1.4"/>` +
       mirrored(`<path d="M11 15.4c-2.4-1-5-1-7.2.4 1.6 1.6 4.4 2.2 7.2 1.2z" fill="#2a4fb8"/><path d="M11 17.4c-2-.2-3.8.6-5 1.8 1.6.8 3.4.4 5-.6z" fill="${GOLD}"/>`) +
       `<ellipse cx="12" cy="16.2" rx="2.4" ry="3.4" fill="${GOLD}"/><circle cx="12" cy="11.8" r="1.4" fill="${GOLD}"/>` +
-      `<circle cx="12" cy="16.2" r="1.2" fill="#6ff0ff" stroke="none" class="look-anim-pulse"/>`,
+      `<circle cx="12" cy="9.4" r="1.6" fill="#ff8a4a" stroke="${GOLD}" stroke-width=".6" class="look-anim-pulse"/>`,
   ),
   angelWings: filled(
     mirrored(

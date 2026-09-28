@@ -64,3 +64,37 @@ export function markAsLight(object: THREE.Object3D, renderOrder = 11): void {
     (child as THREE.Mesh).receiveShadow = false;
   });
 }
+
+let sharedRays: THREE.CanvasTexture | null = null;
+
+/**
+ * Raios de luz saindo do centro (fatias alternando com o degradê caindo pra
+ * borda): o "palco" atrás do prêmio que sai do baú. Uma textura só.
+ */
+export function raysTexture(): THREE.CanvasTexture {
+  if (sharedRays) return sharedRays;
+  const size = 256;
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext('2d')!;
+  const c = size / 2;
+  const RAYS = 14;
+  ctx.translate(c, c);
+  for (let i = 0; i < RAYS; i++) {
+    const a = (i / RAYS) * Math.PI * 2;
+    const half = (Math.PI / RAYS) * (i % 2 ? 0.34 : 0.52);
+    const g = ctx.createRadialGradient(0, 0, 0, 0, 0, c);
+    g.addColorStop(0, 'rgba(255,255,255,0.9)');
+    g.addColorStop(0.35, 'rgba(255,255,255,0.45)');
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.arc(0, 0, c, a - half, a + half);
+    ctx.closePath();
+    ctx.fill();
+  }
+  sharedRays = new THREE.CanvasTexture(canvas);
+  sharedRays.colorSpace = THREE.SRGBColorSpace;
+  return sharedRays;
+}

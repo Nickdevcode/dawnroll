@@ -27,7 +27,7 @@ Um besouro rola-bosta de massinha num jardim em miniatura. Você rola uma bola d
 | 🕳️ **A toca** | Buraco de terra fofa com bandeirinha de folha no monte escavado. Um anel tracejado pulsa quando a bola já pode ser enterrada. Lá embaixo tem **despensa, catálogo, poderes e conquistas** (ver abaixo) |
 | 👗 **Guarda-roupa** | **38 cascos** (vários vivos, com brilho e partículas) e **61 acessórios** pra personalizar o besouro: chapéu, óculos, gravata, capa, asas, disco voador... Liberados jogando, comprados na Feirinha, ganhos no passe ou saídos de baú (e às vezes um acessório aparece brilhando no jardim). Dá pra provar antes, e o besouro aparece de frente num provador (ver abaixo) |
 | 🛒 **Feirinha e moedas** | Duas moedas (🪙 moedas e 💧 **gotas de orvalho**, as raras), ganhas nas conquistas, nos baús e no passe. A loja vende cascos, acessórios e baús; quem já jogava ganhou tudo retroativo (ver abaixo) |
-| 🎁 **Baús 3D** | Cada nível novo dá um baú (madeira, prata, cristal ou **do Sol**), que **cai no jardim e abre** com moedas espirrando, orvalho boiando e, às vezes, um visual saindo girando |
+| 🎁 **Baús 3D** | Cada nível novo dá um baú (madeira, prata, cristal ou **do Sol**), que **cai no jardim** e abre numa cerimônia no estilo Clash Royale: os prêmios saem **um por vez** (moedas, orvalho e, às vezes, um visual com suspense de raridade) e no fim vem o resumo |
 | 🌸 **Passe Florada** | Temporada até 27/10 com 20 níveis, 12 desafios e 8 visuais exclusivos (o último é o casco **Girassol**) |
 | 🏆 **Conta e ranking** | Entre com e-mail e senha (ou Google) pra **salvar o besouro na nuvem** e continuar de qualquer aparelho, e dispute o **ranking global** em 4 abas: enterradas, da semana, montanha e coleção (ver abaixo) |
 | 💩 **Montinho fresquinho** | Mais ou menos 1 em cada 10 montinhos nasce fresquinho: mais claro e dourado, com três moscas e um brilho de vez em quando. Vale o dobro de bola e conta como raro |
@@ -137,7 +137,8 @@ O jardim ganhou uma economia de verdade, toda **dentro do jogo** (nada se paga c
 | 🎁 **Presente de quem já jogava** | O saldo é **calculado** a partir do save, então as conquistas antigas pagam na hora e **cada nível que você já subiu vira um baú**. Quem abre o jogo com progresso vê uma vez o aviso "Chegou a Feirinha!" com o que ganhou e um botão direto pros baús |
 | 🛒 **Feirinha** | Botão novo no menu (com a carteira do lado e uma bolinha contando os baús fechados). Três abas: **Baús** (os seus pra abrir, os à venda e os que só saem de baú), **Cascos** e **Acessórios**. Tudo **dá pra provar no besouro** antes (mesmo provador do guarda-roupa), comprar pede **dois toques** (o primeiro vira "Confirmar") e comprado já veste. No guarda-roupa os visuais da Feirinha também têm o botão de comprar |
 | 🌸 **Passe da temporada** | Temporada 1: **Florada**, de **27/09 a 27/10/2026** (fim do dia em Brasília). **20 níveis** meio difíceis de propósito (dá pra fechar jogando com frequência o mês todo, não numa tarde), com moedas, orvalho, baús e **8 visuais exclusivos** que depois somem de circulação. Nível alcançado se pega um por um (ou "Pegar tudo") e dá pra provar o visual clicando no prêmio |
-| 🎲 **Baús em 3D** | O baú **cai do céu do lado do besouro**, quica e fica chacoalhando esperando o toque. Tocou: chacoalha, a tampa estoura, sobe um facho de luz da cor dele, as **moedas espirram** e caem rolando em volta, as **gotas de orvalho** sobem e ficam boiando e, quando vem visual, ele **sai girando de dentro** com um brilho atrás (casco novo: o besouro já veste do lado). Aí "Vestir", "Próximo baú" ou "Fechar". Tudo com som (pancada, chacoalho, sininhos, tilintar das moedas) |
+| 🎲 **Baús em 3D** | Quatro baús modelados peça por peça, cada um com silhueta própria: **madeira** (tábuas com veio, ferragens com rebite, alças de argola), **prata** (madeira azul-marinho e cantoneiras largas de prata, com a estrela em cima), **cristal** (laca roxa, ouro e ametistas brotando da tampa) e **do Sol** (laca de urucum, ouro e a crista do solzinho acesa). Abertos, têm boca funda com forro de veludo e luz lá dentro |
+| 🎬 **Cerimônia estilo Clash Royale** | O jardim escurece em volta (vira palco) e o baú **cai do céu do lado do besouro**, quica e fica chacoalhando esperando o toque. Tocou: chacoalha, a tampa estoura, sobe um facho de luz e as **moedas espirram**. Aí os prêmios saem **um por vez** da boca do baú e param no ar com raios de luz atrás, cada um com a legenda grande (as moedas e o orvalho **contando**, o nome do visual com a raridade): a **moedona**, a **gotona** de orvalho e, por último, o **visual** (casco novo vem num besourinho vestindo ele). Visual **épico ou lendário faz suspense**: uma bola de luz que pulsa cada vez mais rápido e estoura num clarão. Toque (ou A) passa pro próximo, com o contador de quantos faltam; **Pular** (ou B) vai direto pro resumo com tudo que saiu, "Vestir", "Próximo baú" e "Fechar". Tudo com som e vibração no controle |
 
 **Os baús**
 
@@ -397,7 +398,8 @@ src/
 ├── fx/
 │   ├── Effects.ts          # central de efeitos (eventos do jogo -> partículas)
 │   ├── BeetleAura.ts       # partículas dos cascos vivos (faísca, estrela, bolha, brilho)
-│   ├── ChestStage.ts       # o baú abrindo no jardim: cai, chacoalha, estoura, moedas, orvalho e o visual girando
+│   ├── ChestStage.ts       # a cerimônia do baú: cai, chacoalha, estoura e tira os prêmios um por vez (suspense, resumo)
+│   ├── chestModels.ts      # os quatro baús modelados (madeira, prata, cristal, Sol), com o veio da madeira feito em código
 │   ├── glow.ts             # luz de mentirinha (mancha e anel aditivos) do achado raro e do baú
 │   ├── SoftParticles.ts    # poeira/fedor/brilho (pool num THREE.Points só)
 │   ├── ChunkParticles.ts   # pedacinhos com física (respingo, torrão, confete, folha)
@@ -435,7 +437,7 @@ src/
     ├── WardrobeSheet.ts    # placa do guarda-roupa: abas por lugar, vestir, provar, comprar, selo "Novo"
     ├── ShopSheet.ts        # Feirinha: baús (abrir e comprar), cascos e acessórios à venda, provar e comprar
     ├── PassSheet.ts        # passe da temporada: trilha de níveis, pegar prêmio, desafios
-    ├── ChestOverlay.ts     # cartão da cerimônia do baú (abrir, o que saiu, próximo, vestir)
+    ├── ChestOverlay.ts     # o palco da cerimônia do baú (legenda de cada prêmio, contador, Pular, resumo, vestir)
     ├── WelcomeDialog.ts    # "Chegou a Feirinha!": o presente de quem já jogava
     ├── purchase.ts         # botão de comprar em dois toques, carteira e chips de valor
     ├── economyIcons.ts     # moeda, gota de orvalho, os quatro baús, Feirinha e passe

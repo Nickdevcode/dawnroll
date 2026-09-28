@@ -40,8 +40,8 @@ import { Menu } from './ui/Menu';
 import { AchievementToast } from './ui/AchievementToast';
 import { ChestOverlay } from './ui/ChestOverlay';
 import { SHOWCASE_SHEETS } from './ui/Menu';
-import { ChestStage, CHEST_REVEAL_DELAY, type ChestStageEvent } from './fx/ChestStage';
-import { rarityRank, type ChestResult } from './progression/economy';
+import { ChestStage, CHEST_CHARGE_TIME, CHEST_FIRST_REWARD_DELAY, type ChestStageEvent } from './fx/ChestStage';
+import { chestRewards, rarityRank, type ChestResult, type ChestReward } from './progression/economy';
 import type { Rarity } from './progression/unlocks';
 import type { ShowcaseFrameName } from './core/ShowcaseCamera';
 import type { BootScreen } from './ui/BootScreen';
@@ -240,12 +240,16 @@ export class Game {
   /** Baú abrindo no jardim (a cerimônia) e o cartão dela. */
   private readonly chestStage = new ChestStage();
   private readonly chestOverlay: ChestOverlay;
-  /** Baú da cerimônia em curso (null = nenhuma). */
-  private chest: { key: string; rarity: Rarity; result: ChestResult | null } | null = null;
+  /**
+   * Baú da cerimônia em curso (null = nenhuma): o que saiu, a fila de prêmios,
+   * qual está à mostra (-1 = nenhum ainda; >= total = resumo) e se pediu pra pular.
+   */
+  private chest: { key: string; rarity: Rarity; result: ChestResult | null; rewards: ChestReward[]; index: number; skip: boolean } | null = null;
   /** Ponto que a câmera do provador rodeia durante a cerimônia (no lugar do besouro). */
   private readonly chestAnchor = new THREE.Object3D();
-  /** Contagens da cerimônia: até mostrar o prêmio, até o próximo baú cair. */
-  private chestRevealTimer = 0;
+  /** Contagens da cerimônia: até o primeiro prêmio sair, até a legenda do prêmio entrar, até o próximo baú cair. */
+  private chestFirstTimer = 0;
+  private chestLabelTimer = 0;
   private chestNextTimer = 0;
   private readonly chestSpot = new THREE.Vector3();
   private chestYaw = 0;
@@ -356,6 +360,8 @@ export class Game {
     this.menu.pass.onClaim = () => this.audio.passClaim();
     this.menu.onOpenChest = (key) => this.beginChest(key);
     this.chestOverlay.onOpen = () => this.openChest();
+    this.chestOverlay.onAdvance = () => this.advanceChest();
+    this.chestOverlay.onSkip = () => this.skipChest();
     this.chestOverlay.onNext = () => this.nextChest();
     this.chestOverlay.onClose = () => this.endChest();
     this.chestOverlay.onWear = (look) => {
@@ -1331,11 +1337,17 @@ export class Game {
     // Raio generoso: com a grama densa, o besouro precisa de uma clareira para aparecer.
     // No provador a clareira abre mais (a câmera chega perto e a grama não pode tapar a lente).
     pushers[0].set(player.x, player.y, player.z, 0.95 + this.showcase.blend * 1.6);
-    // Na cerimônia do baú, a clareira da bola vai pro baú (o capim não pode tapar ele).
-    if (this.chestStage.active) pushers[1].set(this.chestSpot.x, this.chestSpot.y, this.chestSpot.z, 1.1);
-    else pushers[1].set(ballPos.x, ballPos.y - this.ball.radius, ballPos.z, this.ball.isSolid ? this.ball.radius * 1.05 : 0);
-    // Provador: o capim em volta da lente deita (senão uma folha tapa o close).
-    pushers[2].set(camera.position.x, camera.position.y - 1, camera.position.z, this.showcase.blend > 0.01 ? 1.3 * this.showcase.blend : 0);
+    if (this.chestStage.active) {
+      // Cerimônia do baú: o palco é uma clareira. Deita o capim em volta do baú e no
+      // meio do caminho até a lente (senão uma folha tapa a cena inteira de perto).
+      pushers[1].set(this.chestSpot.x, this.chestSpot.y, this.chestSpot.z, 1.8);
+      const mid = this.tmpFocus.copy(camera.position).add(this.chestSpot).multiplyScalar(0.5);
+      pushers[2].set(mid.x, this.chestSpot.y, mid.z, 1.6);
+    } else {
+      pushers[1].set(ballPos.x, ballPos.y - this.ball.radius, ballPos.z, this.ball.isSolid ? this.ball.radius * 1.05 : 0);
+      // Provador: o capim em volta da lente deita (senão uma folha tapa o close).
+      pushers[2].set(camera.position.x, camera.position.y - 1, camera.position.z, this.showcase.blend > 0.01 ? 1.3 * this.showcase.blend : 0);
+    }
     this.grass.update(camera);
     this.groundCover.update(camera);
     this.graphics.setFocusDistance(this.showcase.blend > 0.5 ? showcaseFocus : camera.position.distanceTo(player));
@@ -1438,15 +1450,23 @@ export class Game {
     free.y = 0;
     free.width = w;
     free.height = h;
-    // Cerimônia do baú: o cartão fica embaixo (livre em cima dele) e a câmera rodeia o baú.
-    const sheet = this.chest ? (this.chestOverlay.element.querySelector('[data-card]') as HTMLElement) : this.menu.showcaseSheet;
-    if (sheet) {
-      const rect = sheet.getBoundingClientRect();
-      // Placa do lado (computador): livre à esquerda dela. Placa embaixo (celular, cartão do baú): livre em cima.
-      if (!this.chest && rect.left > w * 0.25) free.width = rect.left;
-      // No baú o cartão é baixo: centraliza acima dele sem afastar tanto a câmera.
-      else if (this.chest) free.height = Math.max(rect.top, h * 0.78);
-      else if (rect.top > h * 0.2) free.height = rect.top;
+    if (this.chest) {
+      // Cerimônia do baú: o palco é o meio da tela, entre a legenda em cima e o rodapé.
+      const stage = this.chestOverlay.stageRect();
+      if (stage.height > 40) {
+        free.x = stage.left;
+        free.y = stage.top;
+        free.width = stage.width;
+        free.height = stage.height;
+      }
+    } else {
+      const sheet = this.menu.showcaseSheet;
+      if (sheet) {
+        const rect = sheet.getBoundingClientRect();
+        // Placa do lado (computador): livre à esquerda dela. Placa embaixo (celular): livre em cima.
+        if (rect.left > w * 0.25) free.width = rect.left;
+        else if (rect.top > h * 0.2) free.height = rect.top;
+      }
     }
     const root = this.chest ? this.chestAnchor : this.beetle.model.root;
     return this.showcase.apply(this.graphics.camera, root, dt, this.viewport, free);
@@ -1655,17 +1675,17 @@ export class Game {
   private beginChest(key: string): void {
     const grant = this.progression.chests.find((c) => c.key === key);
     if (!grant || !this.beetle) return;
-    this.chest = { key, rarity: grant.rarity, result: null };
+    this.chest = { key, rarity: grant.rarity, result: null, rewards: [], index: -1, skip: false };
     this.placeChestSpot();
     this.menu.setChestMode(true);
     this.chestStage.present(grant.rarity, this.chestSpot, this.chestYaw);
     this.chestOverlay.showWaiting(grant.rarity, this.progression.chests.length - 1);
     this.showcase.obstacles = [this.beetleSphere];
+    this.showcase.steady = true;
     this.showcase.active = true;
     this.showcase.resetSpin();
     this.showcase.setFrame('chest');
-    this.chestRevealTimer = 0;
-    this.chestNextTimer = 0;
+    this.resetChestTimers();
   }
 
   /** Tocou pra abrir: sorteia (já grava no save) e o baú estoura. */
@@ -1678,11 +1698,57 @@ export class Game {
       return;
     }
     chest.result = result;
-    this.chestStage.open(result);
+    chest.rewards = chestRewards(result);
+    chest.index = -1;
+    chest.skip = false;
+    this.chestStage.open(result, chest.rewards);
     this.chestOverlay.showOpening();
     // Casco novo: o besouro já veste (provando) pra mostrar do lado do baú.
     if (result.look?.startsWith('skin:')) this.setLookPreview({ kind: 'skin', id: result.look.slice(5) as SkinId });
-    this.chestRevealTimer = CHEST_REVEAL_DELAY + 0.45;
+    this.chestFirstTimer = CHEST_CHARGE_TIME + CHEST_FIRST_REWARD_DELAY;
+  }
+
+  /** Tira o prêmio `index` do baú; a legenda entra quando ele aparece (depois do suspense, nos raros). */
+  private showChestReward(index: number): void {
+    const chest = this.chest;
+    if (!chest) return;
+    chest.index = index;
+    this.chestOverlay.clearReward();
+    this.chestLabelTimer = Math.max(0.01, this.chestStage.showReward(index));
+  }
+
+  /** Tocou no palco (ou Continuar): próximo prêmio, ou o resumo depois do último. */
+  private advanceChest(): void {
+    const chest = this.chest;
+    if (!chest?.result || chest.index < 0 || chest.index >= chest.rewards.length) return;
+    // Sem atropelar: o prêmio da vez tem que ter aparecido (toque duplo não pula dois).
+    if (!this.chestStage.rewardSettled) return;
+    if (chest.index < chest.rewards.length - 1) this.showChestReward(chest.index + 1);
+    else this.summarizeChest();
+  }
+
+  /** Pular: vai direto pro resumo (se a tampa ainda nem estourou, vai assim que estourar). */
+  private skipChest(): void {
+    const chest = this.chest;
+    if (!chest?.result || chest.index >= chest.rewards.length) return;
+    if (this.chestFirstTimer > 0) chest.skip = true;
+    else this.summarizeChest();
+  }
+
+  /** Resumo: tudo que saiu no cartão, e o visual (ou a moedona) boiando em cima do baú. */
+  private summarizeChest(): void {
+    const chest = this.chest;
+    if (!chest?.result) return;
+    chest.index = chest.rewards.length;
+    this.chestLabelTimer = 0;
+    this.chestStage.showSummary();
+    this.chestOverlay.showSummary(chest.result, this.progression.chests.length);
+  }
+
+  private resetChestTimers(): void {
+    this.chestFirstTimer = 0;
+    this.chestLabelTimer = 0;
+    this.chestNextTimer = 0;
   }
 
   /** Próximo baú da pilha (o mais raro primeiro), no mesmo lugar. */
@@ -1690,8 +1756,13 @@ export class Game {
     if (!this.chest) return;
     this.chestStage.dismiss();
     this.setLookPreview(null);
+    this.chestFirstTimer = 0;
+    this.chestLabelTimer = 0;
     this.chestNextTimer = 0.4;
     this.chest.result = null;
+    this.chest.rewards = [];
+    this.chest.index = -1;
+    this.chest.skip = false;
   }
 
   /** Fim da cerimônia: o baú some e a Feirinha volta. */
@@ -1703,10 +1774,10 @@ export class Game {
     this.setLookPreview(null);
     this.menu.setChestMode(false);
     this.showcase.obstacles = [];
+    this.showcase.steady = false;
     this.showcase.setFrame('skins');
     this.showcase.resetSpin();
-    this.chestNextTimer = 0;
-    this.chestRevealTimer = 0;
+    this.resetChestTimers();
   }
 
   /** Relógios da cerimônia (mostrar o prêmio, derrubar o próximo baú). */
@@ -1714,9 +1785,17 @@ export class Game {
     this.chestStage.update(dt, this.graphics.camera.position);
     const chest = this.chest;
     if (!chest) return;
-    if (this.chestRevealTimer > 0) {
-      this.chestRevealTimer -= dt;
-      if (this.chestRevealTimer <= 0 && chest.result) this.chestOverlay.showResult(chest.result, this.progression.chests.length);
+    if (this.chestFirstTimer > 0) {
+      this.chestFirstTimer -= dt;
+      if (this.chestFirstTimer <= 0 && chest.result) {
+        if (chest.skip) this.summarizeChest();
+        else this.showChestReward(0);
+      }
+    }
+    if (this.chestLabelTimer > 0) {
+      this.chestLabelTimer -= dt;
+      const reward = chest.rewards[chest.index];
+      if (this.chestLabelTimer <= 0 && reward) this.chestOverlay.showReward(reward, chest.rewards.length - 1 - chest.index);
     }
     if (this.chestNextTimer > 0) {
       this.chestNextTimer -= dt;
@@ -1733,7 +1812,7 @@ export class Game {
         this.chestOverlay.showWaiting(next.rarity, this.progression.chests.length - 1);
       }
     }
-    this.showcase.setFrame(this.chestStage.showingItem ? 'chestItem' : 'chest');
+    this.showcase.setFrame('chest');
     this.beetleSphere.center.copy(this.beetle.model.root.position).y += 0.3;
     // A câmera rodeia o baú (o besouro fica atrás dele, aparecendo).
     this.chestAnchor.position.copy(this.chestSpot);
@@ -1795,6 +1874,17 @@ export class Game {
         this.audio.chestBurst(rarityRank(rarity));
         this.effects.celebrate(at, 0.25 + rarityRank(rarity) * 0.08);
         this.rumble(0.5, 0.8, 250);
+        break;
+      case 'suspense':
+        // O visual raro carregando: o baú chacoalha de novo.
+        this.audio.chestRattle();
+        this.rumble(0.25, 0.4, 300);
+        break;
+      case 'flash':
+        // Clarão do épico/lendário: o estouro de novo, mais forte.
+        this.audio.chestBurst(Math.max(2, rarityRank(rarity)));
+        this.effects.celebrate(at, 0.5);
+        this.rumble(0.7, 1, 320);
         break;
       case 'coin':
         this.audio.coinClink();

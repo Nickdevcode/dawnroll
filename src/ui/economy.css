@@ -753,24 +753,36 @@
   opacity: 0.15;
 }
 
+/*
+ * O palco: vinheta escurecendo o jardim em volta (o baú e o prêmio ficam na luz),
+ * o nome do baú em cima, a legenda do prêmio logo abaixo, o meio livre pra câmera
+ * e o rodapé com a dica e o botão (ou o resumo, no fim).
+ */
 .chest-overlay {
   --chest: var(--chest-common);
+  --rarity-common: #a3927f;
+  --rarity-rare: #3f7fd8;
+  --rarity-epic: #8a4fd6;
+  --rarity-legendary: #e69a1e;
   position: absolute;
   inset: 0;
   z-index: 7;
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  padding: var(--space-5) var(--space-4) max(var(--space-5), env(safe-area-inset-bottom));
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  gap: var(--space-2);
+  padding: max(var(--space-4), env(safe-area-inset-top)) max(var(--space-4), env(safe-area-inset-right)) max(var(--space-5), env(safe-area-inset-bottom)) max(var(--space-4), env(safe-area-inset-left));
+  color: var(--dawn-cream);
   cursor: pointer;
   /* Mora no #ui (pointer-events: none) e cobre a tela toda: sem isso o mouse atravessa
      os botões e o "tocar pra abrir" direto pro canvas (pelo controle funcionava). */
   pointer-events: auto;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
 }
 .chest-overlay[hidden] {
   display: none;
 }
-.chest-overlay[data-mode='result'],
+.chest-overlay[data-mode='summary'],
 .chest-overlay[data-mode='opening'] {
   cursor: default;
 }
@@ -783,7 +795,319 @@
 .chest-overlay[data-rarity='legendary'] {
   --chest: var(--chest-legendary);
 }
-.chest-overlay__card {
+.chest-stage__vignette {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(52% 44% at 50% 58%, color-mix(in srgb, var(--chest) 20%, transparent) 0%, transparent 72%),
+    radial-gradient(66% 62% at 50% 56%, rgba(14, 11, 40, 0) 0%, rgba(14, 11, 40, 0.42) 52%, rgba(9, 7, 28, 0.88) 100%);
+  animation: stage-in 480ms var(--ease-out);
+}
+
+/* Em cima: o baú (ícone, nome e raridade) e o Depois/Pular. */
+.chest-stage__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  animation: stage-drop 420ms var(--ease-spring);
+}
+.chest-stage__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: 5px 16px 5px 5px;
+  border-radius: var(--radius-pill);
+  background: rgba(20, 16, 52, 0.55);
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--chest) 55%, transparent), 0 8px 24px rgba(9, 7, 28, 0.3);
+  backdrop-filter: blur(8px);
+}
+.chest-stage__icon {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 35%, #fffaf0 0%, #f3e3c7 100%);
+  flex-shrink: 0;
+}
+.chest-stage__icon svg {
+  width: 34px;
+  height: 34px;
+}
+.chest-stage__name {
+  display: grid;
+  justify-items: start;
+  gap: 2px;
+  min-width: 0;
+}
+.chest-stage__name strong {
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 900;
+  line-height: 1.1;
+  white-space: nowrap;
+}
+.chest-stage__ghost {
+  flex-shrink: 0;
+  min-height: 42px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, 0.14);
+  box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.28);
+  color: var(--dawn-cream);
+  font: inherit;
+  font-family: var(--font-display);
+  font-size: 14.5px;
+  font-weight: 800;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  transition: background-color var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out);
+}
+.chest-stage__ghost:hover {
+  background: rgba(255, 255, 255, 0.24);
+}
+.chest-stage__ghost:active {
+  transform: scale(0.96);
+}
+.chest-stage__ghost:focus-visible {
+  outline: 3px solid var(--dawn-sun);
+  outline-offset: 2px;
+}
+
+/* Legenda do prêmio: entra com um pulinho quando ele aparece, some quando o próximo sai do baú. */
+.chest-stage__label {
+  display: grid;
+  place-items: center;
+  min-height: 104px;
+  text-align: center;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(-6px) scale(0.92);
+  transition:
+    opacity 160ms var(--ease-out),
+    transform 160ms var(--ease-out);
+}
+.chest-stage__label.is-shown {
+  opacity: 1;
+  transform: none;
+  transition:
+    opacity 220ms var(--ease-out),
+    transform 420ms var(--ease-spring);
+}
+.reward-label {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  text-shadow:
+    0 2px 0 rgba(14, 11, 40, 0.45),
+    0 6px 22px rgba(9, 7, 28, 0.6);
+}
+.reward-label__amount {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  font-family: var(--font-display);
+  font-size: clamp(44px, 7vw, 68px);
+  font-weight: 900;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: #ffe08a;
+}
+.reward-label.is-dew .reward-label__amount {
+  color: #c4ecff;
+}
+.reward-label__icon {
+  display: grid;
+  width: 0.82em;
+  height: 0.82em;
+  filter: drop-shadow(0 4px 10px rgba(9, 7, 28, 0.45));
+}
+.reward-label__icon svg {
+  width: 100%;
+  height: 100%;
+}
+.reward-label__unit {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  opacity: 0.92;
+}
+.reward-label__eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #ffe08a;
+}
+.reward-label__eyebrow svg {
+  width: 15px;
+  height: 15px;
+}
+.reward-label__name {
+  font-family: var(--font-display);
+  font-size: clamp(30px, 5vw, 46px);
+  font-weight: 900;
+  line-height: 1.05;
+  text-wrap: balance;
+}
+/* O nome brilha na cor da raridade (o suspense do épico e do lendário termina nele). */
+.reward-label.is-rare .reward-label__name {
+  text-shadow:
+    0 2px 0 rgba(14, 11, 40, 0.45),
+    0 0 26px color-mix(in srgb, var(--rarity-rare) 75%, transparent);
+}
+.reward-label.is-epic .reward-label__name {
+  text-shadow:
+    0 2px 0 rgba(14, 11, 40, 0.45),
+    0 0 28px color-mix(in srgb, var(--rarity-epic) 85%, transparent);
+}
+.reward-label.is-legendary .reward-label__name {
+  color: #fff3c4;
+  text-shadow:
+    0 2px 0 rgba(90, 50, 8, 0.5),
+    0 0 30px color-mix(in srgb, var(--rarity-legendary) 90%, transparent);
+}
+.reward-label__meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 2px;
+}
+/* No palco escuro o chip de raridade vai cheio (o de fundo clarinho do menu some aqui). */
+.chest-overlay .reward-label .rarity-chip,
+.chest-stage__name .rarity-chip {
+  text-shadow: none;
+}
+.chest-overlay .reward-label .rarity-chip.is-common,
+.chest-stage__name .rarity-chip.is-common {
+  background: #cdbca6;
+  color: #3d2f22;
+}
+.chest-overlay .reward-label .rarity-chip.is-rare,
+.chest-stage__name .rarity-chip.is-rare {
+  background: #4f8fe6;
+  color: #fff;
+}
+.chest-overlay .reward-label .rarity-chip.is-epic,
+.chest-stage__name .rarity-chip.is-epic {
+  background: #9a62e8;
+  color: #fff;
+}
+.reward-label__slot {
+  padding: 2px 10px;
+  border-radius: var(--radius-pill);
+  background: rgba(20, 16, 52, 0.5);
+  font-size: 11.5px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-shadow: none;
+}
+
+/* O meio: livre pra câmera (o baú e o prêmio aparecem aqui). */
+.chest-stage__space {
+  min-height: 0;
+}
+
+/* Embaixo: a dica, o botão e quantos prêmios faltam; no fim, o resumo. */
+.chest-stage__bottom {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-2);
+}
+.chest-stage__hint {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 800;
+  text-align: center;
+  text-shadow:
+    0 2px 0 rgba(14, 11, 40, 0.45),
+    0 4px 16px rgba(9, 7, 28, 0.55);
+}
+.chest-overlay[data-mode='waiting'] .chest-stage__hint {
+  animation: hint-breathe 1.6s ease-in-out infinite;
+}
+.chest-stage__primary,
+.chest-stage__secondary {
+  min-height: 52px;
+  padding: 0 28px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  font: inherit;
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 900;
+  cursor: pointer;
+  transition:
+    transform var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out),
+    opacity var(--dur-fast);
+}
+.chest-stage__primary {
+  min-width: min(240px, 100%);
+  background: linear-gradient(180deg, #ffc462 0%, var(--dawn-sun) 55%, #f3a23a 100%);
+  color: #2a1706;
+  box-shadow:
+    0 5px 0 var(--dawn-sun-deep),
+    0 12px 28px rgba(9, 7, 28, 0.35),
+    inset 0 2px 0 rgba(255, 255, 255, 0.55);
+}
+.chest-stage__primary.is-small {
+  min-width: 0;
+  min-height: 40px;
+  padding: 0 16px;
+  font-size: 14.5px;
+  box-shadow:
+    0 3px 0 var(--dawn-sun-deep),
+    inset 0 2px 0 rgba(255, 255, 255, 0.55);
+}
+.chest-stage__secondary {
+  background: rgba(43, 42, 94, 0.08);
+  color: var(--dawn-indigo);
+}
+.chest-stage__primary:hover,
+.chest-stage__secondary:hover {
+  transform: translateY(-1px);
+}
+.chest-stage__primary:active {
+  transform: translateY(4px);
+  box-shadow:
+    0 1px 0 var(--dawn-sun-deep),
+    inset 0 2px 0 rgba(255, 255, 255, 0.4);
+}
+.chest-stage__primary:focus-visible,
+.chest-stage__secondary:focus-visible {
+  outline: 3px solid var(--dawn-cream);
+  outline-offset: 3px;
+}
+.chest-summary .chest-stage__primary:focus-visible,
+.chest-summary .chest-stage__secondary:focus-visible {
+  outline-color: var(--dawn-sun-deep);
+  outline-offset: 2px;
+}
+.chest-stage__count,
+.chest-stage__more {
+  margin: 0;
+  padding: 3px 12px;
+  border-radius: var(--radius-pill);
+  background: rgba(20, 16, 52, 0.55);
+  font-size: 12.5px;
+  font-weight: 800;
+  backdrop-filter: blur(6px);
+}
+
+/* Resumo: o cartão de creme com tudo que saiu. */
+.chest-summary {
   display: grid;
   gap: var(--space-3);
   width: min(440px, 100%);
@@ -799,98 +1123,23 @@
   cursor: auto;
   animation: chest-card-in 420ms var(--ease-spring);
 }
-.chest-overlay__head {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-}
-.chest-overlay__icon {
-  display: grid;
-  place-items: center;
-  width: 52px;
-  height: 52px;
-  border-radius: 16px;
-  background: radial-gradient(circle at 50% 35%, #fffaf0 0%, #f3e3c7 100%);
-}
-.chest-overlay__icon svg {
-  width: 42px;
-  height: 42px;
-}
-.chest-overlay__title {
-  display: grid;
-  justify-items: start;
-  gap: 4px;
-}
-.chest-overlay__title strong {
+.chest-summary__title {
+  margin: 0;
   font-family: var(--font-display);
-  font-size: 20px;
+  font-size: 19px;
   font-weight: 900;
   color: var(--dawn-indigo);
 }
-.chest-overlay__hint,
-.chest-overlay__more {
-  margin: 0;
-  font-size: 13.5px;
-  font-weight: 700;
-  line-height: 1.4;
-  color: var(--color-ink-soft);
-}
-.chest-overlay__more {
-  font-size: 12.5px;
-}
-.chest-overlay__actions {
+.chest-summary__actions {
   display: flex;
   gap: var(--space-2);
 }
-.chest-overlay__actions > * {
+.chest-summary__actions > * {
   flex: 1;
-}
-.chest-overlay__primary,
-.chest-overlay__secondary {
-  min-height: 48px;
-  padding: 0 20px;
-  border: 0;
-  border-radius: var(--radius-pill);
-  font: inherit;
-  font-family: var(--font-display);
-  font-size: 16px;
-  font-weight: 900;
-  cursor: pointer;
-  transition: transform var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out), opacity var(--dur-fast);
-}
-.chest-overlay__primary {
-  background: linear-gradient(180deg, #ffc462 0%, var(--dawn-sun) 55%, #f3a23a 100%);
-  color: #2a1706;
-  box-shadow: 0 5px 0 var(--dawn-sun-deep), inset 0 2px 0 rgba(255, 255, 255, 0.55);
-}
-.chest-overlay__primary.is-small {
-  flex: none;
-  min-height: 38px;
-  padding: 0 16px;
-  font-size: 14px;
-  box-shadow: 0 3px 0 var(--dawn-sun-deep), inset 0 2px 0 rgba(255, 255, 255, 0.55);
-}
-.chest-overlay__secondary {
-  background: rgba(43, 42, 94, 0.08);
-  color: var(--dawn-indigo);
-}
-.chest-overlay__primary:hover:not(:disabled),
-.chest-overlay__secondary:hover:not(:disabled) {
-  transform: translateY(-1px);
-}
-.chest-overlay__primary:active:not(:disabled) {
-  transform: translateY(4px);
-  box-shadow: 0 1px 0 var(--dawn-sun-deep), inset 0 2px 0 rgba(255, 255, 255, 0.4);
-}
-.chest-overlay__primary:disabled,
-.chest-overlay__secondary:disabled {
-  opacity: 0.5;
-  cursor: progress;
-}
-.chest-overlay__primary:focus-visible,
-.chest-overlay__secondary:focus-visible {
-  outline: 3px solid var(--dawn-sun-deep);
-  outline-offset: 2px;
+  min-width: 0;
+  padding-inline: 14px;
+  font-size: 16.5px;
+  white-space: nowrap;
 }
 .chest-rewards {
   display: flex;
@@ -988,13 +1237,6 @@
   color: #2f5a1c;
   font-size: 12px;
   font-weight: 900;
-}
-/* A cerimônia usa as cores de raridade fora do menu também. */
-.chest-overlay {
-  --rarity-common: #a3927f;
-  --rarity-rare: #3f7fd8;
-  --rarity-epic: #8a4fd6;
-  --rarity-legendary: #e69a1e;
 }
 
 /* --- Boas-vindas ---------------------------------------------------------------------- */
@@ -1161,6 +1403,23 @@
     transform: translateY(40px) scale(0.96);
   }
 }
+@keyframes stage-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes stage-drop {
+  from {
+    opacity: 0;
+    transform: translateY(-16px);
+  }
+}
+@keyframes hint-breathe {
+  50% {
+    opacity: 0.62;
+    transform: scale(0.97);
+  }
+}
 @keyframes reward-pop {
   from {
     opacity: 0;
@@ -1173,7 +1432,8 @@
   .welcome-dialog__art svg,
   .pass-hero__art svg,
   .pass-tier__claim,
-  .buy-button.is-armed {
+  .buy-button.is-armed,
+  .chest-overlay[data-mode='waiting'] .chest-stage__hint {
     animation: none;
   }
 }
@@ -1204,7 +1464,13 @@
   .pass-hero {
     margin-inline: var(--space-4);
   }
-  .chest-overlay__card {
+  .chest-summary {
     padding: var(--space-3) var(--space-4) var(--space-4);
+  }
+  .chest-stage__label {
+    min-height: 92px;
+  }
+  .chest-stage__name strong {
+    font-size: 15.5px;
   }
 }
