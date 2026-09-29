@@ -651,11 +651,15 @@ export class OnlineSheet {
     return /* html */ `
       <li class="online__player" data-slot="${p.slot}" tabindex="0" data-focusable>
         <span class="online__avatar" aria-hidden="true">${skinIcon(look)}</span>
-        <span class="online__nick">${escapeHtml(p.nick)}</span>${badges}
+        <span class="online__nick" title="${escapeHtml(p.nick)}">${escapeHtml(p.nick)}</span>${badges}
       </li>`;
   }
 
-  /** Cada um por si: as 6 vagas. Com times: uma coluna por time, com "Entrar". */
+  /**
+   * Cada um por si: as 6 vagas. Com times: um cartão por time, um embaixo do
+   * outro (largura cheia: apelido longo com coroa e "Você" cabe), com as vagas
+   * que faltam tracejadas e "Entrar".
+   */
   private playersHtml(net: OnlinePlay, selfId: string): string {
     const players = net.players;
     const size = net.rules.teamSize as TeamSize;
@@ -677,7 +681,8 @@ export class OnlineSheet {
       const join = mine
         ? ''
         : `<button class="online__team-join" type="button" data-team-join="${team}" ${full || running ? 'disabled' : ''}>${escapeHtml(t(full ? 'online.teamFull' : 'online.teamJoin'))}</button>`;
-      const rows = members.map((p) => this.playerRow(p, selfId)).join('') || `<li class="online__team-empty">${escapeHtml(t('online.teamEmpty'))}</li>`;
+      const rows = members.map((p) => this.playerRow(p, selfId)).join('');
+      const slots = `<li class="online__team-slot">${escapeHtml(t('online.teamSlot'))}</li>`.repeat(Math.max(0, size - members.length));
       columns.push(/* html */ `
         <section class="online__team${mine ? ' is-mine' : ''}" data-team="${team}" aria-labelledby="online-team-${team}">
           <header class="online__team-head">
@@ -686,7 +691,7 @@ export class OnlineSheet {
             <span class="online__team-count">${members.length}/${size}</span>
             ${join}
           </header>
-          <ul class="online__players">${rows}</ul>
+          <ul class="online__players">${rows}${slots}</ul>
         </section>`);
     }
     const shuffle = net.isHost && !net.isPublic && !running ? `<button class="account-secondary online__shuffle" type="button" data-shuffle>${MatchIcons.shuffle}<span>${escapeHtml(t('online.shuffle'))}</span></button>` : '';

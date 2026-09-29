@@ -1,5 +1,5 @@
 import type { Input, InputDevice } from '../core/Input';
-import { PAD_LABELS, type PadStyle } from '../core/GamepadInput';
+import { PAD_LABELS, type MenuAction, type PadStyle } from '../core/GamepadInput';
 import { isTouchDevice } from '../core/device';
 import type { SaveData } from '../core/save';
 import { formatCm, onLocaleChange, t, tn, type MessageKey } from '../i18n';
@@ -221,6 +221,30 @@ export class Hud {
   /** O online ficou pronto: chip da sala, placas de apelido, roda de reações e (no toque) os botões do online entram no HUD. */
   attachOnlinePlay(net: OnlinePlay): void {
     this.onlineHud = new OnlineHud(this.hud, net, this.input, this.isTouch);
+    this.onlineHud.match.onCardChange = (open) => this.onMatchCardChange?.(open);
+  }
+
+  /** O cartão do resultado da Disputa abriu/fechou. */
+  onMatchCardChange?: (open: boolean) => void;
+
+  /** O cartão do resultado está aberto (é uma janela: mouse solto, controle nele). */
+  get matchCardOpen(): boolean {
+    return this.onlineHud?.match.isCardOpen ?? false;
+  }
+
+  /** Foco no botão principal do cartão (controle). */
+  focusMatchCard(): void {
+    this.onlineHud?.match.focusCard();
+  }
+
+  /** Controle no cartão do resultado. Devolve se usou a ação. */
+  handleMatchCardGamepad(action: MenuAction): boolean {
+    return this.onlineHud?.match.handleGamepad(action) ?? false;
+  }
+
+  /** Fecha o cartão do resultado (Esc). */
+  closeMatchCard(): void {
+    this.onlineHud?.match.closeCard();
   }
 
   /** Roda de reações do online (null antes do online ficar pronto). */

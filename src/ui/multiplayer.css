@@ -165,6 +165,8 @@
 }
 .online__players {
   display: grid;
+  /* minmax(0, …): a linha encolhe (o apelido ganha reticências) em vez de vazar pra fora. */
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-2);
   margin: 0;
   padding: 0;
@@ -174,6 +176,7 @@
   display: flex;
   align-items: center;
   gap: var(--space-3);
+  min-width: 0;
   min-height: 52px;
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-md);
@@ -237,6 +240,7 @@
 }
 .online__badge {
   display: inline-flex;
+  flex-shrink: 0;
   align-items: center;
   gap: 4px;
   padding: 3px 10px;
@@ -906,10 +910,14 @@
   box-shadow: none;
 }
 
-/* Times: uma coluna por time (cor + ícone + nome). */
+/*
+ * Times: um cartão por time (cor + ícone + nome), um embaixo do outro. Lado a
+ * lado as colunas ficavam estreitas demais: o apelido longo com a coroa e o
+ * "Você" vazava pra fora. Os besouros do time dividem a largura quando cabe.
+ */
 .online__teams {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  display: flex;
+  flex-direction: column;
   gap: var(--space-3);
 }
 .online__team {
@@ -917,6 +925,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
+  min-width: 0;
   padding: var(--space-3);
   border-radius: var(--radius-md);
   background: color-mix(in srgb, var(--team) 12%, #fffdf8);
@@ -953,6 +962,9 @@
 .online__team-name {
   flex: 1;
   min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   margin: 0;
   font-family: var(--font-display);
   font-size: 15px;
@@ -966,7 +978,9 @@
   font-variant-numeric: tabular-nums;
 }
 .online__team-join {
-  padding: 4px 12px;
+  flex-shrink: 0;
+  min-height: 32px;
+  padding: 4px 14px;
   border: 0;
   border-radius: var(--radius-pill);
   background: var(--team);
@@ -989,6 +1003,9 @@
   outline: 3px solid var(--dawn-sun-deep);
   outline-offset: 2px;
 }
+.online__team .online__players {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 210px), 1fr));
+}
 .online__team .online__player {
   min-height: 44px;
 }
@@ -1000,14 +1017,17 @@
   width: 25px;
   height: 25px;
 }
-.online__team-empty {
+.online__team-slot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
   padding: var(--space-2);
   border: 2px dashed color-mix(in srgb, var(--team) 35%, transparent);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   color: var(--color-ink-soft);
   font-size: 13px;
-  text-align: center;
-  list-style: none;
+  font-weight: 700;
 }
 .online__shuffle {
   align-self: flex-start;

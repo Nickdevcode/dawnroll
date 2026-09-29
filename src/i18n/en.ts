@@ -1146,7 +1146,7 @@ export const en: Messages = {
   'online.teams.3': 'Trios',
   'online.teamJoin': 'Join',
   'online.teamFull': 'Full',
-  'online.teamEmpty': 'Nobody yet',
+  'online.teamSlot': 'Open slot',
   'online.teamLocked': 'Teams are locked while a match is on',
   'online.shuffle': 'Shuffle',
   'online.start': 'Start match',

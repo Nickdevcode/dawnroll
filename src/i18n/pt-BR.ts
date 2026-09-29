@@ -1150,7 +1150,7 @@ export const ptBR = {
   'online.teams.3': 'Trios',
   'online.teamJoin': 'Entrar',
   'online.teamFull': 'Cheio',
-  'online.teamEmpty': 'Ninguém ainda',
+  'online.teamSlot': 'Vaga livre',
   'online.teamLocked': 'Na Disputa rolando, os times não mudam',
   'online.shuffle': 'Embaralhar',
   'online.start': 'Começar disputa',

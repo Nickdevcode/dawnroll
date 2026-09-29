@@ -86,19 +86,24 @@ export class RemoteBeetle {
     });
   }
 
-  /** Passo fixo: vai pra pose interpolada (os pés, como no retrato) e guarda o resto pra animação. */
-  drive(beetle: BeetlePose, ballSpeed: number, ballRadius: number): void {
+  /**
+   * Passo fixo: vai pra pose interpolada (os pés, como no retrato) e guarda o
+   * resto pra animação. `jumped` = teletransporte (largada, pódio): aparece lá.
+   */
+  drive(beetle: BeetlePose, ballSpeed: number, ballRadius: number, jumped = false): void {
     this.prev.copy(this.curr);
     this.prevYaw = this.currYaw;
     this.curr.set(beetle.x, beetle.y, beetle.z);
     this.currYaw = beetle.yaw;
-    if (!this.placed) {
-      // Primeira pose: nasce lá (sem voar do nada até o lugar).
+    const at = { x: beetle.x, y: beetle.y + COLLIDER_RADIUS, z: beetle.z };
+    if (!this.placed || jumped) {
+      // Primeira pose ou teletransporte: nasce lá (sem voar até o lugar). O corpo também vai direto:
+      // cinemático "andando" 10 m num passo varreria o jardim e arremessaria as bolas no caminho.
       this.prev.copy(this.curr);
       this.prevYaw = this.currYaw;
       this.placed = true;
-    }
-    this.body.setNextKinematicTranslation({ x: beetle.x, y: beetle.y + COLLIDER_RADIUS, z: beetle.z });
+      this.body.setTranslation(at, true);
+    } else this.body.setNextKinematicTranslation(at);
     const p = this.pose;
     p.speed = beetle.riding ? ballSpeed : beetle.speed;
     p.grounded = beetle.grounded || beetle.riding;

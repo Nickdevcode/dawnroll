@@ -27,6 +27,12 @@ export interface ShowcaseFrame {
   /** Alvo no espaço do besouro (altura e frente/trás). */
   targetY: number;
   targetZ: number;
+  /**
+   * Raio do palco: o que está a menos disso do alvo é a cena (degraus e os
+   * besouros em cima deles) e não encurta a lente — um besouro chegando no
+   * degrau puxava a câmera pra dentro dele. Obstáculo mesmo só depois disso.
+   */
+  stage?: number;
 }
 
 export const SHOWCASE_FRAMES = {
@@ -42,7 +48,7 @@ export const SHOWCASE_FRAMES = {
    */
   chest: { yaw: -10, up: 0.14, distance: 1.3, targetY: 0.62, targetZ: 0.04 },
   /** Pódio da Disputa: o "besouro" é o chão no meio do pódio; a câmera olha os três degraus de frente, um pouco de cima. */
-  podium: { yaw: 0, up: 3.1, distance: 8.2, targetY: 1.25, targetZ: 0.3 },
+  podium: { yaw: 0, up: 3.1, distance: 8.2, targetY: 1.35, targetZ: 0.3, stage: 3 },
 } satisfies Record<string, ShowcaseFrame>;
 
 export type ShowcaseFrameName = keyof typeof SHOWCASE_FRAMES;
@@ -93,6 +99,7 @@ export class ShowcaseCamera {
   private readonly dir = new THREE.Vector3();
   private readonly baseLook = new THREE.Vector3();
   private readonly probeDir = new THREE.Vector3();
+  private readonly stageEdge = new THREE.Vector3();
   /** Desvio atual (graus) pra fugir do que tapa, e o próximo alvo dele. */
   private dodge = 0;
   private dodgeTarget = 0;
@@ -105,6 +112,17 @@ export class ShowcaseCamera {
 
   setFrame(name: ShowcaseFrameName): void {
     this.target = SHOWCASE_FRAMES[name];
+  }
+
+  /**
+   * Corte seco: o peso vai direto pra 1 (ativa) ou 0, já no enquadramento
+   * pedido. Pro pódio: misturando com a câmera normal, a lente varria o caminho
+   * de trás do besouro até o pódio e atravessava os besouros em cima dos degraus.
+   */
+  snap(): void {
+    this.weight = this.active ? 1 : 0;
+    Object.assign(this.frame, this.target);
+    this.dodgeTimer = 0;
   }
 
   /** Arrastou `dx` pixels: gira em volta do besouro. */
@@ -124,14 +142,18 @@ export class ShowcaseCamera {
    * folhagem ou na bola (até `max`).
    */
   private clearance(from: THREE.Vector3, dir: THREE.Vector3, max: number): number {
-    let free = max;
-    const solid = this.collision?.cast(from, dir, max + MARGIN) ?? null;
+    // Com palco, a conferência começa na borda dele (ver `ShowcaseFrame.stage`).
+    const skip = Math.min(this.target.stage ?? 0, max);
+    const start = skip > 0 ? this.stageEdge.copy(from).addScaledVector(dir, skip) : from;
+    const reach = max - skip;
+    let free = reach;
+    const solid = this.collision?.cast(start, dir, reach + MARGIN) ?? null;
     if (solid !== null) free = Math.min(free, solid - MARGIN);
-    const soft = this.collision?.castSoft(from, dir, max + MARGIN) ?? null;
+    const soft = this.collision?.castSoft(start, dir, reach + MARGIN) ?? null;
     if (soft !== null) free = Math.min(free, soft - MARGIN);
-    if (this.ball) free = Math.min(free, this.sphereRoom(from, dir, this.ball, this.ball.radius * 1.35 + 0.2));
-    for (const sphere of this.obstacles) free = Math.min(free, this.sphereRoom(from, dir, sphere, sphere.radius));
-    return Math.max(free, 0);
+    if (this.ball) free = Math.min(free, this.sphereRoom(start, dir, this.ball, this.ball.radius * 1.35 + 0.2));
+    for (const sphere of this.obstacles) free = Math.min(free, this.sphereRoom(start, dir, sphere, sphere.radius));
+    return skip + Math.max(free, 0);
   }
 
   /**

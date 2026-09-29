@@ -453,7 +453,7 @@ export class OnlinePlay {
         remote.beetle.model.root.visible = true;
       }
       const pushed = this.pushedPose(remote.member.uid);
-      remote.beetle.drive(pose.beetle, pushed ? Math.hypot(pushed.vx, pushed.vz) : 0, pushed?.radius ?? 0.5);
+      remote.beetle.drive(pose.beetle, pushed ? Math.hypot(pushed.vx, pushed.vz) : 0, pushed?.radius ?? 0.5, remote.buffer.jumped);
     }
     this.balls.beforePhysics(now);
   }

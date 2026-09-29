@@ -8,7 +8,7 @@ import { terrainHeight } from './Terrain';
 /**
  * Pódio da Disputa: três rodelas de tronco na clareira do nascimento (o
  * jardim sempre deixa ela livre), a mais alta no meio, com a fita de ouro,
- * prata e bronze e o número pintado na casca. Tem colisor: cada jogador põe o
+ * prata e bronze e a medalha com o número presa na fita. Tem colisor: cada jogador põe o
  * próprio besouro em cima do degrau do time dele, e os outros o veem lá pelos
  * retratos de sempre. Quem ficou do 4º lugar pra baixo assiste de pé, na frente.
  *
@@ -24,11 +24,22 @@ interface Step {
 
 /** 1º no meio, 2º à esquerda (de quem olha), 3º à direita. */
 const STEPS: readonly Step[] = [
-  { x: 0, height: 1.1, ribbon: '#f0bf4c' },
-  { x: -3.4, height: 0.74, ribbon: '#c9cbd8' },
-  { x: 3.4, height: 0.46, ribbon: '#cf8b52' },
+  { x: 0, height: 1.25, ribbon: '#f0bf4c' },
+  { x: -3.4, height: 0.92, ribbon: '#c9cbd8' },
+  { x: 3.4, height: 0.7, ribbon: '#cf8b52' },
 ];
 const RADIUS = 1.55;
+/** A fita fica esse tanto abaixo da tampa. */
+const RIBBON_DROP = 0.18;
+/** Medalha: raio entre esses dois (cabe entre a fita e o chão da frente até no degrau mais baixo). */
+const MEDAL_MIN = 0.22;
+const MEDAL_MAX = 0.36;
+/**
+ * Clareira de cada rodela (raio do "empurrador" do capim): deita tudo até ~1,7 do
+ * centro e some aos poucos até ~4. Sem isso o capim alto atravessava o degrau baixo
+ * e tapava a medalha.
+ */
+const GRASS_CLEARING = 3.3;
 /** Quanto a rodela afunda no chão (o terreno não é plano: nenhum pé fica no ar). */
 const SINK = 0.5;
 /** Besouros lado a lado em cima de um degrau (e na fila da frente). */
@@ -47,6 +58,8 @@ export class Podium {
   readonly anchor = new THREE.Object3D();
   private readonly colliders: RAPIER.Collider[] = [];
   private readonly tops: number[] = [];
+  /** Chão no meio de cada rodela (onde o capim deita). */
+  private readonly grounds: number[] = [];
   private shown = false;
 
   constructor(private readonly physics: Physics) {
@@ -61,18 +74,24 @@ export class Podium {
       let low = Infinity;
       for (let a = 0; a < 8; a++) low = Math.min(low, terrainHeight(step.x + Math.cos(a) * RADIUS, Math.sin(a) * RADIUS));
       const base = Math.min(low, terrainHeight(step.x, 0)) - SINK;
-      const top = terrainHeight(step.x, 0) + step.height;
+      const ground = terrainHeight(step.x, 0);
+      const top = ground + step.height;
       this.tops.push(top);
+      this.grounds.push(ground);
       const stump = new THREE.Mesh(stumpGeometry(RADIUS, top - base, i), barkMaterial);
       stump.position.set(step.x, base, 0);
       stump.castShadow = true;
       stump.receiveShadow = true;
       const ribbon = new THREE.Mesh(new THREE.TorusGeometry(RADIUS + 0.03, 0.07, 8, 48), clay(step.ribbon, { roughness: 0.45, sheen: 0.8, bump: 0.1, clearcoat: 0.3 }));
       ribbon.rotation.x = Math.PI / 2;
-      ribbon.position.set(step.x, top - 0.22, 0);
+      const ribbonY = top - RIBBON_DROP;
+      ribbon.position.set(step.x, ribbonY, 0);
       ribbon.castShadow = true;
-      const badge = numberBadge(i + 1, step.ribbon);
-      badge.position.set(step.x, top - Math.min(0.55, (top - base - SINK) * 0.55), RADIUS + 0.02);
+      // Medalha presa na fita, na frente: o pedaço de cima encobre a fita, o de baixo nunca encosta no chão.
+      const front = terrainHeight(step.x, RADIUS);
+      const medal = Math.min(MEDAL_MAX, Math.max(MEDAL_MIN, (ribbonY - front - 0.05) / 1.55));
+      const badge = numberBadge(i + 1, step.ribbon, medal);
+      badge.position.set(step.x, ribbonY - medal * 0.55, RADIUS + 0.11);
       this.group.add(stump, ribbon, badge);
     }
   }
@@ -124,6 +143,11 @@ export class Podium {
     return { position: out.set(x, terrainHeight(x, FRONT_ROW_Z), FRONT_ROW_Z), yaw: 0 };
   }
 
+  /** Capim deitado em volta de cada rodela: um "empurrador" por degrau (os 3 que o capim aceita). */
+  flattenGrass(pushers: readonly THREE.Vector4[]): void {
+    for (let i = 0; i < STEPS.length && i < pushers.length; i++) pushers[i].set(STEPS[i].x, this.grounds[i], 0, GRASS_CLEARING);
+  }
+
   /** Topo do degrau (pros confetes). */
   top(rank: number, out: THREE.Vector3): THREE.Vector3 {
     const step = STEPS[Math.min(rank, STEPS.length - 1)];
@@ -151,8 +175,8 @@ function stumpGeometry(radius: number, height: number, seed: number): THREE.Buff
   return geometry;
 }
 
-/** Placa com o número pintado na frente da rodela (disco creme, borda na cor da fita). */
-function numberBadge(place: number, ring: string): THREE.Mesh {
+/** Medalha com o número (disco creme, borda na cor da fita), de raio `radius`. */
+function numberBadge(place: number, ring: string, radius: number): THREE.Mesh {
   const size = 128;
   const canvas = document.createElement('canvas');
   canvas.width = canvas.height = size;
@@ -175,7 +199,7 @@ function numberBadge(place: number, ring: string): THREE.Mesh {
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.anisotropy = 4;
   const material = new THREE.MeshStandardMaterial({ map: texture, transparent: true, roughness: 0.7 });
-  const mesh = new THREE.Mesh(new THREE.CircleGeometry(0.42, 32), material);
+  const mesh = new THREE.Mesh(new THREE.CircleGeometry(radius, 32), material);
   mesh.name = `podium-badge-${place}`;
   return mesh;
 }

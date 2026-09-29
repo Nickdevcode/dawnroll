@@ -440,6 +440,9 @@ export class BallSync {
           ball.teleport(tmpPos);
           ball.root.visible = true;
           rec.placed = true;
+        } else if (buffer.jumped) {
+          // Teletransporte (largada, broto novo): aparece lá, sem varrer o caminho.
+          ball.teleport(tmpPos);
         }
         ball.drive(tmpPos, tmpQuat.set(pose.qx, pose.qy, pose.qz, pose.qw), tmpVel.set(pose.vx, pose.vy, pose.vz), pose.radius, pose.burying, pose.glow);
       }

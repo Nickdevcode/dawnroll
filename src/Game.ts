@@ -444,9 +444,11 @@ export class Game {
     };
     document.addEventListener('pointerlockchange', this.onPointerLockChange);
     // Perdeu o mouse sem pausar (ex.: escolheu poder pelo controle): um clique na cena prende de novo.
+    // Com o cartão do resultado aberto não: o mouse solto é pra clicar nele.
     canvas.addEventListener('click', () => {
-      if (this.started && !this.paused && !this.choosing && !this.hud.isTouch && !this.input.pointerLocked) this.input.requestPointerLock();
+      if (this.started && !this.paused && !this.choosing && !this.cardModal && !this.hud.isTouch && !this.input.pointerLocked) this.input.requestPointerLock();
     });
+    this.hud.onMatchCardChange = (open) => this.onMatchCard(open);
     document.addEventListener('visibilitychange', () => {
       if (!document.hidden) return;
       this.lastTime = 0;
@@ -465,6 +467,8 @@ export class Game {
       if (e.code === 'KeyJ' && !e.repeat && !this.chestOverlay.isOpen && this.inviteToast.acceptShortcut()) e.preventDefault();
       // Escolhendo poder o mouse já está solto: Esc pausa como no resto do jogo.
       if (e.code === 'Escape' && this.choosing && !this.paused) this.pause();
+      // Cartão do resultado aberto (mouse solto): Esc fecha ele, como toda janela.
+      else if (e.code === 'Escape' && this.cardModal && !this.paused) this.hud.closeMatchCard();
       // Atalho de desenvolvimento: F8 adianta o tempo para a próxima fase (sol → nublando → chuva...).
       if (import.meta.env.DEV && e.code === 'F8') this.weather.skipAhead();
     });
@@ -1089,15 +1093,40 @@ export class Game {
     // Pros amigos: "jogando" (numa sala, o banco já sabe pelo ponto dela).
     this.social.setActivity('solo');
     this.announceGolden();
-    // Voltando pra uma escolha de poder, o mouse continua solto (pra clicar nas cartas).
-    if (!this.hud.isTouch && !this.choosing) this.input.requestPointerLock();
+    // Voltando pra uma escolha de poder (ou pro cartão do resultado), o mouse continua solto (pra clicar).
+    if (!this.hud.isTouch && !this.choosing && !this.cardModal) this.input.requestPointerLock();
     this.canvas.focus();
+    if (this.cardModal && this.input.device === 'gamepad') this.hud.focusMatchCard();
   }
 
   private onPointerLockChange = (): void => {
-    // Perdeu o mouse (Esc): pausa e mostra a tela de controles. Soltar pra escolher poder não conta.
-    if (!this.input.pointerLocked && this.started && !this.hud.isTouch && !this.choosing) this.pause();
+    // Perdeu o mouse (Esc): pausa e mostra a tela de controles. Soltar pra escolher poder
+    // (ou pro cartão do resultado da Disputa) não conta.
+    if (!this.input.pointerLocked && this.started && !this.hud.isTouch && !this.choosing && !this.cardModal) this.pause();
   };
+
+  /**
+   * Cartão do resultado da Disputa: é uma janela. Abrindo, o mouse solta (dá pra
+   * clicar nele, e soltar assim não pausa) e o controle ganha foco nele; fechando
+   * (X, B, Esc, partida nova), o mouse volta a ficar preso no jogo.
+   */
+  private onMatchCard(open: boolean): void {
+    if (open) {
+      if (this.input.pointerLocked) document.exitPointerLock();
+      this.input.gamepad.suppressHeldDirection();
+      if (this.input.device === 'gamepad' && !this.paused) this.hud.focusMatchCard();
+      return;
+    }
+    if (!this.started || this.paused) return;
+    // Soltamos o mouse por código: o navegador deixa prender de novo sem clique (sem isso, um clique na cena prende).
+    if (!this.hud.isTouch && !this.choosing && !this.input.pointerLocked) this.input.requestPointerLock();
+    this.canvas.focus();
+  }
+
+  /** O cartão do resultado da Disputa está aberto: o besouro espera e o controle é dele. */
+  private get cardModal(): boolean {
+    return this.net?.active === true && this.hud.matchCardOpen;
+  }
 
   /**
    * Controle: Start pausa/continua; com o menu aberto, direções/A/B navegam nele.
@@ -1107,6 +1136,15 @@ export class Game {
     if (!this.paused) {
       if (this.input.pausePressed) {
         this.pause();
+        return;
+      }
+      // Cartão do resultado aberto: o controle anda nele (e nada vaza pro besouro).
+      if (this.cardModal) {
+        const state = this.input.state;
+        state.jumpPressed = false;
+        state.resetPressed = false;
+        state.abilityPressed = false;
+        for (const action of this.input.menuActions) this.hud.handleMatchCardGamepad(action);
         return;
       }
       // Direcional → entra no convite do canto (as cartas de poder usam o direcional: elas têm a vez).
@@ -1268,8 +1306,9 @@ export class Game {
         // Online com o menu aberto: o jogo roda, mas o besouro e a câmera não recebem comando.
         this.clearInput();
       } else {
-        // Disputa: na contagem, no "Tempo!" e no pódio o besouro espera (a câmera continua solta).
-        if (this.net.inputLocked) this.clearInput();
+        // Disputa: na contagem, no "Tempo!", no pódio e com o cartão do resultado aberto o
+        // besouro espera (a câmera continua solta).
+        if (this.net.inputLocked || this.cardModal) this.clearInput();
         this.cameraRig.applyLook(look.x, look.y, look.zoom);
       }
       // No toque, mirar com o dedão é trabalhoso: a câmera volta sozinha pra trás do besouro.
@@ -1583,11 +1622,9 @@ export class Game {
       const mid = this.tmpFocus.copy(camera.position).add(this.chestSpot).multiplyScalar(0.5);
       pushers[2].set(mid.x, this.chestSpot.y, mid.z, 1.6);
     } else if (this.podiumView && this.podium) {
-      // Pódio da Disputa: o capim deita em volta das rodelas e no caminho da lente.
-      const center = this.podium.anchor.position;
-      pushers[1].set(center.x, center.y, center.z, 6.2);
-      const mid = this.tmpFocus.copy(camera.position).add(center).multiplyScalar(0.5);
-      pushers[2].set(mid.x, center.y, mid.z, 2.6);
+      // Pódio da Disputa: o capim deita em volta de cada rodela (os besouros estão em cima
+      // delas; a lente fica alta e longe, o capim não chega nela).
+      this.podium.flattenGrass(pushers);
     } else {
       pushers[1].set(ballPos.x, ballPos.y - this.ball.radius, ballPos.z, this.ball.isSolid ? this.ball.radius * 1.05 : 0);
       // Provador: o capim em volta da lente deita (senão uma folha tapa o close).
@@ -2100,8 +2137,9 @@ export class Game {
     this.useOnlineGarden(seed);
     this.net.balls.clearForMatch();
     this.beetle.teleport(this.tmpMarker.set(spot.x, terrainHeight(spot.x, spot.z), spot.z), spot.yaw);
-    // A câmera atrás do besouro, olhando pra onde ele olha.
+    // A câmera atrás do besouro, olhando pra onde ele olha (nasce lá, sem deslizar pelo jardim).
     this.cameraRig.yaw = spot.yaw + Math.PI;
+    this.cameraRig.reset();
     this.newBall(false, 'crumble');
     if (this.net.director.view === 'playing') this.hud.notify(t('match.lateJoin'));
   }
@@ -2185,6 +2223,8 @@ export class Game {
       this.showcase.active = true;
       this.showcase.resetSpin();
       this.showcase.setFrame('podium');
+      // Corte seco: misturando, a lente varria de trás do besouro até o pódio atravessando os outros.
+      this.showcase.snap();
     }
     this.effects.celebrate(podium.top(0, this.tmpFocus), 1);
     this.audio.achievement();
@@ -2204,11 +2244,14 @@ export class Game {
       this.showcase.active = false;
       this.showcase.steady = false;
       this.showcase.setFrame('skins');
+      // Corte seco de volta pro besouro (a saída também varreria o pódio cheio de gente).
+      this.showcase.snap();
     }
     if (!release) return;
     const spot = startSpot(this.net.active ? Math.max(0, this.net.players.findIndex((p) => p.isSelf)) : 0, Math.max(1, this.net.players.length));
     this.beetle.teleport(this.tmpMarker.set(spot.x, terrainHeight(spot.x, spot.z), spot.z), spot.yaw);
     this.cameraRig.yaw = spot.yaw + Math.PI;
+    this.cameraRig.reset();
     if (this.net.active) this.newBall(false, 'crumble');
     else if (this.ball.isParked) this.ball.unpark(this.sproutSpot(this.tmpBall));
   }
@@ -2257,7 +2300,7 @@ export class Game {
       state.emotePressed = false;
       return;
     }
-    const blocked = !this.started || this.paused || this.choosing || this.hud.perkPicker.visible;
+    const blocked = !this.started || this.paused || this.choosing || this.hud.perkPicker.visible || this.cardModal;
     if (state.emotePressed) {
       state.emotePressed = false;
       if (!blocked) {

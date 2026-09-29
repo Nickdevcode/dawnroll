@@ -16,8 +16,47 @@ const PLATE_FAR = 46;
 const PLATE_NEAR = 1.2;
 /** Balão de reação (e o próprio) aparece mais longe que a placa: é pra ser visto. */
 const BUBBLE_FAR = 70;
+/** Folga (px) entre duas placas empilhadas. */
+const PLATE_GAP = 3;
 
 const tmp = new THREE.Vector3();
+
+/** Uma placa na tela neste quadro: base no meio embaixo em (x, y), tamanho sem escala (w, h). */
+interface PlacedPlate {
+  plate: HTMLElement;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  scale: number;
+  opacity: number;
+  distance: number;
+}
+
+/**
+ * Placas encavaladas (besouros lado a lado: o pódio, o time andando junto): a
+ * do besouro mais perto fica; cada outra que cobre uma já posta sobe até ficar
+ * logo acima dela. Muda `y` no lugar.
+ */
+export function spreadPlates(placed: PlacedPlate[]): void {
+  placed.sort((a, b) => a.distance - b.distance);
+  for (let i = 1; i < placed.length; i++) {
+    const e = placed[i];
+    const halfW = (e.w * e.scale) / 2;
+    // Cada subida pode encostar em outra já posta: repete até ficar livre (no máximo uma vez por placa).
+    for (let pass = 0; pass < i; pass++) {
+      let moved = false;
+      for (let j = 0; j < i; j++) {
+        const o = placed[j];
+        const apart = Math.abs(e.x - o.x) >= halfW + (o.w * o.scale) / 2 + PLATE_GAP;
+        if (apart || e.y - e.h >= o.y || e.y <= o.y - o.h) continue;
+        e.y = o.y - o.h - PLATE_GAP;
+        moved = true;
+      }
+      if (!moved) break;
+    }
+  }
+}
 
 /**
  * O online no HUD: o chip da sala (código, quantos na sala, ping e
@@ -31,6 +70,9 @@ export class OnlineHud {
   private readonly layer: HTMLElement;
   private readonly plates: HTMLElement[] = [];
   private readonly shown = new Map<HTMLElement, string>();
+  /** Tamanho de cada placa (medido só quando o conteúdo muda). */
+  private readonly sizes = new Map<HTMLElement, { w: number; h: number }>();
+  private readonly placed: PlacedPlate[] = [];
   private readonly pingLayer: HTMLElement;
   private readonly pingEls: HTMLElement[] = [];
   readonly wheel: EmoteWheel;
@@ -115,6 +157,8 @@ export class OnlineHud {
       this.shown.clear();
       this.renderTouchLabels();
     });
+    // A fonte do apelido chegou depois da primeira medida: mede as placas de novo.
+    document.fonts?.addEventListener('loadingdone', () => this.sizes.clear());
     this.renderTouchLabels();
     // O ping muda sem aviso: atualiza o chip de tempos em tempos.
     window.setInterval(() => {
@@ -162,6 +206,8 @@ export class OnlineHud {
   setNameplates(sources: readonly NameplateSource[], camera: THREE.Camera): void {
     const width = window.innerWidth;
     const height = window.innerHeight;
+    const placed = this.placed;
+    placed.length = 0;
     for (let i = 0; i < this.plates.length; i++) {
       const plate = this.plates[i];
       const source = sources[i];
@@ -179,7 +225,8 @@ export class OnlineHud {
         continue;
       }
       const key = `${source.slot}|${source.nick}|${source.isHost}|${source.emote}|${source.dizzy}|${source.team}`;
-      if (this.shown.get(plate) !== key) {
+      const changed = this.shown.get(plate) !== key;
+      if (changed) {
         this.shown.set(plate, key);
         plate.dataset.slot = String(source.slot);
         // Com time, a placa fica na cor do time e ganha o ícone dele (a cor nunca vem sozinha).
@@ -195,12 +242,28 @@ export class OnlineHud {
         plate.innerHTML = bubble + name;
       }
       plate.hidden = false;
-      const x = (tmp.x * 0.5 + 0.5) * width;
-      const y = (-tmp.y * 0.5 + 0.5) * height;
+      let size = this.sizes.get(plate);
+      if (changed || !size) {
+        size = { w: plate.offsetWidth, h: plate.offsetHeight };
+        this.sizes.set(plate, size);
+      }
       // Longe fica um pouco menor e mais transparente (profundidade sem poluir); o balão fica inteiro.
       const fade = talking ? 1 : 1 - Math.min(1, Math.max(0, (distance - 18) / (PLATE_FAR - 18)));
-      plate.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%, -100%) scale(${(0.8 + fade * 0.2).toFixed(3)})`;
-      plate.style.opacity = (0.45 + fade * 0.55).toFixed(2);
+      placed.push({
+        plate,
+        x: (tmp.x * 0.5 + 0.5) * width,
+        y: (-tmp.y * 0.5 + 0.5) * height,
+        w: size.w,
+        h: size.h,
+        scale: 0.8 + fade * 0.2,
+        opacity: 0.45 + fade * 0.55,
+        distance,
+      });
+    }
+    spreadPlates(placed);
+    for (const e of placed) {
+      e.plate.style.transform = `translate(${e.x.toFixed(1)}px, ${e.y.toFixed(1)}px) translate(-50%, -100%) scale(${e.scale.toFixed(3)})`;
+      e.plate.style.opacity = e.opacity.toFixed(2);
     }
     this.renderPings(camera, width, height);
   }

@@ -84,6 +84,17 @@ export class ThirdPersonCamera {
     this.shakeAmount = Math.min(this.shakeAmount + amount, 0.35);
   }
 
+  /**
+   * O besouro foi teletransportado (largada da Disputa, fim do pódio): no próximo
+   * quadro a câmera já nasce atrás dele, sem deslizar pelo jardim desde onde estava
+   * nem herdar a distância encurtada por um obstáculo do lugar antigo.
+   */
+  reset(): void {
+    this.initialized = false;
+    this.clearance = 100;
+    this.occlusionLift = 0;
+  }
+
   applyLook(dx: number, dy: number, zoomSteps: number): void {
     const k = MOUSE_SENSITIVITY * this.sensitivity;
     this.yaw -= dx * k;

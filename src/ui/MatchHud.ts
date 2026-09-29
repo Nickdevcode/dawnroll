@@ -1,3 +1,4 @@
+import type { MenuAction } from '../core/GamepadInput';
 import type { OnlinePlay } from '../net/OnlinePlay';
 import { MATCH_WIN_PASS_XP, highlights, isSunset, standings, timeLeft, winners, type HighlightKind, type NetMatch, type Side } from '../net/match';
 import { onLocaleChange, t } from '../i18n';
@@ -10,6 +11,11 @@ import { MatchIcons, TEAM_ICONS } from './matchIcons';
 const FFA_CHIPS = 4;
 /** O "Já!" fica na tela esse tanto depois da contagem. */
 const GO_SECONDS = 0.9;
+/**
+ * O A do controle só aperta botão do cartão depois disso (ms): quem ainda está
+ * apertando pular no fim da partida não recomeça outra nem fecha o cartão sem ver.
+ */
+const CARD_ARM_MS = 900;
 
 const HIGHLIGHT_ICONS: Record<HighlightKind, string> = {
   biggest: MatchIcons.biggest,
@@ -34,7 +40,8 @@ export const teamName = (team: number) => t('team.name', { name: t(`team.${team}
  *     partida, o que falta pra começar;
  *   - a contagem no meio da tela (3, 2, 1, Já!) e o "Tempo!";
  *   - o cartão do resultado (pódio): quem ganhou, o placar, os destaques e
- *     "Jogar de novo" (dono) / sair.
+ *     "Jogar de novo" (dono) / sair. É uma janela: enquanto está aberto o jogo
+ *     solta o mouse e o controle anda nele (ver `onCardChange`).
  */
 export class MatchHud {
   private readonly bar: HTMLElement;
@@ -45,6 +52,12 @@ export class MatchHud {
   private readonly card: HTMLElement;
   private cardOpen = false;
   private cardRound = -1;
+  /** Quando o cartão apareceu (performance.now), pro A do controle esperar um pouco. */
+  private cardShownAt = 0;
+  /** Os botões de baixo do cartão como estão agora (pra não refazer sem mudança). */
+  private actionsHtml = '';
+  /** O cartão apareceu ou sumiu (o jogo solta/prende o mouse e trava o besouro enquanto ele está aberto). */
+  onCardChange?: (open: boolean) => void;
   private lastClock = '';
   private lastCount = '';
   private lastStatus = '';
@@ -84,7 +97,9 @@ export class MatchHud {
     onLocaleChange(() => {
       this.sidesKey = '';
       this.lastStatus = '';
-      this.cardRound = -1;
+      // Reescreve o cartão no idioma novo sem reabrir (fechado ele fica fechado: ele é janela, abrir solta o mouse).
+      const result = this.net.director.lastResult;
+      if (result && result.round === this.cardRound) this.fillCard(result);
       this.render();
     });
   }
@@ -92,6 +107,70 @@ export class MatchHud {
   /** O cartão do resultado está na tela (a câmera do pódio centraliza no resto). */
   cardRect(): DOMRect | null {
     return this.card.hidden ? null : this.card.getBoundingClientRect();
+  }
+
+  /** O cartão do resultado está aberto. */
+  get isCardOpen(): boolean {
+    return !this.card.hidden;
+  }
+
+  /**
+   * Põe o foco no botão principal do cartão (controle/teclado): "Jogar de novo"
+   * pro dono, senão fechar. Nunca "Sair da sala" (um A sem querer tirava da sala).
+   */
+  focusCard(): void {
+    if (this.card.hidden) return;
+    const target = this.card.querySelector<HTMLButtonElement>('[data-card-again]:not(:disabled)') ?? this.card.querySelector<HTMLButtonElement>('[data-card-close]');
+    target?.focus({ preventScroll: true });
+  }
+
+  /**
+   * Controle com o cartão aberto: direções andam entre os botões, A aperta o
+   * com foco, B fecha. Devolve se usou a ação ("start" fica pro jogo: pausa).
+   */
+  handleGamepad(action: MenuAction): boolean {
+    if (this.card.hidden || action === 'start') return false;
+    document.documentElement.classList.add('using-gamepad');
+    const buttons = [...this.card.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')];
+    const active = document.activeElement as HTMLButtonElement | null;
+    const index = active ? buttons.indexOf(active) : -1;
+    switch (action) {
+      case 'back':
+        this.closeCard();
+        return true;
+      case 'confirm':
+        if (index < 0) this.focusCard();
+        else if (performance.now() - this.cardShownAt >= CARD_ARM_MS) active!.click();
+        return true;
+      case 'up':
+      case 'left':
+      case 'down':
+      case 'right': {
+        if (index < 0) {
+          this.focusCard();
+          return true;
+        }
+        const step = action === 'up' || action === 'left' ? -1 : 1;
+        buttons[(index + step + buttons.length) % buttons.length]?.focus({ preventScroll: true });
+        return true;
+      }
+      default:
+        return true;
+    }
+  }
+
+  /** Fecha o cartão (X, B do controle, Esc). Ele volta no próximo resultado. */
+  closeCard(): void {
+    this.cardOpen = false;
+    this.setCardShown(false);
+  }
+
+  /** Mostra/esconde o cartão e avisa o jogo só quando muda de verdade. */
+  private setCardShown(shown: boolean): void {
+    if (this.card.hidden === !shown) return;
+    this.card.hidden = !shown;
+    if (shown) this.cardShownAt = performance.now();
+    this.onCardChange?.(shown);
   }
 
   /** A cada quadro: relógio, contagem e pôr do sol (só mexe no DOM quando o texto muda). */
@@ -155,9 +234,9 @@ export class MatchHud {
     if (!net.active) {
       this.bar.hidden = true;
       this.count.hidden = true;
-      this.card.hidden = true;
       this.cardOpen = false;
       this.cardRound = -1;
+      this.setCardShown(false);
       return;
     }
     (this.bar.querySelector('[data-sunset-label]') as HTMLElement).textContent = t('match.sunset');
@@ -208,7 +287,7 @@ export class MatchHud {
       this.fillCard(result);
     } else if (result && this.cardOpen) this.refreshCardActions();
     if (view === 'countdown' || view === 'playing') this.cardOpen = false;
-    this.card.hidden = !result || !this.cardOpen;
+    this.setCardShown(!!result && this.cardOpen);
   }
 
   private fillCard(m: NetMatch): void {
@@ -279,16 +358,20 @@ export class MatchHud {
       const enough = net.players.length >= 2;
       main = `<button class="account-submit" type="button" data-card-again ${enough ? '' : 'disabled'}>${Icons.reset}<span>${escapeHtml(t('match.again'))}</span></button>${enough ? '' : `<p class="match-card__note">${escapeHtml(t('online.startNeeds'))}</p>`}`;
     } else main = `<p class="match-card__note">${escapeHtml(t('match.againWait'))}</p>`;
-    box.innerHTML = /* html */ `${main}<button class="account-danger" type="button" data-card-leave>${Icons.logout}<span>${escapeHtml(t('online.leave'))}</span></button>`;
+    const html = /* html */ `${main}<button class="account-danger" type="button" data-card-leave>${Icons.logout}<span>${escapeHtml(t('online.leave'))}</span></button>`;
+    // A sala avisa mudança toda hora: só troca o que mudou, e o foco do controle não se perde.
+    if (html === this.actionsHtml && box.childElementCount > 0) return;
+    const focused = box.contains(document.activeElement) ? (document.activeElement as HTMLElement).hasAttribute('data-card-again') ? '[data-card-again]' : '[data-card-leave]' : null;
+    this.actionsHtml = html;
+    box.innerHTML = html;
+    if (focused) box.querySelector<HTMLButtonElement>(`${focused}:not(:disabled)`)?.focus({ preventScroll: true });
   }
 
   private onCardClick(e: Event): void {
     const button = (e.target as HTMLElement).closest<HTMLButtonElement>('button');
     if (!button) return;
-    if (button.matches('[data-card-close]')) {
-      this.cardOpen = false;
-      this.card.hidden = true;
-    } else if (button.matches('[data-card-again]')) this.net.startMatch();
+    if (button.matches('[data-card-close]')) this.closeCard();
+    else if (button.matches('[data-card-again]')) this.net.startMatch();
     else if (button.matches('[data-card-leave]')) void this.net.leave();
   }
 }

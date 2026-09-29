@@ -11,6 +11,11 @@ import type { AssistPose, BallPose, BeetlePose } from './protocol';
  * A folga se ajusta sozinha ao tremor da rede (rede lisa, 100 ms; rede ruim,
  * até 300 ms), e muda devagar: se ela pulasse, o instante desenhado voltaria
  * no tempo e o besouro dos outros engasgaria.
+ *
+ * Teletransporte (largada da Disputa, pódio, broto novo) não se interpola: o
+ * salto entre duas poses seguidas é impossível de andar, então vai direto pra
+ * pose nova e avisa (`jumped`) — senão o besouro atravessava o jardim voando
+ * (e passava pela lente do pódio).
  */
 
 /** Duas poses (a 20 Hz): uma perdida não deixa o desenho sem ter pra onde ir. */
@@ -21,6 +26,19 @@ const DELAY_EASE = 0.01;
 /** Quanto tempo continua o movimento sem pose nova. */
 const MAX_EXTRAPOLATION = 0.25;
 const CAPACITY = 32;
+/** Acima disso (unidades/s) entre duas poses seguidas não é andar nem rolar: é teletransporte. */
+const TELEPORT_SPEED = 30;
+/** ...e só se o salto for grande (tremidinha de pose não conta). */
+const TELEPORT_MIN_DISTANCE = 1.5;
+/**
+ * Salto maior que isso entre duas poses seguidas é teletransporte mesmo devagar:
+ * quem teletransporta costuma engasgar junto (o pódio monta, a largada compila),
+ * as poses chegam espaçadas e a velocidade parecia de corrida. O besouro corre
+ * 6,4/s: 3 u sem pose no meio só com a rede parada meio segundo.
+ */
+const TELEPORT_BEETLE_DISTANCE = 3;
+/** A bola rola mais rápido (ladeira, bola grande): o limite dela é maior. */
+const TELEPORT_BALL_DISTANCE = 5;
 
 /** Como interpolar um tipo de pose. */
 export interface PoseOps<T> {
@@ -29,6 +47,8 @@ export interface PoseOps<T> {
   lerp(out: T, a: T, b: T, t: number): void;
   /** Continua o movimento `ahead` segundos além da última pose (opcional: o besouro fica parado). */
   extrapolate?(out: T, ahead: number): void;
+  /** De `a` pra `b` em `span` segundos foi teletransporte (não interpola)? */
+  teleported?(a: T, b: T, span: number): boolean;
 }
 
 interface Timed<T> {
@@ -46,6 +66,8 @@ export class PoseBuffer<T> {
   private readonly out: T;
   /** Sem pose há tempo demais (congelou: aba escondida, internet caindo). */
   stale = true;
+  /** A última `sample` caiu num teletransporte: quem usa a pose põe a coisa lá direto (sem varrer o caminho). */
+  jumped = false;
 
   constructor(private readonly ops: PoseOps<T>) {
     this.out = ops.create();
@@ -95,6 +117,7 @@ export class PoseBuffer<T> {
   /** Pose no instante `time` (relógio da sala). Null se ainda não chegou nada. */
   sample(time: number): T | null {
     const items = this.items;
+    this.jumped = false;
     if (items.length === 0) return null;
     const out = this.out;
     // Descarta o que já ficou pra trás (mantém uma antes do instante pra interpolar).
@@ -110,6 +133,12 @@ export class PoseBuffer<T> {
       return out;
     }
     const span = b.time - a.time;
+    if (this.ops.teleported?.(a.pose, b.pose, span)) {
+      this.ops.copy(out, b.pose);
+      this.jumped = true;
+      this.stale = false;
+      return out;
+    }
     const t = span > 1e-6 ? Math.min(1, (time - a.time) / span) : 1;
     this.ops.lerp(out, a.pose, b.pose, t);
     this.stale = false;
@@ -118,6 +147,12 @@ export class PoseBuffer<T> {
 }
 
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+
+/** Salto de (ax, ay, az) pra (bx, by, bz) em `span` segundos rápido ou longo demais pra ser movimento. */
+function isTeleport(ax: number, ay: number, az: number, bx: number, by: number, bz: number, span: number, far: number): boolean {
+  const distance = Math.hypot(bx - ax, by - ay, bz - az);
+  return distance > TELEPORT_MIN_DISTANCE && (distance > far || distance > TELEPORT_SPEED * Math.max(span, 1e-3));
+}
 
 function lerpAngle(a: number, b: number, t: number): number {
   let d = (b - a) % (Math.PI * 2);
@@ -157,6 +192,7 @@ export const beetleOps: PoseOps<RemoteBeetlePose> = {
     ob.dizzy = late.beetle.dizzy;
     Object.assign(out.assist, late.assist);
   },
+  teleported: (a, b, span) => isTeleport(a.beetle.x, a.beetle.y, a.beetle.z, b.beetle.x, b.beetle.y, b.beetle.z, span, TELEPORT_BEETLE_DISTANCE),
 };
 
 export const ballOps: PoseOps<BallPose> = {
@@ -196,6 +232,7 @@ export const ballOps: PoseOps<BallPose> = {
     out.immune = late.immune;
     out.gift = late.gift;
   },
+  teleported: (a, b, span) => isTeleport(a.x, a.y, a.z, b.x, b.y, b.z, span, TELEPORT_BALL_DISTANCE),
   // A bola tem inércia: continua rolando um pouco (o besouro, não: fica onde estava).
   extrapolate(out, ahead) {
     out.x += out.vx * ahead;
