@@ -17,6 +17,7 @@ import { PAD_LABELS, type MenuAction, type PadStyle } from '../core/GamepadInput
 import type { Progression } from '../progression/Progression';
 import { skin } from '../progression/skins';
 import type { Online } from '../online/Online';
+import type { Social } from '../online/Social';
 import { Icons } from './icons';
 import { GameIcons } from './gameIcons';
 import { segmented, slider, toggle, type Control } from './controls';
@@ -120,6 +121,8 @@ export class Menu {
   /** Placa "Jogar online" (salas). */
   private readonly onlineSheet: OnlineSheet;
   private readonly onlineMeta: HTMLElement;
+  /** Bolinha do "Jogar online": pedidos de amizade + convites esperando. */
+  private readonly onlineBadge: HTMLElement;
   private net: OnlinePlay | null = null;
   private readonly nicknameDialog: NicknameDialog;
   /** Chip da conta no canto de cima (besouro + apelido, ou "Entrar"). */
@@ -145,6 +148,7 @@ export class Menu {
     private readonly isTouch: boolean,
     private readonly progression: Progression,
     private readonly online: Online,
+    private readonly social: Social,
   ) {
     this.element = document.createElement('div');
     this.element.className = 'menu';
@@ -165,7 +169,8 @@ export class Menu {
             <span class="menu__play-icon">${Icons.play}</span><span data-play-label></span>
           </button>
           <button class="menu__link menu__link--online" type="button" data-open="online" aria-expanded="false" aria-controls="sheet-online" hidden>
-            <span class="menu__link-icon">${Icons.group}</span><span data-t="menu.online"></span><span class="menu__link-meta" data-online-meta></span>
+            <span class="menu__link-icon">${Icons.group}<span class="menu__link-badge" data-online-badge hidden></span></span>
+            <span data-t="menu.online"></span><span class="menu__link-meta" data-online-meta></span>
           </button>
           <button class="menu__link" type="button" data-open="burrow" aria-expanded="false" aria-controls="sheet-burrow">
             <span class="menu__link-icon">${GameIcons.burrow}<span class="menu__link-badge" data-burrow-badge hidden></span></span>
@@ -210,7 +215,7 @@ export class Menu {
     this.pass = new PassSheet(progression);
     this.ranking = new RankingSheet(online);
     this.account = new AccountSheet(online, progression);
-    this.onlineSheet = new OnlineSheet(online);
+    this.onlineSheet = new OnlineSheet(online, social);
     this.element.append(this.onlineSheet.element, this.burrow.element, this.wardrobe.element, this.shop.element, this.pass.element, this.ranking.element, this.account.element);
     parent.append(this.element);
     this.nicknameDialog = new NicknameDialog(parent, online, progression, () => this.isVisible && this.revealed);
@@ -243,6 +248,7 @@ export class Menu {
     this.passBadge = $('[data-pass-badge]');
     this.passMeta = $('[data-pass-meta]');
     this.onlineMeta = $('[data-online-meta]');
+    this.onlineBadge = $('[data-online-badge]');
     this.accountChip = $('[data-open="account"]');
     this.sheets = {
       online: this.onlineSheet.element,
@@ -279,6 +285,7 @@ export class Menu {
       this.updateAccountChip();
     });
     online.subscribe(() => this.updateAccountChip());
+    social.subscribe(() => this.updateOnlineBadge());
     onLocaleChange(() => this.refreshTexts());
     this.syncControls(settings.get());
     this.refreshTexts();
@@ -489,6 +496,29 @@ export class Menu {
     void this.onlineSheet.joinFromLink(code);
   }
 
+  /** Abre a placa do online no lobby (entrou numa sala pelo convite com o menu aberto, até vindo da tela Amigos). */
+  showOnline(): void {
+    if (this.openSheet !== 'online') this.open('online');
+    else this.onlineSheet.showLobby();
+  }
+
+  /** Abre direto os amigos ("Ver" no aviso de pedido de amizade). */
+  openFriends(): void {
+    if (this.openSheet !== 'online') this.open('online');
+    this.onlineSheet.showFriends();
+  }
+
+  /** Bolinha do "Jogar online": quantos pedidos de amizade e convites esperam. */
+  private updateOnlineBadge(): void {
+    const { requests, invites } = this.social.state;
+    const count = requests + invites.length;
+    this.onlineBadge.hidden = count === 0;
+    this.onlineBadge.textContent = String(count);
+    // Sem novidade, o nome vem do próprio texto do botão (com o código da sala, se estiver numa).
+    if (count > 0) this.openers.online.setAttribute('aria-label', `${t('menu.online')}: ${tn('friends.news', count)}`);
+    else this.openers.online.removeAttribute('aria-label');
+  }
+
   /**
    * Dentro de uma sala o jogo não para: o que vira a câmera pro provador ou abre
    * baú (guarda-roupa, Feirinha, passe) espera a pessoa sair da sala. O link do
@@ -556,6 +586,7 @@ export class Menu {
           ${row(keys('Q'), 'controls.ability')}
           ${row(keys('G'), 'controls.emote')}
           ${row(keys('F'), 'controls.merge')}
+          ${row(keys('J'), 'controls.invite')}
           ${row(keyT('key.wheel'), 'controls.zoom')}
           ${row(keys('Esc'), 'controls.pause')}
         </dl>`;
@@ -578,7 +609,7 @@ export class Menu {
           </ul>
           <h3 class="sheet__heading" data-t="help.online"></h3>
           <ul class="help-list">
-            <li data-t="help.online1"></li><li data-t="help.online2"></li><li data-t="help.online3"></li><li data-t="help.online4"></li>
+            <li data-t="help.online1"></li><li data-t="help.online2"></li><li data-t="help.online3"></li><li data-t="help.online4"></li><li data-t="help.online5"></li>
           </ul>
           <h3 class="sheet__heading" data-t="help.controls"></h3>
           ${controls}
@@ -594,6 +625,7 @@ export class Menu {
               ${row(pad('ability'), 'controls.ability')}
               ${row(keys('↓'), 'controls.emote')}
               ${row(keys('←'), 'controls.merge')}
+              ${row(keys('→'), 'controls.invite')}
               ${row(`${pad('lb')}${pad('rb')}`, 'controls.zoom')}
               ${row(pad('start'), 'controls.pause')}
             </dl>
@@ -774,6 +806,7 @@ export class Menu {
     if (name === 'shop') this.shop.close();
     if (name === 'pass') this.pass.close();
     if (name === 'account') this.account.close();
+    if (name === 'online') this.onlineSheet.close();
     this.sheets[name].hidden = true;
     this.openers[name].setAttribute('aria-expanded', 'false');
     this.element.classList.remove('has-sheet', 'has-tabs', 'has-showcase');
@@ -887,6 +920,7 @@ export class Menu {
     this.shownWallet = '';
     this.updateBurrowLink();
     this.updateAccountChip();
+    this.updateOnlineBadge();
     if (this.lastSave) this.setProgress(this.lastSave);
   }
 }

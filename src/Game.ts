@@ -38,6 +38,9 @@ import { Hud, type HintKind } from './ui/Hud';
 import { giverName } from './ui/RoundPanel';
 import { Menu } from './ui/Menu';
 import { AchievementToast } from './ui/AchievementToast';
+import { InviteToast } from './ui/InviteToast';
+import { Social } from './online/Social';
+import type { RoomInvite } from './online/Friends';
 import { ChestOverlay } from './ui/ChestOverlay';
 import { SHOWCASE_SHEETS } from './ui/Menu';
 import { ChestStage, CHEST_CHARGE_TIME, CHEST_FIRST_REWARD_DELAY, type ChestStageEvent } from './fx/ChestStage';
@@ -175,6 +178,8 @@ export class Game {
   private readonly save: SaveData = loadSave();
   /** Conta, save na nuvem e ranking (antes do Progression: ele já grava no construtor). */
   private readonly online = new Online({ save: this.save, replaceSave: (next) => this.replaceSave(next) });
+  /** Amigos, convites e presença (anda sozinho com a conta aberta). */
+  private readonly social = new Social(this.online);
   private readonly progression = new Progression(this.save, () => {
     writeSave(this.save);
     this.online.saveChanged();
@@ -270,6 +275,8 @@ export class Game {
   private rareGlintTimer = 0;
   private rareChimeTimer = 0;
   private readonly achievementToast: AchievementToast;
+  /** Convites e pedidos de amizade no canto da tela. */
+  private readonly inviteToast: InviteToast;
   /** O aviso de pedido dourado já saiu nesta rodada. */
   private goldenAnnounced = false;
   /** Baú abrindo no jardim (a cerimônia) e o cartão dela. */
@@ -324,13 +331,16 @@ export class Game {
     this.graphics = new Graphics(canvas);
     this.input = new Input(canvas);
     this.hud = new Hud(uiRoot, this.input);
-    this.menu = new Menu(uiRoot, this.hud.isTouch, this.progression, this.online);
+    this.menu = new Menu(uiRoot, this.hud.isTouch, this.progression, this.online, this.social);
     // Depois do menu: o aviso de conquista fica por cima dele (dá pra conquistar comendo na toca).
     const achievementToast = (this.achievementToast = new AchievementToast(uiRoot));
     this.progression.onAchievement = (unlock) => {
       achievementToast.show(unlock);
       this.audio.achievement();
     };
+    // Aviso dos amigos (convite, pedido): também por cima do menu, sem pausar nada.
+    this.inviteToast = new InviteToast(uiRoot, () => (this.hud.isTouch && this.input.device !== 'gamepad' ? 'touch' : this.input.device));
+    this.wireSocial();
     // Cartão da cerimônia do baú: por cima de tudo (menu e avisos).
     this.chestOverlay = new ChestOverlay(uiRoot);
     this.cameraRig = new ThirdPersonCamera(this.graphics.camera);
@@ -451,11 +461,54 @@ export class Game {
       if (this.menu.isVisible && !this.startDisabled && document.activeElement === document.body && (e.code === 'Enter' || e.code === 'NumpadEnter')) this.start();
       // T abre a toca (despensa, catálogo e poderes).
       if (e.code === 'KeyT' && !e.repeat && this.started && !this.paused && !this.choosing) this.openBurrow();
+      // J entra no convite que está no canto da tela (jogando com o mouse preso, não dá pra clicar).
+      if (e.code === 'KeyJ' && !e.repeat && !this.chestOverlay.isOpen && this.inviteToast.acceptShortcut()) e.preventDefault();
       // Escolhendo poder o mouse já está solto: Esc pausa como no resto do jogo.
       if (e.code === 'Escape' && this.choosing && !this.paused) this.pause();
       // Atalho de desenvolvimento: F8 adianta o tempo para a próxima fase (sol → nublando → chuva...).
       if (import.meta.env.DEV && e.code === 'F8') this.weather.skipAhead();
     });
+  }
+
+  /**
+   * Amigos: o que chega (convite, pedido, pedido aceito) vira aviso no canto,
+   * sem pausar; "Entrar" leva direto pra sala (jogando ou no menu).
+   */
+  private wireSocial(): void {
+    const social = this.social;
+    const toast = this.inviteToast;
+    social.onInvite = (invite) => {
+      // Já está nessa sala (entrou pelo código, por exemplo): nada a avisar.
+      if (this.net?.active && this.net.code === invite.code) return;
+      toast.showInvite(invite);
+      this.audio.notify();
+    };
+    social.onRequest = (from) => {
+      toast.showRequest(from);
+      this.audio.notify();
+    };
+    social.onAccepted = (from) => toast.showAccepted(from);
+    social.onWithdraw = (id) => toast.withdraw(id);
+    toast.onAccept = (invite) => void this.acceptInvite(invite);
+    toast.onDismiss = (invite) => social.dismiss(invite);
+    toast.onOpenFriends = () => {
+      if (!this.menu.isVisible) this.pause();
+      this.menu.openFriends();
+    };
+  }
+
+  /** "Entrar" no convite (aviso ou atalho): entra na sala sem parar o jogo; com o menu aberto, mostra o lobby. */
+  private async acceptInvite(invite: RoomInvite): Promise<void> {
+    this.social.dismiss(invite);
+    // Baú abrindo (só existe fora de sala): a cerimônia fecha antes de ir pro jardim da sala.
+    if (this.chest) this.endChest();
+    this.hud.notify(t('invite.joining', { name: invite.from.nickname }));
+    const outcome = await this.net.join(invite.code);
+    if (!outcome.ok) {
+      this.hud.notify(t(`online.error.${outcome.error}` as MessageKey));
+      return;
+    }
+    if (this.menu.isVisible) this.menu.showOnline();
   }
 
   /** Monta o mundo em etapas, avisando a tela de carregamento (e deixando ela pintar entre uma e outra). */
@@ -1033,6 +1086,8 @@ export class Game {
     this.hud.setVisible(true);
     this.hud.perkPicker.setSuspended(false);
     this.started = true;
+    // Pros amigos: "jogando" (numa sala, o banco já sabe pelo ponto dela).
+    this.social.setActivity('solo');
     this.announceGolden();
     // Voltando pra uma escolha de poder, o mouse continua solto (pra clicar nas cartas).
     if (!this.hud.isTouch && !this.choosing) this.input.requestPointerLock();
@@ -1054,6 +1109,8 @@ export class Game {
         this.pause();
         return;
       }
+      // Direcional → entra no convite do canto (as cartas de poder usam o direcional: elas têm a vez).
+      if (!this.choosing && this.input.gamepad.dpadPressed.right) this.inviteToast.acceptShortcut();
       if (this.choosing) {
         // As cartas de poder usam o controle como menu; nada vaza pro besouro.
         const state = this.input.state;
@@ -1105,6 +1162,7 @@ export class Game {
     if (this.input.pointerLocked) document.exitPointerLock();
     this.input.gamepad.suppressHeldDirection();
     this.menu.show(true);
+    this.social.setActivity('menu');
     const online = this.net.active;
     this.audio.setPaused(!online);
     this.effects.setMenuNight(!online);

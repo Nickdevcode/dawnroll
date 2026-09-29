@@ -1,25 +1,40 @@
-import { onLocaleChange, t, type MessageKey } from '../i18n';
+import { onLocaleChange, t, tn, type MessageKey } from '../i18n';
 import { MAX_PLAYERS, effectiveRules, type NetRules, type RoomModeId } from '../net/protocol';
 import type { OnlineOutcome, OnlinePlay, OnlinePlayer } from '../net/OnlinePlay';
 import { MATCH_MINUTES, timeLeft } from '../net/match';
 import { TEAM_SIZES, teamCount, type TeamSize } from '../net/teams';
+import { canInvite, type RoomInvite } from '../online/Friends';
 import type { Online } from '../online/Online';
 import { ROOM_CODE, normalizeRoomCode } from '../online/Rooms';
+import type { Social } from '../online/Social';
 import { DEFAULT_SKIN, isSkinId, skin } from '../progression/skins';
+import { FriendsPanel } from './FriendsPanel';
+import { friendAvatar, friendWhere, modeName } from './friendText';
 import { escapeHtml } from './html';
 import { Icons } from './icons';
 import { skinIcon } from './lookIcons';
 import { MatchIcons, TEAM_ICONS } from './matchIcons';
 import { formatClock, teamName } from './MatchHud';
 
+/** Quantos amigos o lobby mostra em "Chamar amigos" (o resto fica em "Todos os amigos"). */
+const CALL_LIST_MAX = 4;
+
+/** Como achar o mesmo controle depois de redesenhar: o id, ou o primeiro `data-*` dele (com o valor). */
+function focusSelector(el: HTMLElement): string | null {
+  if (el.id) return `#${CSS.escape(el.id)}`;
+  const attr = [...el.attributes].find((a) => a.name.startsWith('data-'));
+  return attr ? `${el.tagName.toLowerCase()}[${attr.name}="${CSS.escape(attr.value)}"]` : null;
+}
+
 /**
  * Placa "Jogar online" (dentro do menu). Três caras:
  *   - sem conta: explica por que precisa e leva pra conta;
- *   - com conta, fora de sala: procurar partida (Jardim livre ou Disputa),
- *     criar sala ou entrar com o código;
+ *   - com conta, fora de sala: convites que chegaram, procurar partida
+ *     (Jardim livre ou Disputa), amigos, criar sala ou entrar com o código;
  *   - numa sala (o lobby): o código grande (copiar / mandar convite), o modo,
  *     o tempo e os times (o dono escolhe; os outros veem), quem está em cada
- *     time, "Começar disputa" (dono) e ir pro jardim / sair.
+ *     time, chamar amigos, "Começar disputa" (dono) e ir pro jardim / sair.
+ * E a tela "Amigos" (`FriendsPanel`), que abre por cima dessas com o voltar.
  *
  * O link `?sala=CÓDIGO` abre esta placa já entrando na sala (ver `joinFromLink`).
  */
@@ -31,8 +46,14 @@ export class OnlineSheet {
   onPlay: (() => void) | null = null;
 
   private readonly body: HTMLElement;
+  private readonly title: HTMLElement;
+  private readonly friends: FriendsPanel;
   private net: OnlinePlay | null = null;
   private busy: 'create' | 'join' | 'leave' | 'quick-garden' | 'quick-match' | null = null;
+  /** Amigos com "Chamar" em andamento (lobby) e o recado do último que falhou. */
+  private readonly calling = new Set<string>();
+  private callNote: { id: string; text: string } | null = null;
+  private unwatch: (() => void) | null = null;
   private error: MessageKey | null = null;
   private codeDraft = '';
   private copiedTimer = 0;
@@ -42,7 +63,10 @@ export class OnlineSheet {
   /** Último HTML desenhado: redesenhar igual não mexe no DOM (nem no foco, nem nas animações). */
   private lastHtml = '';
 
-  constructor(private readonly online: Online) {
+  constructor(
+    private readonly online: Online,
+    private readonly social: Social,
+  ) {
     this.element = document.createElement('section');
     this.element.className = 'sheet sheet--online';
     this.element.id = 'sheet-online';
@@ -51,11 +75,18 @@ export class OnlineSheet {
     this.element.hidden = true;
     this.element.innerHTML = /* html */ `
       <header class="sheet__header">
-        <h2 class="sheet__title" id="sheet-online-title" data-t="online.title"></h2>
+        <h2 class="sheet__title" id="sheet-online-title"></h2>
         <button class="sheet__close" type="button" data-close data-t-aria="menu.close">${Icons.close}</button>
       </header>
-      <div class="sheet__body online" data-body aria-live="polite"></div>`;
+      <div class="sheet__body" data-scroll>
+        <div class="online" data-body aria-live="polite"></div>
+      </div>`;
+    this.title = this.element.querySelector('#sheet-online-title') as HTMLElement;
     this.body = this.element.querySelector('[data-body]') as HTMLElement;
+    this.friends = new FriendsPanel(social, () => (this.net?.active ? this.net.code : null));
+    this.friends.onBack = () => this.showMain(true);
+    this.friends.onJoin = (code) => this.joinCode(code);
+    this.element.querySelector('[data-scroll]')?.append(this.friends.element);
     this.body.addEventListener('click', (e) => this.onClick(e));
     this.body.addEventListener('keydown', (e) => this.onKeyDown(e));
     this.body.addEventListener('input', (e) => this.onInput(e));
@@ -66,8 +97,17 @@ export class OnlineSheet {
     online.subscribe(() => {
       if (!this.element.hidden) this.render();
       if (this.pendingCode && online.player) void this.joinFromLink(this.pendingCode);
+      // Saiu da conta com os amigos abertos: volta pra central (que explica a conta).
+      if (!online.player && this.friends.visible) this.showMain(false);
     });
-    onLocaleChange(() => this.render(true));
+    social.subscribe(() => {
+      if (!this.element.hidden && !this.friends.visible) this.render();
+    });
+    onLocaleChange(() => {
+      this.syncTitle();
+      this.render(true);
+    });
+    this.syncTitle();
     // O relógio da Disputa anda sem a sala avisar: só o texto dele muda.
     window.setInterval(() => this.tickClock(), 1000);
   }
@@ -81,12 +121,50 @@ export class OnlineSheet {
     if (this.pendingCode && this.online.player) void this.joinFromLink(this.pendingCode);
   }
 
-  /** Abriu a placa. */
+  /** Abriu a placa (sempre na central/lobby; a lista de amigos passa a se atualizar sozinha). */
   prepare(): void {
     this.error = null;
+    this.callNote = null;
+    this.unwatch ??= this.social.watch();
+    this.showMain(false);
     this.render(true);
     // Fora de sala, o foco vai direto no campo do código (quem abre pra entrar já digita).
     if (!this.net?.active) this.body.querySelector<HTMLInputElement>('[data-code]')?.focus({ preventScroll: true });
+  }
+
+  /** Fechou a placa. */
+  close(): void {
+    this.unwatch?.();
+    this.unwatch = null;
+    this.friends.hide();
+  }
+
+  /** A tela dos amigos (pelo botão da central, do lobby ou pelo "Ver" do aviso de pedido). */
+  showFriends(): void {
+    if (!this.online.player) return;
+    this.body.hidden = true;
+    this.friends.show();
+    this.syncTitle();
+  }
+
+  /** Mostra a central/lobby (sai da tela Amigos, se estiver nela) e põe o foco no "Ir pro jardim" da sala. */
+  showLobby(): void {
+    this.showMain(false);
+    this.body.querySelector<HTMLButtonElement>('[data-play-room]')?.focus({ preventScroll: true });
+  }
+
+  /** Volta da tela dos amigos pra central/lobby. */
+  private showMain(focusFriends: boolean): void {
+    if (!this.friends.visible && !this.body.hidden) return;
+    this.friends.hide();
+    this.body.hidden = false;
+    this.syncTitle();
+    this.render(true);
+    if (focusFriends) this.body.querySelector<HTMLElement>('[data-friends]')?.focus({ preventScroll: true });
+  }
+
+  private syncTitle(): void {
+    this.title.textContent = t(this.friends.visible ? 'friends.title' : 'online.title');
   }
 
   /**
@@ -123,6 +201,10 @@ export class OnlineSheet {
     if (!target || target.hasAttribute('disabled')) return;
     const net = this.net;
     if (target.matches('[data-sign-in]')) this.onOpenAccount?.();
+    else if (target.matches('[data-friends]')) this.showFriends();
+    else if (target.matches('[data-invite-join]')) void this.acceptInvite(Number(target.dataset.inviteJoin));
+    else if (target.matches('[data-invite-dismiss]')) this.dismissInvite(Number(target.dataset.inviteDismiss));
+    else if (target.matches('[data-call]')) void this.call(target.dataset.call ?? '');
     else if (target.matches('[data-create]')) void this.create();
     else if (target.matches('[data-quick]')) void this.quick(target.dataset.quick === 'match' ? 'match' : 'garden');
     else if (target.matches('[data-copy]')) void this.copyCode();
@@ -190,11 +272,48 @@ export class OnlineSheet {
   }
 
   private async join(): Promise<void> {
-    if (!this.net || this.busy || !ROOM_CODE.test(this.codeDraft)) return;
+    if (ROOM_CODE.test(this.codeDraft)) await this.joinCode(this.codeDraft);
+  }
+
+  /** Entra numa sala pelo código (digitado, do link, do convite ou a do amigo) e mostra o lobby. */
+  private async joinCode(code: string): Promise<OnlineOutcome> {
+    if (!this.net) return { ok: false, error: 'connect' };
+    // Outra ação da placa em andamento (procurando partida, saindo): não empilha.
+    if (this.busy) return { ok: false, error: 'unknown' };
     this.busy = 'join';
     this.error = null;
     this.render();
-    this.finish(await this.net.join(this.codeDraft));
+    const outcome = await this.net.join(code);
+    if (outcome.ok && this.friends.visible) this.showMain(false);
+    this.finish(outcome);
+    return outcome;
+  }
+
+  /** "Entrar" num convite da central. */
+  private async acceptInvite(id: number): Promise<void> {
+    const invite = this.social.state.invites.find((i) => i.id === id);
+    if (!invite) return;
+    const outcome = await this.joinCode(invite.code);
+    // Sala que não existe mais / cheia / Disputa travada: o convite não serve mais.
+    if (outcome.ok || (outcome.error !== 'offline' && outcome.error !== 'rate_limited')) this.social.dismiss(invite);
+  }
+
+  private dismissInvite(id: number): void {
+    const invite = this.social.state.invites.find((i) => i.id === id);
+    if (invite) this.social.dismiss(invite);
+  }
+
+  /** "Chamar" um amigo no lobby. */
+  private async call(id: string): Promise<void> {
+    if (!id || this.calling.has(id)) return;
+    const friend = this.social.state.list?.friends.find((f) => f.id === id);
+    this.calling.add(id);
+    this.callNote = null;
+    this.render();
+    const status = await this.social.invite(id);
+    this.calling.delete(id);
+    if (status !== 'sent') this.callNote = { id, text: t(`friends.invite.${status}` as MessageKey, { name: friend?.nickname ?? '' }) };
+    this.render();
   }
 
   private async leave(): Promise<void> {
@@ -260,11 +379,24 @@ export class OnlineSheet {
     if (el) el.textContent = this.matchStatusText(this.net);
   }
 
+  /**
+   * Redesenha (só se mudou). A lista de amigos se atualiza sozinha: o foco (e o
+   * cursor do campo do código) volta pro mesmo controle depois de redesenhar.
+   */
   private render(force = false): void {
     const html = this.html();
     if (!force && html === this.lastHtml) return;
     this.lastHtml = html;
+    const active = document.activeElement instanceof HTMLElement && this.body.contains(document.activeElement) ? document.activeElement : null;
+    const selector = active ? focusSelector(active) : null;
+    const input = active instanceof HTMLInputElement ? active : null;
+    const selection = input ? [input.selectionStart, input.selectionEnd] : null;
     this.body.innerHTML = html;
+    if (!selector) return;
+    const again = this.body.querySelector<HTMLElement>(selector);
+    if (!again || (again as HTMLButtonElement).disabled) return;
+    again.focus({ preventScroll: true });
+    if (again instanceof HTMLInputElement && selection) again.setSelectionRange(selection[0], selection[1]);
   }
 
   private html(): string {
@@ -296,6 +428,7 @@ export class OnlineSheet {
         </button>`;
     };
     return /* html */ `
+      ${this.invitesHtml()}
       <p class="online__blurb">${escapeHtml(t('online.blurb'))}</p>
       <section class="online__section" aria-labelledby="online-quick-title">
         <h3 class="online__label" id="online-quick-title">${escapeHtml(t('online.quick'))}</h3>
@@ -307,6 +440,7 @@ export class OnlineSheet {
       </section>
       <section class="online__section" aria-labelledby="online-friends-title">
         <h3 class="online__label" id="online-friends-title">${escapeHtml(t('online.friendsTitle'))}</h3>
+        ${this.friendsButtonHtml()}
         <button class="account-submit online__wide" type="button" data-create ${busy ? 'disabled' : ''}>
           ${Icons.group}<span>${escapeHtml(t(busy === 'create' ? 'online.creating' : 'online.create'))}</span>
         </button>
@@ -322,6 +456,107 @@ export class OnlineSheet {
         </form>
       </section>
       <p class="online__error" data-error role="alert">${this.error ? escapeHtml(t(this.error)) : ''}</p>`;
+  }
+
+  /**
+   * Convites que chegaram (valem 2 min): "Fulano te chamou · Jardim livre" com
+   * Entrar e Agora não. Na central e no lobby (entrar troca de sala); o da
+   * sala em que você já está não aparece.
+   */
+  private invitesHtml(currentCode: string | null = null): string {
+    const invites = this.social.state.invites.filter((i) => i.expiresAt > Date.now() && i.code !== currentCode);
+    if (invites.length === 0) return '';
+    const busy = this.busy !== null;
+    const rows = invites
+      .map(
+        (invite: RoomInvite) => /* html */ `
+        <li class="online__invite">
+          <span class="friend__avatar" aria-hidden="true">${friendAvatar(invite.from)}</span>
+          <span class="friend__text">
+            <strong class="friend__nick">${escapeHtml(t('invite.body', { name: invite.from.nickname }))}</strong>
+            <span class="friend__where">${escapeHtml(modeName(invite.mode))}</span>
+          </span>
+          <span class="friend__actions">
+            <button class="friend__btn friend__btn--primary" type="button" data-invite-join="${invite.id}" ${busy ? 'disabled' : ''}>${Icons.enter}<span>${escapeHtml(t('invite.join'))}</span></button>
+            <button class="friend__more" type="button" data-invite-dismiss="${invite.id}" aria-label="${escapeHtml(t('invite.dismiss'))}">${Icons.close}</button>
+          </span>
+        </li>`,
+      )
+      .join('');
+    return /* html */ `
+      <section class="online__section online__invites" aria-labelledby="online-invites-title">
+        <h3 class="online__label" id="online-invites-title">${escapeHtml(t('invite.title'))}</h3>
+        <ul class="friends__list">${rows}</ul>
+      </section>`;
+  }
+
+  /** "Amigos" com o que espera lá dentro (pedidos) e quantos estão online. */
+  private friendsButtonHtml(): string {
+    const { requests, online, list } = this.social.state;
+    const meta =
+      requests > 0
+        ? tn('friends.requestCount', requests)
+        : list && list.friends.length === 0
+          ? t('friends.hubEmpty')
+          : t('friends.onlineCount', { n: online });
+    return /* html */ `
+      <button class="online__friends-btn" type="button" data-friends>
+        <span class="online__quick-icon" aria-hidden="true">${Icons.userPlus}</span>
+        <span class="online__friends-text">
+          <strong>${escapeHtml(t('friends.title'))}</strong>
+          <span>${escapeHtml(meta)}</span>
+        </span>
+        ${requests > 0 ? `<span class="online__friends-badge" aria-hidden="true">${requests}</span>` : ''}
+        <span class="online__friends-chevron" aria-hidden="true">${Icons.back}</span>
+      </button>`;
+  }
+
+  /**
+   * Lobby: "Chamar amigos" com os que estão online e fora da sala (até 4; o
+   * resto em "Todos os amigos"). Sem amigo online, diz isso e leva pros amigos.
+   */
+  private callHtml(net: OnlinePlay): string {
+    const code = net.code;
+    const list = this.social.state.list;
+    const callable = list ? list.friends.filter((f) => canInvite(f, code)) : [];
+    const shown = callable.slice(0, CALL_LIST_MAX);
+    const rows = shown
+      .map((friend) => {
+        const busy = this.calling.has(friend.id);
+        const action = this.social.invitedRecently(friend.id)
+          ? `<span class="friend__done">${Icons.check}<span>${escapeHtml(t('friends.invited'))}</span></span>`
+          : `<button class="friend__btn" type="button" data-call="${friend.id}" ${busy ? 'disabled' : ''}>${Icons.send}<span>${escapeHtml(t('friends.invite'))}</span></button>`;
+        const note = this.callNote?.id === friend.id ? `<p class="friend__note" data-tone="error" role="alert">${escapeHtml(this.callNote.text)}</p>` : '';
+        return /* html */ `
+          <li class="friend">
+            <div class="friend__row">
+              <span class="friend__avatar" data-status="${friend.status}" aria-hidden="true">${friendAvatar(friend)}<span class="friend__dot"></span></span>
+              <span class="friend__text">
+                <strong class="friend__nick">${escapeHtml(friend.nickname)}</strong>
+                <span class="friend__where">${escapeHtml(friendWhere(friend, code))}</span>
+              </span>
+              <span class="friend__actions"><span class="friend__cta">${action}</span></span>
+            </div>
+            ${note}
+          </li>`;
+      })
+      .join('');
+    const empty = !list
+      ? t('friends.loading')
+      : list.friends.length === 0
+        ? t('friends.callEmpty')
+        : callable.length === 0
+          ? t('friends.callNone')
+          : '';
+    return /* html */ `
+      <section class="online__section online__call" aria-labelledby="online-call-title">
+        <div class="online__players-head">
+          <h3 class="online__label" id="online-call-title">${escapeHtml(t('friends.callTitle'))}</h3>
+          <button class="online__link-btn" type="button" data-friends>${escapeHtml(t(list && list.friends.length === 0 ? 'friends.addShort' : 'friends.all'))}</button>
+        </div>
+        ${rows ? `<ul class="friends__list">${rows}</ul>` : ''}
+        ${empty ? `<p class="online__note">${escapeHtml(empty)}</p>` : ''}
+      </section>`;
   }
 
   /** Um grupo segmentado (rádio) no HTML da placa; desligado pra quem não é o dono. */
@@ -486,6 +721,7 @@ export class OnlineSheet {
         ${enough ? '' : `<p class="online__note" id="online-start-note">${escapeHtml(t('online.startNeeds'))}</p>`}`
         : '';
     return /* html */ `
+      ${this.invitesHtml(code)}
       <div class="online__room${net.isPublic ? ' is-public' : ''}">
         ${net.isPublic ? `<span class="online__public">${Icons.globe}<span>${escapeHtml(t('online.publicRoom'))}</span></span>` : ''}
         <p class="online__label">${escapeHtml(t('online.code'))}</p>
@@ -504,6 +740,7 @@ export class OnlineSheet {
       </div>
       ${connecting ? `<p class="online__status">${escapeHtml(t(status === 'connecting' ? 'online.connecting' : 'online.reconnecting'))}</p>` : ''}
       ${this.playersHtml(net, selfId)}
+      ${this.callHtml(net)}
       <div class="online__room-actions">
         ${start}
         <button class="${start ? 'account-secondary' : 'account-submit'} online__wide" type="button" data-play-room ${connecting ? 'disabled' : ''}>${Icons.play}<span>${escapeHtml(t('online.play'))}</span></button>

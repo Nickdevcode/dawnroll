@@ -52,6 +52,19 @@ export const Icons = {
   signal: stroke('<path d="M4 20v-3M9.3 20v-6.5M14.7 20V10M20 20V6"/>', 2.6),
   enter: stroke('<path d="M10 4.5H6.5a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2H10"/><path d="M14 16.5 18.5 12 14 7.5M18.5 12H9"/>'),
   trash: stroke('<path d="M4.5 7h15M9.5 7V4.5h5V7M6.5 7l.9 12a2 2 0 0 0 2 1.8h5.2a2 2 0 0 0 2-1.8l.9-12"/><path d="M10 11v6M14 11v6"/>'),
+  // Amigos
+  /** Adicionar amigo (besouro com um "+"). */
+  userPlus: stroke('<circle cx="10" cy="8.2" r="3.8"/><path d="M3 20.5c.7-3.6 3.5-5.8 7-5.8 1.7 0 3.2.5 4.4 1.4"/><path d="M18.5 13.5v7M15 17h7"/>'),
+  /** Tirar dos amigos. */
+  userMinus: stroke('<circle cx="10" cy="8.2" r="3.8"/><path d="M3 20.5c.7-3.6 3.5-5.8 7-5.8 1.7 0 3.2.5 4.4 1.4"/><path d="M15 17h7"/>'),
+  /** Bloquear (placa de proibido). */
+  block: stroke('<circle cx="12" cy="12" r="8.5"/><path d="M6 18 18 6"/>'),
+  /** Voltar (seta pra esquerda). */
+  back: stroke('<path d="M19.5 12h-14M11 5.5 4.5 12l6.5 6.5"/>', 2.6),
+  /** Mais ações (três pontinhos). */
+  more: `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5.5" cy="12" r="2.1" fill="currentColor"/><circle cx="12" cy="12" r="2.1" fill="currentColor"/><circle cx="18.5" cy="12" r="2.1" fill="currentColor"/></svg>`,
+  /** Convidar (aviãozinho de papel). */
+  send: stroke('<path d="M21 3.5 10.5 13.5"/><path d="M21 3.5 14.5 21l-4-7.5-7.5-4z"/>'),
   /** Marca do Google (cores oficiais: o botão segue a orientação de marca deles). */
   google: `<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#4285F4" d="M22.6 12.3c0-.8-.1-1.6-.2-2.3H12v4.4h6a5.1 5.1 0 0 1-2.2 3.3v2.8h3.6c2.1-1.9 3.2-4.8 3.2-8.2z"/><path fill="#34A853" d="M12 23c3 0 5.5-1 7.4-2.7l-3.6-2.8c-1 .7-2.3 1.1-3.8 1.1-2.9 0-5.4-2-6.3-4.6H2v2.9A11 11 0 0 0 12 23z"/><path fill="#FBBC05" d="M5.7 14c-.2-.7-.4-1.3-.4-2s.1-1.4.4-2V7.1H2A11 11 0 0 0 1 12c0 1.8.4 3.4 1.2 4.9z"/><path fill="#EA4335" d="M12 5.4c1.6 0 3.1.6 4.3 1.7l3.2-3.2A11 11 0 0 0 2 7.1L5.7 10c.9-2.6 3.4-4.6 6.3-4.6z"/></svg>`,
 };

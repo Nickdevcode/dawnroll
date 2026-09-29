@@ -256,7 +256,21 @@ Na placa da sala o dono escolhe o **modo** (Jardim livre ou Disputa), o **tempo*
 
 Tem **7 conquistas online** (Mão leve, Bocão, Trombada certeira, Força-tarefa, Mão aberta, Sol de sobra e Campeão do jardim), num grupo próprio nas conquistas da toca.
 
-> 🚧 Vem aí (em fases): amigos com convite e presença, e turmas (clãs). O plano está nas notas do projeto.
+#### 🤝 Amigos: convite e "onde está cada um"
+
+Em **Jogar online → Amigos** (ou no "Chamar amigos" do lobby):
+
+| | |
+|---|---|
+| ➕ **Adicionar** | Pelo **apelido** (o mesmo do ranking, sem diferenciar maiúscula). O outro recebe o pedido **na hora**, no canto da tela, e aceita ou recusa. Se os dois se pedirem, já viram amigos |
+| 🟢 **Onde está** | Cada amigo aparece **numa sala** (com o modo e a lotação), **jogando sozinho**, **no menu** ou **offline**. A cor do pontinho nunca vem sozinha: a frase de onde ele está vem junto |
+| 🚪 **Entrar na sala dele** | Amigo numa sala com vaga: **Entrar** e você cai lá (sala cheia ou Disputa passada dos 2 min avisam) |
+| 📨 **Chamar pra sua** | Na sala, **Chamar** manda um convite que chega **no canto da tela do amigo, sem pausar nada**: ele entra com **J**, **→ no direcional** ou tocando em **Entrar** (no celular é uma faixa compacta no topo). O convite vale **2 min** e também fica na central online |
+| 🚫 **Tirar e bloquear** | No **⋯** de cada amigo, com confirmação. Bloqueado sai dos amigos e **não te acha mais** pelo apelido nem te chama (e não fica sabendo que foi bloqueado). Dá pra desbloquear em "Bloqueados" |
+
+A bolinha no "Jogar online" do menu conta pedidos e convites esperando.
+
+> 🚧 Vem aí: turmas (clãs), com tag no apelido e ranking de turmas. O plano está nas notas do projeto.
 
 ---
 
@@ -315,6 +329,10 @@ Projeto **Dawnroll** no Supabase (`msmauxysewzacyotifcr`, Canadá). O schema int
 | `rooms` | Salas online: código, dono, modo, visibilidade (aberta ou de amigos), versão do protocolo, o "batimento" do dono e se a Disputa está rolando (e desde quando) | Só quem está na sala lê; escrever só pelas funções |
 | `room_members` | Quem está em cada sala (um jogador por sala) e quando bateu o ponto | Só quem está na sala lê |
 | `net_reports` | Como cada conexão online fechou (direta, via TURN ou falhou): o número que diz se vale ter servidor próprio | Ninguém lê pela API; grava pela função |
+| `friendships` | Uma linha por amizade (par ordenado, `pending` ou `accepted`, e quem pediu) | **Ninguém lê direto**: só pelas funções, que mostram o que é seu |
+| `blocks` | Quem bloqueou quem | Idem |
+| `room_invites` | Convites pra sala (um por par de/para, vencem em 2 min) | Idem |
+| `presence` | No menu ou jogando sozinho, e quando o jogo avisou por último ("numa sala" sai do ponto da sala, não do que o cliente diz) | Idem |
 
 | Função (RPC) | Pra quê |
 |---|---|
@@ -329,8 +347,17 @@ Projeto **Dawnroll** no Supabase (`msmauxysewzacyotifcr`, Canadá). O schema int
 | `quick_match` | Procurar partida: a sala **aberta** do modo mais cheia que tem vaga, está viva (dono bateu o ponto há menos de 20 s) e não está no meio de uma Disputa que já passou de 2 min (`for update skip locked`: dois procurando ao mesmo tempo não brigam); sem nenhuma, cria uma aberta (até 30 procuras a cada 10 min) |
 | `set_room_state` | Só o dono: conta o modo e se a Disputa está rolando (o `join_room` recusa `match_running` depois de 2 min de partida) |
 | `report_connection` | Telemetria de conexão (até 60 por hora) |
+| `send_friend_request` | Pede amizade pelo apelido (até 30 pedidos por dia e 60 buscas por hora; teto de 100 amigos). Quem te bloqueou devolve "não achei" |
+| `respond_friend_request` / `remove_friend` | Aceita ou recusa / desfaz a amizade (ou cancela o pedido que você fez) |
+| `block_user` / `unblock_user` | Bloqueia (desfaz amizade e convites) / desbloqueia |
+| `friends_list` | Amigos com onde cada um está (e a sala: código, modo, lotação, se dá pra entrar), pedidos recebidos e enviados, bloqueados |
+| `invite_friend` | Chama um amigo online pra sua sala (até 30 por hora) |
+| `touch_presence` | O "estou aqui" do jogo (a cada 30 s): devolve pedidos esperando, amigos online e os convites válidos |
+| `dismiss_invite` / `go_offline` | "Agora não" no convite / aparece offline na hora (fechou a aba) |
 
 **🌐 O online por dentro:** o jogo em si **não passa pelo servidor**. Os besouros de uma sala conversam direto pelo navegador (WebRTC), com o dono da sala no centro repassando pros outros. O Supabase só faz o "aperto de mão" (canal **privado** do Realtime `room:<id>`, que só membro da sala abre: RLS em `realtime.messages`; o acesso público ao Realtime está desligado) e guarda quem está em qual sala. Pra quem está numa rede que não deixa conectar direto (4G, CGNAT), a função **`turn-credentials`** (Edge Function) entrega uma credencial temporária do TURN do Cloudflare (1 TB/mês grátis), só pra quem está logado (a chave fica nos segredos da função, `CF_TURN_KEY_ID` e `CF_TURN_API_TOKEN`; sem eles, a função devolve só STUN). Sala pública força tudo pelo TURN (ninguém vê o IP de ninguém). Uma faxina (`pg_cron`, de 5 em 5 min) apaga sala morta, vaga esquecida e registro velho.
+
+**📨 Avisos dos amigos na hora:** pedido, aceite e convite saem do próprio banco (`realtime.send`) pro canal **privado** `user:<id>` — só o dono do canal lê, e ninguém escreve nele pela API. O jogo só abre esse canal quando a conta tem amigo ou pedido enviado (conta sem ninguém não gasta conexão do Realtime). Sem o canal (limite de conexões, rede), a presença consulta a cada 15 s e entrega o mesmo. Outra faxina (de 10 em 10 min) apaga convite vencido, presença velha e pedido parado há 60 dias.
 
 **🛡️ Segurança e anti-trapaça.** O jogo roda no navegador, então não dá pra barrar 100% de trapaça; o servidor corta o grosso:
 
@@ -340,7 +367,8 @@ Projeto **Dawnroll** no Supabase (`msmauxysewzacyotifcr`, Canadá). O schema int
 - Enterro só conta com bola de **3 a 30 cm**, no ritmo de **1 a cada 8 s** desde o último (a fila offline passa, spam não), no máximo **500 por dia** e 50 por chamada.
 - Importação de convidado: no máximo **150 enterros** (e 30 cm por enterro), uma vez por conta.
 - Figurinhas saem do próprio save, com teto de 99 (o jogo tem 58: acima disso é save forjado, fácil de achar).
-- Advisor de segurança do Supabase: **0 avisos**.
+- Amigos, bloqueios, convites e presença: tabelas **sem nenhum grant** (nem leitura); cada função confere que a pessoa é amiga (e não bloqueada) antes de mostrar sala, presença ou convite. Id e código que chegam no jogo são conferidos (formato) antes de ir pra tela.
+- Advisor de segurança do Supabase: só os avisos informativos de "RLS sem política" nas tabelas fechadas de propósito (acesso só pelas funções) e o de proteção contra senha vazada (desligada no Auth; já estava assim antes do online).
 
 **🧹 Moderação** (SQL Editor do Supabase):
 
@@ -496,6 +524,8 @@ src/
 ├── online/                 # conta, save na nuvem e ranking (Supabase)
 │   ├── Online.ts           # fachada: sessão, perfil/apelido, entrar/sair/excluir, ranking (com cache curtinho)
 │   ├── Rooms.ts            # salas no banco: criar, entrar pelo código, procurar partida, sair, ponto, assumir, estado da Disputa
+│   ├── Friends.ts          # amigos no banco (pedir, aceitar, tirar, bloquear, chamar, presença) + leitura conferida e regras puras da lista
+│   ├── Social.ts           # os amigos vivos: presença a cada 30 s, canal de avisos `user:<id>`, convites, pedidos e aceites que viram aviso
 │   ├── CloudSave.ts        # sobe o save com trava de revisão; junta com a nuvem ao entrar e em conflito
 │   ├── BurialQueue.ts      # fila de enterros a caminho do ranking (sobrevive a fechar o jogo e ficar offline)
 │   ├── saveMerge.ts        # junta dois saves sem perder progresso (maior contador, união das listas)
@@ -508,7 +538,10 @@ src/
     ├── Hud.ts              # HUD em jogo, dicas, marcador da toca, resultado, toque
     ├── RoundPanel.ts       # nível, pedidos (recolhíveis) e poderes da rodada no HUD
     ├── PerkPicker.ts       # as cartas de "escolha um poder" (no online: por cima do jogo, sem congelar)
-    ├── OnlineSheet.ts      # placa "Jogar online": procurar partida, criar sala, entrar com código; o lobby (modo, tempo, times)
+    ├── OnlineSheet.ts      # placa "Jogar online": convites, procurar partida, amigos, criar sala, entrar com código; o lobby (modo, tempo, times, chamar amigos)
+    ├── FriendsPanel.ts     # tela "Amigos" (dentro da placa online): adicionar, pedidos, onde cada um está, entrar/chamar, tirar/bloquear
+    ├── InviteToast.ts      # aviso dos amigos no canto, sem pausar: convite (J / → / toque), pedido e aceite; faixa compacta no celular
+    ├── friendText.ts       # besourinho do amigo e a frase de onde ele está (lista, lobby, convite)
     ├── MatchHud.ts         # Disputa no HUD: relógio + placar, pôr do sol, contagem 3-2-1-Já!, cartão do resultado
     ├── matchIcons.ts       # ícones dos times (sol, gota, flor) e da Disputa
     ├── OnlineHud.ts        # chip da sala, placas de apelido com balão de reação, "Aqui!" no chão, botões do toque
@@ -655,6 +688,11 @@ Ferramentas de medição (descartáveis, em `shots/lead/`, fora do git): `bench.
 - **Pódio sem servidor:** cada jogador põe o **próprio** besouro no degrau do time dele (o pódio é igual em todo aparelho, montado no nascimento, que o jardim sempre deixa livre), e os outros veem pelo retrato de sempre. As bolas saem de cena (o número muda e fica guardada), senão os fantasmas ficariam soltos no jardim.
 - **Partida zera a bola de todo mundo:** na largada cada um esfarela as bolas largadas e renasce a principal (número novo), num jardim novo; o enterro que estava afundando na toca é cancelado (senão ele pontuaria na partida nova).
 - **Times que fazem sentido:** o primeiro jeito de distribuir (sempre o time com menos gente) espalhava 4 jogadores em duplas como 2+1+1. Agora abre só os times que precisa (4 em duplas = 2v2; 3 em trios = 2v1; sempre pelo menos 2 times).
+- **Aviso de amigo sem gastar o Realtime à toa:** o banco manda o aviso (`realtime.send`) pro canal privado de cada jogador, mas o jogo só abre esse canal com alguém que possa chamar (amigo ou pedido enviado): conta sem ninguém não segura conexão aberta (o plano grátis tem 200). A presença a cada 30 s é o plano B embutido: ela devolve os mesmos pedidos e convites, e com o canal fora do ar passa a consultar a cada 15 s (o convite vale 2 min).
+- **"Numa sala" vem do ponto da sala, não do cliente:** a presença só guarda "menu" ou "jogando"; se o amigo está numa sala, o banco sabe pelo ponto que a sala já bate (e só mostra a sala a quem é amigo). Não dá pra fingir estar numa sala, e a sala que fechou some da lista sozinha.
+- **Aviso sai da diferença entre duas listas:** pedido novo e "aceitou" chegam pelo canal, mas também pela consulta periódica (sem canal). A lista nova é comparada com a anterior e o que mudou vira aviso, uma vez só (o canal marca o que já avisou). Abrindo o jogo, só o pedido recente (menos de 10 min) avisa: pedido velho fica na bolinha, sem aparecer a cada recarregada.
+- **Convite no canto não pausa e não rouba o controle:** jogando com o mouse preso não dá pra clicar, então o convite entra com **J** (ou → no direcional; as cartas de poder, que usam o direcional, têm a vez). No celular vira uma faixa de uma linha no topo que some em 12 s (em pé ela cobria o placar e a dica; deitada, o meio da tela). Mouse ou foco em cima segura o aviso na tela.
+- **Placa que se atualiza sozinha sem roubar o foco:** a lista de amigos atualiza a cada 15 s com a placa aberta; redesenhar trocava o campo do código e o botão focado por novos. Agora o foco (e o cursor do campo) volta pro mesmo controle, e o formulário de adicionar amigo nem é redesenhado.
 - **O "welcome" do dono chega antes de a sessão abrir:** o dono da sala se dá as boas-vindas dentro do `NetSession.open`, antes de ele devolver a sessão. Por isso a sessão avisa que existe logo no começo (`onOpen`): relógio da sala e o próprio id já valem ali (antes, a bola do dono nascia sem dono e o broto de quem entra podia nascer com a hora errada).
 - **Online sem atrasar o jogo:** o `supabase-js` é importado sob demanda depois do jardim abrir (pedaço separado do bundle). O navegador continua sendo a cópia de trabalho do save; a nuvem recebe o JSON inteiro alguns segundos depois (espera 3 s, no máximo 15 s mudando sem parar) e ao trocar de aba/fechar.
 - **Sobe quando o jogo grava, não quando o save muda:** o jogo mexe nos contadores de movimento a cada passo sem gravar; comparar o save vivo antes/depois do upload fazia a nuvem receber o save a cada 3 s com a bola rolando. Agora um contador de gravações decide se ficou coisa por subir.

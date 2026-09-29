@@ -18,6 +18,8 @@
   --team-1: #3a8ed6;
   --team-2: #cc5a98;
   --online-good: #3f9a3a;
+  /* O mesmo verde como TEXTO em fundo claro (4,5:1): o de cima fica pros pontinhos e ícones. */
+  --online-good-text: #2e7a2a;
   --online-ok: #d99a1c;
   --online-bad: #c8472e;
 }
@@ -1474,6 +1476,782 @@
   }
   .online__quick-btn,
   .online__team-join {
+    transition: none;
+  }
+}
+
+/* ==========================================================================
+   Amigos: a tela "Amigos" (dentro da placa online), o botão e os convites na
+   central, "Chamar amigos" no lobby e o aviso no canto (convite / pedido).
+   A cor do pontinho nunca é a única pista: a frase de onde o amigo está vem junto.
+   ========================================================================== */
+
+.online[hidden],
+.friends[hidden] {
+  display: none;
+}
+
+/* --- Central: botão "Amigos" e convites que chegaram --------------------------- */
+.online__friends-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  border: 0;
+  border-radius: var(--radius-lg);
+  background: linear-gradient(180deg, #fffdf8 0%, #f1ecff 100%);
+  box-shadow: var(--shadow-clay), var(--inner-highlight);
+  color: var(--color-ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    transform var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out);
+}
+.online__friends-btn:hover {
+  transform: translateY(-2px);
+}
+.online__friends-btn:active {
+  transform: translateY(1px);
+  box-shadow: var(--shadow-clay-pressed), var(--inner-highlight);
+}
+.online__friends-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.2;
+}
+.online__friends-text strong {
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 900;
+  color: var(--dawn-indigo);
+}
+.online__friends-text span {
+  overflow: hidden;
+  font-size: 13px;
+  color: var(--color-ink-soft);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.online__friends-badge {
+  display: grid;
+  place-items: center;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 7px;
+  border-radius: var(--radius-pill);
+  background: var(--color-accent-deep);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 900;
+  animation: bubble-pop var(--dur-med) var(--ease-spring);
+}
+.online__friends-chevron {
+  display: grid;
+  color: var(--color-ink-soft);
+}
+.online__friends-chevron svg {
+  width: 20px;
+  height: 20px;
+  transform: rotate(180deg);
+}
+.online__invite {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: linear-gradient(90deg, #fff1c9 0%, #fffdf8 100%);
+  box-shadow: inset 4px 0 0 var(--dawn-sun), 0 2px 0 rgba(43, 42, 94, 0.08);
+  animation: online-player-in var(--dur-med) var(--ease-out);
+}
+.online__link-btn {
+  padding: 4px 6px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--dawn-indigo);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 800;
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.online__link-btn:hover {
+  background: rgba(43, 42, 94, 0.07);
+}
+
+/* --- Tela "Amigos" ----------------------------------------------------------------- */
+.friends {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.friends__back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 16px 0 10px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: rgba(43, 42, 94, 0.08);
+  color: var(--dawn-indigo);
+  font: inherit;
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 900;
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-out);
+}
+.friends__back:hover {
+  background: rgba(43, 42, 94, 0.15);
+}
+.friends__back svg {
+  width: 20px;
+  height: 20px;
+}
+/* Adicionar: o mesmo cartão de "papel de sol" do código da sala. */
+.friends__add {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(180deg, #fff6df 0%, #ffe9bf 100%);
+  box-shadow: var(--inner-highlight), 0 4px 0 rgba(200, 145, 42, 0.35);
+}
+.friends__add-btn {
+  min-height: 48px;
+  padding: 0 18px;
+  font-size: 16px;
+  white-space: nowrap;
+}
+.friends__msg {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.4;
+  color: var(--color-ink-soft);
+}
+.friends__msg:empty {
+  display: none;
+}
+.friends__msg[data-tone='ok'] {
+  color: var(--online-good-text);
+}
+.friends__msg[data-tone='error'] {
+  color: var(--account-danger);
+}
+.friends__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.friends__meta {
+  margin-left: var(--space-1);
+  color: var(--dawn-indigo);
+}
+.friends__list {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.friends__note {
+  margin: 0;
+  color: var(--color-ink-soft);
+  line-height: 1.45;
+}
+.friends__note--loading {
+  animation: online-pulse 1.4s ease-in-out infinite;
+}
+.friends__empty {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 2px dashed rgba(43, 42, 94, 0.14);
+  border-radius: var(--radius-md);
+  color: var(--color-ink-soft);
+  line-height: 1.45;
+}
+.friends__empty svg {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  color: var(--dawn-indigo);
+}
+.friends__empty p {
+  margin: 0;
+}
+.friends__toggle {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--color-ink-soft);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.friends__toggle:hover,
+.friends__toggle[aria-expanded='true'] {
+  background: rgba(43, 42, 94, 0.07);
+  color: var(--dawn-indigo);
+}
+.friends__toggle svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* Um amigo (também no lobby e nos convites). */
+.friend {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: #fffdf8;
+  box-shadow: 0 2px 0 rgba(43, 42, 94, 0.08);
+  animation: online-player-in var(--dur-med) var(--ease-out);
+}
+.friend--request {
+  background: linear-gradient(90deg, #fff1c9 0%, #fffdf8 100%);
+  box-shadow: inset 4px 0 0 var(--dawn-sun), 0 2px 0 rgba(43, 42, 94, 0.08);
+}
+.friend__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 44px;
+}
+.friend__avatar {
+  position: relative;
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: rgba(43, 42, 94, 0.06);
+}
+.friend__avatar svg {
+  width: 32px;
+  height: 32px;
+}
+.friend__avatar[data-status='offline'] svg,
+.friend__avatar[data-status='blocked'] svg {
+  opacity: 0.5;
+  filter: grayscale(0.7);
+}
+.friend__dot {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  display: none;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2.5px #fffdf8;
+}
+.friend__avatar[data-status='menu'] .friend__dot,
+.friend__avatar[data-status='solo'] .friend__dot {
+  display: block;
+  background: var(--online-good);
+}
+.friend__avatar[data-status='room'] .friend__dot {
+  display: block;
+  background: var(--color-accent);
+}
+.friend__avatar[data-status='offline'] .friend__dot {
+  display: block;
+  background: #c9c2b8;
+}
+.friend__text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.25;
+}
+.friend__nick {
+  overflow: hidden;
+  font-weight: 800;
+  color: var(--color-ink);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.friend__where {
+  overflow: hidden;
+  font-size: 13px;
+  color: var(--color-ink-soft);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.friend__actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 6px;
+}
+.friend__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: rgba(43, 42, 94, 0.08);
+  color: var(--dawn-indigo);
+  font: inherit;
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 900;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    transform var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out);
+}
+.friend__btn:hover:not(:disabled) {
+  background: rgba(43, 42, 94, 0.15);
+}
+.friend__btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+.friend__btn:disabled {
+  opacity: 0.55;
+  cursor: progress;
+}
+.friend__btn svg {
+  width: 17px;
+  height: 17px;
+  flex-shrink: 0;
+}
+.friend__btn--primary {
+  background: linear-gradient(180deg, #ffc462 0%, var(--dawn-sun) 60%, #f3a23a 100%);
+  color: #2a1706;
+  box-shadow: 0 3px 0 var(--dawn-sun-deep), inset 0 2px 0 rgba(255, 255, 255, 0.5);
+}
+.friend__btn--primary:hover:not(:disabled) {
+  background: linear-gradient(180deg, #ffcd78 0%, var(--dawn-sun) 60%, #f3a23a 100%);
+}
+.friend__btn--danger {
+  color: var(--account-danger);
+}
+.friend__btn--danger:hover:not(:disabled) {
+  background: rgba(179, 64, 42, 0.1);
+}
+/* Confirmação de tirar/bloquear: a ação que desfaz é vermelha cheia (não dá pra confundir com o "Não"). */
+.friend__btn--destroy {
+  background: linear-gradient(180deg, #d9654c 0%, var(--account-danger) 100%);
+  color: #fff6ee;
+  box-shadow: 0 3px 0 #7c2616, inset 0 2px 0 rgba(255, 255, 255, 0.25);
+}
+.friend__btn--destroy:hover:not(:disabled) {
+  background: linear-gradient(180deg, #e0735b 0%, var(--account-danger) 100%);
+}
+.friend__more {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--color-ink-soft);
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-out);
+}
+.friend__more:hover:not(:disabled),
+.friend__more[aria-expanded='true'] {
+  background: rgba(43, 42, 94, 0.08);
+  color: var(--dawn-indigo);
+}
+.friend__more svg {
+  width: 20px;
+  height: 20px;
+}
+.friend__done {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 10px;
+  color: var(--online-good-text);
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 900;
+}
+.friend__done svg {
+  width: 16px;
+  height: 16px;
+}
+.friend__menu {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 2px dashed rgba(43, 42, 94, 0.1);
+  animation: online-player-in var(--dur-med) var(--ease-out);
+}
+.friend__menu--confirm {
+  flex-direction: column;
+}
+.friend__question {
+  margin: 0;
+  font-weight: 700;
+  line-height: 1.4;
+  color: var(--color-ink);
+}
+.friend__menu-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.friend__note {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+.friend__note[data-tone='error'] {
+  color: var(--account-danger);
+}
+.friend__btn:focus-visible,
+.friend__more:focus-visible,
+.friends__back:focus-visible,
+.friends__toggle:focus-visible,
+.online__friends-btn:focus-visible,
+.online__link-btn:focus-visible {
+  outline: 3px solid var(--dawn-sun-deep);
+  outline-offset: 2px;
+}
+/* Tela estreita: "Adicionar" vira só o ícone (o campo do apelido precisa do espaço; o nome continua pro leitor de tela). */
+@media (max-width: 440px) {
+  .friends__add-btn {
+    width: 48px;
+    padding: 0;
+    flex-shrink: 0;
+  }
+  .friends__add-btn span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+}
+.friend__cta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.friend__cta:empty {
+  display: none;
+}
+/*
+ * Celular estreito: o "⋯" fica no canto de cima e só o botão de ação (Chamar,
+ * Entrar, Aceitar…) desce pra baixo do nome — a frase de onde o amigo está não
+ * é cortada.
+ */
+@media (max-width: 440px) {
+  .friend__row {
+    display: grid;
+    grid-template-columns: 40px minmax(0, 1fr) auto;
+    grid-template-areas:
+      'avatar text more'
+      'cta cta cta';
+    column-gap: var(--space-3);
+    row-gap: 0;
+  }
+  .friend__row > .friend__avatar {
+    grid-area: avatar;
+  }
+  .friend__row > .friend__text {
+    grid-area: text;
+  }
+  .friend__row .friend__actions {
+    display: contents;
+  }
+  .friend__row .friend__cta {
+    grid-area: cta;
+    justify-content: flex-end;
+    margin-top: var(--space-2);
+  }
+  .friend__row .friend__more {
+    grid-area: more;
+  }
+  .friend__where {
+    white-space: normal;
+  }
+}
+
+/* --- Aviso no canto (convite / pedido / aceito): por cima do jogo e do menu, sem pausar -- */
+/* PC: à direita, abaixo da faixa do aviso central do HUD (ele fica a 18% da altura). */
+.social-toast {
+  position: absolute;
+  z-index: 6;
+  top: calc(18% + 72px);
+  right: max(var(--space-4), env(safe-area-inset-right));
+  width: min(360px, calc(100vw - 2 * var(--space-4)));
+  pointer-events: none;
+}
+.social-toast__card {
+  position: relative;
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr) auto;
+  grid-template-areas:
+    'avatar text close'
+    'go go go';
+  align-items: center;
+  gap: var(--space-3) var(--space-3);
+  padding: var(--space-3) var(--space-3) calc(var(--space-3) + 3px);
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+  background:
+    radial-gradient(120% 160% at 0% 0%, rgba(255, 181, 71, 0.32), rgba(255, 181, 71, 0) 55%),
+    linear-gradient(135deg, #2b2a5e 0%, #4b3f86 100%);
+  color: #fff3e2;
+  box-shadow: 0 5px 0 rgba(15, 12, 40, 0.35), 0 18px 40px rgba(15, 12, 40, 0.35), inset 0 2px 0 rgba(255, 255, 255, 0.14);
+  opacity: 0;
+  transform: translateX(28px) scale(0.97);
+  pointer-events: auto;
+  transition:
+    transform 420ms var(--ease-spring),
+    opacity var(--dur-med) var(--ease-out);
+}
+.social-toast__card[hidden] {
+  display: none;
+}
+.social-toast__card[data-kind='accepted'] {
+  grid-template-areas: 'avatar text close';
+}
+.social-toast__card.is-visible {
+  opacity: 1;
+  transform: none;
+}
+.social-toast__card.is-leaving {
+  opacity: 0;
+  transform: translateX(28px) scale(0.97);
+  transition:
+    transform 280ms var(--ease-out),
+    opacity 280ms var(--ease-out);
+}
+.social-toast__avatar {
+  grid-area: avatar;
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 35%, #fffaf0 0%, #f3e3c7 100%);
+  box-shadow: 0 0 0 3px var(--dawn-sun);
+}
+.social-toast__avatar svg {
+  width: 36px;
+  height: 36px;
+}
+.social-toast__text {
+  grid-area: text;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  line-height: 1.2;
+}
+.social-toast__label {
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #ffd9a8;
+}
+.social-toast__body {
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 900;
+  overflow-wrap: anywhere;
+}
+/* Os botões entram direto na grade do cartão (Entrar embaixo, largo; o X no canto). */
+.social-toast__actions {
+  display: contents;
+}
+.social-toast__go {
+  grid-area: go;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: 44px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: linear-gradient(180deg, #ffc462 0%, var(--dawn-sun) 60%, #f3a23a 100%);
+  color: #2a1706;
+  font: inherit;
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 900;
+  box-shadow: 0 4px 0 var(--dawn-sun-deep), inset 0 2px 0 rgba(255, 255, 255, 0.55);
+  cursor: pointer;
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+.social-toast__go:hover {
+  transform: translateY(-1px);
+}
+.social-toast__go:active {
+  transform: translateY(3px);
+}
+.social-toast__go svg {
+  width: 20px;
+  height: 20px;
+}
+.social-toast__go--soft {
+  background: rgba(255, 246, 232, 0.14);
+  color: #fff3e2;
+  box-shadow: inset 0 0 0 2px rgba(255, 246, 232, 0.28);
+}
+.social-toast__key {
+  min-width: 26px;
+  height: 26px;
+  margin-left: 2px;
+  font-size: 12px;
+  box-shadow: 0 2px 0 rgba(58, 42, 34, 0.3), var(--inner-highlight);
+}
+.social-toast__close {
+  grid-area: close;
+  display: grid;
+  place-items: center;
+  align-self: start;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: rgba(255, 243, 226, 0.75);
+  cursor: pointer;
+}
+.social-toast__close:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff3e2;
+}
+.social-toast__close svg {
+  width: 16px;
+  height: 16px;
+}
+.social-toast__go:focus-visible,
+.social-toast__close:focus-visible {
+  outline: 3px solid #ffd27a;
+  outline-offset: 2px;
+}
+/* Barrinha do tempo: encolhe até o aviso sair (para quando o mouse ou o foco está em cima). */
+.social-toast__timer {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  height: 3px;
+  background: var(--dawn-sun);
+  transform-origin: left center;
+}
+.social-toast__card.is-timing .social-toast__timer {
+  animation: social-toast-timer var(--toast-ms, 8s) linear forwards;
+}
+.social-toast__card.is-held .social-toast__timer {
+  animation-play-state: paused;
+}
+@keyframes social-toast-timer {
+  to {
+    transform: scaleX(0);
+  }
+}
+/*
+ * Toque: uma faixa compacta de uma linha que desce do topo, como a notificação
+ * do celular (o meio da tela é do jogo e o topo tem placar, dica e Disputa: ela
+ * cobre o topo só por uns segundos e tem o X).
+ */
+.is-touch .social-toast {
+  top: max(var(--space-2), env(safe-area-inset-top));
+  right: 50%;
+  width: min(460px, calc(100vw - 2 * var(--space-3)));
+  transform: translateX(50%);
+}
+.is-touch .social-toast__card {
+  grid-template-columns: 40px minmax(0, 1fr) auto auto;
+  grid-template-areas: 'avatar text go close';
+  gap: 10px;
+  padding: 8px 6px 11px 10px;
+  transform: translateY(-120%);
+}
+.is-touch .social-toast__card[data-kind='accepted'] {
+  grid-template-areas: 'avatar text close close';
+}
+.is-touch .social-toast__card.is-visible {
+  transform: none;
+}
+.is-touch .social-toast__card.is-leaving {
+  transform: translateY(-120%);
+}
+.is-touch .social-toast__avatar {
+  width: 40px;
+  height: 40px;
+  box-shadow: 0 0 0 2.5px var(--dawn-sun);
+}
+.is-touch .social-toast__avatar svg {
+  width: 30px;
+  height: 30px;
+}
+.is-touch .social-toast__label {
+  font-size: 10px;
+}
+.is-touch .social-toast__body {
+  font-size: 14px;
+  line-height: 1.2;
+}
+.is-touch .social-toast__go {
+  min-height: 40px;
+  padding: 0 14px;
+  font-size: 15px;
+  box-shadow: 0 3px 0 var(--dawn-sun-deep), inset 0 2px 0 rgba(255, 255, 255, 0.55);
+}
+.is-touch .social-toast__go svg {
+  width: 18px;
+  height: 18px;
+}
+.is-touch .social-toast__close {
+  align-self: center;
+  width: 40px;
+  height: 40px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .friend,
+  .friend__menu,
+  .online__invite,
+  .online__friends-badge,
+  .friends__note--loading {
+    animation: none;
+  }
+  .social-toast__card,
+  .social-toast__card.is-leaving,
+  .online__friends-btn,
+  .friend__btn {
     transition: none;
   }
 }
