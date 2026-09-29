@@ -20,6 +20,8 @@ export interface FriendProfile {
   id: string;
   nickname: string;
   skin: string;
+  /** Tag da turma ("KHE" → [KHE] Nick), ou null sem turma. */
+  tag: string | null;
 }
 
 /** A sala em que o amigo está (pra "Entrar" nela). */
@@ -70,16 +72,21 @@ export interface PresenceInfo {
   /** Amigos com o jogo aberto agora. */
   online: number;
   invites: RoomInvite[];
+  /** Tem turma (colega de turma também chama pra sala: vale abrir o canal de avisos). */
+  clan: boolean;
+  /** Convites pra turma esperando resposta (só conta sem turma). */
+  clanInvites: number;
 }
 
 export type FriendRequestStatus = 'sent' | 'accepted' | 'already' | 'pending' | 'not_found' | 'self' | 'blocked' | 'limit' | 'rate_limited' | 'offline' | 'unknown';
 export type InviteStatus = 'sent' | 'no_room' | 'not_friend' | 'in_room' | 'offline' | 'rate_limited' | 'network' | 'unknown';
 
-/** Aviso que o banco manda pro canal `user:<id>` (ver `parseSocialPush`). */
+/** Aviso que o banco manda pro canal `user:<id>` (ver `parseSocialPush`). O convite de turma só avisa que chegou (a turma busca). */
 export type SocialPush =
   | { kind: 'request'; from: FriendProfile }
   | { kind: 'accepted'; from: FriendProfile }
-  | { kind: 'invite'; invite: RoomInvite };
+  | { kind: 'invite'; invite: RoomInvite }
+  | { kind: 'clan_invite' };
 
 /** Apelido digitado cabe na busca (o banco confere o resto). */
 export const FRIEND_NICK_MAX = 40;
@@ -161,7 +168,7 @@ export function parseProfile(v: unknown): FriendProfile | null {
   if (!v || typeof v !== 'object') return null;
   const d = v as Record<string, unknown>;
   if (!isId(d.id) || typeof d.nickname !== 'string' || d.nickname.length === 0 || d.nickname.length > 40) return null;
-  return { id: d.id, nickname: d.nickname, skin: typeof d.skin === 'string' ? d.skin : '' };
+  return { id: d.id, nickname: d.nickname, skin: typeof d.skin === 'string' ? d.skin : '', tag: typeof d.tag === 'string' && /^[A-Z0-9]{2,4}$/.test(d.tag) ? d.tag : null };
 }
 
 function parseRoom(v: unknown): FriendRoom | null {
@@ -230,7 +237,14 @@ export function parsePresence(data: unknown, now = Date.now()): PresenceInfo | n
   if (!data || typeof data !== 'object') return null;
   const d = data as Record<string, unknown>;
   const count = (n: unknown) => (typeof n === 'number' && Number.isFinite(n) ? Math.max(0, Math.round(n)) : 0);
-  return { requests: count(d.requests), friends: count(d.friends), online: count(d.online), invites: list(d.invites, (v) => parseInvite(v, now)) };
+  return {
+    requests: count(d.requests),
+    friends: count(d.friends),
+    online: count(d.online),
+    invites: list(d.invites, (v) => parseInvite(v, now)),
+    clan: d.clan === true,
+    clanInvites: count(d.clanInvites),
+  };
 }
 
 /** O aviso do canal `user:<id>` (null = desconhecido ou torto: ignora). */
@@ -241,6 +255,7 @@ export function parseSocialPush(payload: unknown, now = Date.now()): SocialPush 
     const invite = parseInvite(d.invite, now);
     return invite ? { kind: 'invite', invite } : null;
   }
+  if (d.kind === 'clan_invite') return { kind: 'clan_invite' };
   if (d.kind === 'request' || d.kind === 'accepted') {
     const from = parseProfile(d.from);
     return from ? { kind: d.kind, from } : null;

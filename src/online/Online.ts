@@ -1,6 +1,7 @@
 import type { Session, SupabaseClient } from '@supabase/supabase-js';
 import type { SaveData } from '../core/save';
 import { BurialQueue } from './BurialQueue';
+import { fetchClanBoard, type ClanBoardRow } from './Clans';
 import { CloudSave, type SaveHost, type SyncStatus } from './CloudSave';
 import { OK, fail, toAccountError, type AccountResult } from './authErrors';
 import { fetchProviders, getClient, onlineConfigured, type AuthProviders } from './client';
@@ -71,6 +72,7 @@ export class Online {
   private readonly burials = new BurialQueue();
   private readonly listeners = new Set<() => void>();
   private readonly boardCache = new Map<Board, { at: number; rows: LeaderboardRow[] }>();
+  private clanBoardCache: { at: number; rows: ClanBoardRow[] } | null = null;
   private client: SupabaseClient | null = null;
   private userId: string | null = null;
   /** Sessão sendo aberta agora (evita tratar o mesmo login duas vezes). */
@@ -91,7 +93,7 @@ export class Online {
   constructor(host: SaveHost) {
     this.cloud = new CloudSave(host);
     this.cloud.onStatus = (sync) => this.update({ sync, lastSavedAt: this.cloud.lastSavedAt });
-    this.burials.onCounted = () => this.boardCache.clear();
+    this.burials.onCounted = () => this.clearBoards();
   }
 
   get state(): Readonly<OnlineState> {
@@ -252,7 +254,7 @@ export class Online {
     const status = data as NicknameStatus;
     if (status === 'ok') {
       this.update({ profile: { nickname: nick, nicknameSet: true } });
-      this.boardCache.clear();
+      this.clearBoards();
     }
     return status;
   }
@@ -275,6 +277,22 @@ export class Online {
     }));
     this.boardCache.set(board, { at: performance.now(), rows });
     return rows;
+  }
+
+  /** Ranking das turmas na semana (funciona sem conta). Joga erro sem rede. */
+  async clanLeaderboard(force = false): Promise<ClanBoardRow[]> {
+    const cached = this.clanBoardCache;
+    if (!force && cached && performance.now() - cached.at < LEADERBOARD_TTL_MS) return cached.rows;
+    const client = this.client ?? (await getClient());
+    const rows = await fetchClanBoard(client, LEADERBOARD_SIZE);
+    this.clanBoardCache = { at: performance.now(), rows };
+    return rows;
+  }
+
+  /** Enterro contou, entrou/saiu da conta, trocou o apelido: o ranking guardado não vale mais. */
+  private clearBoards(): void {
+    this.boardCache.clear();
+    this.clanBoardCache = null;
   }
 
   // ---------------------------------------------------------------------------------
@@ -332,7 +350,7 @@ export class Online {
   private async importGuest(client: SupabaseClient, guest: SaveData): Promise<void> {
     if (guest.buried <= 0) return;
     const { error } = await client.rpc('import_progress', { p_buried: guest.buried, p_total_cm: guest.totalCm });
-    if (!error) this.boardCache.clear();
+    if (!error) this.clearBoards();
   }
 
   /**
@@ -346,7 +364,7 @@ export class Online {
     this.burials.detach(deleted);
     if (keepOwner) this.cloud.suspend();
     else this.cloud.detach(keepLocal);
-    this.boardCache.clear();
+    this.clearBoards();
     this.update({ status: 'guest', email: null, profile: null, sync: 'idle', lastSavedAt: null });
   }
 

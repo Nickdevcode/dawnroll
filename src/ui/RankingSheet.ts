@@ -1,18 +1,25 @@
 import { formatCm, getLocale, onLocaleChange, t, tn, type MessageKey } from '../i18n';
 import { CATALOG } from '../progression/catalog';
 import { DEFAULT_SKIN, isSkinId, skin } from '../progression/skins';
+import type { ClanBoardRow } from '../online/Clans';
 import { BOARDS, type Board, type LeaderboardRow, type Online } from '../online/Online';
+import { clanTagHtml } from './clanText';
 import { GameIcons } from './gameIcons';
 import { Icons } from './icons';
 import { escapeHtml } from './html';
 import { skinIcon } from './lookIcons';
 import { bindTabs, tabsMarkup } from './tabs';
 
-const TABS: ReadonlyArray<{ name: Board; icon: string; label: MessageKey }> = [
+/** As abas: os quatro rankings de jogador e o das turmas (semana). */
+type RankTab = Board | 'clans';
+const TAB_ORDER: readonly RankTab[] = [...BOARDS, 'clans'];
+
+const TABS: ReadonlyArray<{ name: RankTab; icon: string; label: MessageKey }> = [
   { name: 'buried', icon: GameIcons.burrow, label: 'ranking.tab.buried' },
   { name: 'week', icon: Icons.calendar, label: 'ranking.tab.week' },
   { name: 'mountain', icon: Icons.mountain, label: 'ranking.tab.mountain' },
   { name: 'stickers', icon: GameIcons.catalog, label: 'ranking.tab.stickers' },
+  { name: 'clans', icon: Icons.flag, label: 'ranking.tab.clans' },
 ];
 
 /** Brasil sem horário de verão desde 2019: a semana do ranking vira na segunda 0h, UTC−3. */
@@ -44,26 +51,27 @@ function formatValue(board: Board, value: number): string {
 /** Besourinho com o casco que a pessoa usa (casco desconhecido — de uma versão mais nova — vira o padrão). */
 const avatar = (id: string) => skinIcon(skin(isSkinId(id) ? id : DEFAULT_SKIN));
 
-type PanelState = { kind: 'loading' } | { kind: 'error' } | { kind: 'rows'; rows: LeaderboardRow[] };
+type PanelState = { kind: 'loading' } | { kind: 'error' } | { kind: 'rows'; rows: LeaderboardRow[] } | { kind: 'clans'; rows: ClanBoardRow[] };
 
 /**
- * Placa do ranking (dentro do menu): quatro abas — Enterradas, Semana (zera na
- * segunda), Montanha (soma dos cm) e Coleção (figurinhas). Pódio com os três
- * primeiros, lista até o 50º e, se a pessoa estiver fora, a linha dela no fim.
- * Sem conta, o rodapé convida a entrar.
+ * Placa do ranking (dentro do menu): cinco abas — Enterradas, Semana (zera na
+ * segunda), Montanha (soma dos cm), Coleção (figurinhas) e Turmas (bolas da
+ * turma na semana). Pódio com os três primeiros, lista até o 50º e, se a
+ * pessoa (ou a turma dela) estiver fora, a linha dela no fim. Sem conta, o
+ * rodapé convida a entrar.
  */
 export class RankingSheet {
   readonly element: HTMLElement;
   /** "Entrar" no rodapé (o menu abre a placa da conta). */
   onOpenAccount: (() => void) | null = null;
 
-  private readonly panels = new Map<Board, HTMLElement>();
-  private readonly states = new Map<Board, PanelState>();
+  private readonly panels = new Map<RankTab, HTMLElement>();
+  private readonly states = new Map<RankTab, PanelState>();
   private readonly footer: HTMLElement;
-  private readonly select: (name: Board) => void;
-  private current: Board = 'buried';
+  private readonly select: (name: RankTab) => void;
+  private current: RankTab = 'buried';
   /** Só a resposta da última busca de cada aba vale. */
-  private readonly tickets = new Map<Board, number>();
+  private readonly tickets = new Map<RankTab, number>();
 
   constructor(private readonly online: Online) {
     const markup = tabsMarkup('ranking-', 'sheet-ranking-title', TABS);
@@ -82,13 +90,13 @@ export class RankingSheet {
       <div class="sheet__body">${markup.panels}</div>
       <footer class="rank-footer" data-footer aria-live="polite"></footer>`;
 
-    const buttons = new Map<Board, HTMLButtonElement>();
+    const buttons = new Map<RankTab, HTMLButtonElement>();
     for (const tab of TABS) {
       buttons.set(tab.name, this.element.querySelector(`[data-tab="${tab.name}"]`) as HTMLButtonElement);
       this.panels.set(tab.name, this.element.querySelector(`[data-panel="${tab.name}"]`) as HTMLElement);
     }
     this.footer = this.element.querySelector('[data-footer]') as HTMLElement;
-    this.select = bindTabs(BOARDS, buttons, this.panels, (board) => {
+    this.select = bindTabs(TAB_ORDER, buttons, this.panels, (board) => {
       this.current = board;
       this.renderFooter();
       if (!this.element.hidden) void this.load(board);
@@ -117,11 +125,11 @@ export class RankingSheet {
 
   private refresh(): void {
     if (this.element.hidden) return;
-    for (const board of BOARDS) this.renderPanel(board);
+    for (const board of TAB_ORDER) this.renderPanel(board);
     this.renderFooter();
   }
 
-  private async load(board: Board, force = false): Promise<void> {
+  private async load(board: RankTab, force = false): Promise<void> {
     if (this.online.state.status === 'disabled') {
       this.renderFooter();
       this.panels.get(board)!.innerHTML = `<p class="rank-blurb">${escapeHtml(t('ranking.unavailable'))}</p>`;
@@ -130,26 +138,29 @@ export class RankingSheet {
     const ticket = (this.tickets.get(board) ?? 0) + 1;
     this.tickets.set(board, ticket);
     // Já tem lista na tela: troca sem piscar o "carregando".
-    if (force || this.states.get(board)?.kind !== 'rows') this.setState(board, { kind: 'loading' });
+    const shown = this.states.get(board)?.kind;
+    if (force || (shown !== 'rows' && shown !== 'clans')) this.setState(board, { kind: 'loading' });
     try {
-      const rows = await this.online.leaderboard(board, force);
-      if (this.tickets.get(board) === ticket) this.setState(board, { kind: 'rows', rows });
+      const state: PanelState =
+        board === 'clans' ? { kind: 'clans', rows: await this.online.clanLeaderboard(force) } : { kind: 'rows', rows: await this.online.leaderboard(board, force) };
+      if (this.tickets.get(board) === ticket) this.setState(board, state);
     } catch (error) {
       if (import.meta.env.DEV) console.warn('[online] ranking não carregou', error);
       if (this.tickets.get(board) === ticket) this.setState(board, { kind: 'error' });
     }
   }
 
-  private setState(board: Board, state: PanelState): void {
+  private setState(board: RankTab, state: PanelState): void {
     this.states.set(board, state);
     this.renderPanel(board);
     if (board === this.current) this.renderFooter();
   }
 
-  private renderPanel(board: Board): void {
+  private renderPanel(board: RankTab): void {
     const panel = this.panels.get(board)!;
     const state = this.states.get(board) ?? { kind: 'loading' };
-    const blurb = `<p class="rank-blurb">${escapeHtml(board === 'week' ? t('ranking.desc.week', { left: weekResetText() }) : t(`ranking.desc.${board}` as MessageKey))}</p>`;
+    const weekly = board === 'week' || board === 'clans';
+    const blurb = `<p class="rank-blurb">${escapeHtml(weekly ? t(`ranking.desc.${board}` as MessageKey, { left: weekResetText() }) : t(`ranking.desc.${board}` as MessageKey))}</p>`;
     if (state.kind === 'loading') {
       const skeleton = Array.from({ length: 6 }, () => '<li class="rank-row is-skeleton" aria-hidden="true"><span></span><span></span><span></span></li>').join('');
       panel.innerHTML = `${blurb}<p class="sr-only" role="status">${escapeHtml(t('ranking.loading'))}</p><ol class="rank-list">${skeleton}</ol>`;
@@ -164,6 +175,11 @@ export class RankingSheet {
         </div>`;
       return;
     }
+    if (state.kind === 'clans') {
+      this.renderClans(panel, blurb, state.rows);
+      return;
+    }
+    if (board === 'clans') return;
     const top = state.rows.filter((row) => row.rank <= 50);
     if (top.length === 0) {
       panel.innerHTML = /* html */ `${blurb}
@@ -186,6 +202,54 @@ export class RankingSheet {
       <ol class="rank-podium">${podium}</ol>
       ${rest ? `<ol class="rank-list">${rest}</ol>` : ''}
       ${me ? `<div class="rank-gap" aria-hidden="true"><span></span><span></span><span></span></div><ol class="rank-list">${this.row(board, me)}</ol>` : ''}`;
+  }
+
+  /** Aba Turmas: o mesmo pódio e lista, com a tag no lugar do besouro e quantos membros. */
+  private renderClans(panel: HTMLElement, blurb: string, rows: readonly ClanBoardRow[]): void {
+    const top = rows.filter((row) => row.rank <= 50);
+    if (top.length === 0) {
+      panel.innerHTML = /* html */ `${blurb}
+        <div class="rank-empty">
+          <span class="rank-empty__icon" aria-hidden="true">${Icons.flag}</span>
+          <p>${escapeHtml(t('ranking.emptyClans'))}</p>
+        </div>`;
+      return;
+    }
+    const mine = rows.find((row) => row.isMine && row.rank > 50);
+    const podium = [1, 2, 3]
+      .map((place) => {
+        const row = top.find((r) => r.rank === place);
+        if (!row) return this.openSpot(place);
+        return /* html */ `
+          <li class="rank-podium__spot is-place-${row.rank}${row.isMine ? ' is-me' : ''}" tabindex="0" data-focusable aria-label="${escapeHtml(this.clanLabel(row))}">
+            <span class="rank-avatar rank-avatar--clan" aria-hidden="true">${clanTagHtml(row.tag, 'clan-tag--podium')}</span>
+            <strong class="rank-name" aria-hidden="true">${escapeHtml(row.name)}</strong>
+            <span class="rank-value" aria-hidden="true">${escapeHtml(tn('ranking.balls', row.value))}</span>
+            <span class="rank-podium__block" aria-hidden="true">${row.rank}</span>
+          </li>`;
+      })
+      .join('');
+    const rest = top.slice(3).map((row) => this.clanRow(row)).join('');
+    panel.innerHTML = /* html */ `${blurb}
+      <ol class="rank-podium">${podium}</ol>
+      ${rest ? `<ol class="rank-list">${rest}</ol>` : ''}
+      ${mine ? `<div class="rank-gap" aria-hidden="true"><span></span><span></span><span></span></div><ol class="rank-list">${this.clanRow(mine)}</ol>` : ''}`;
+  }
+
+  private clanLabel(row: ClanBoardRow): string {
+    const name = row.isMine ? `${row.name} (${t('ranking.yourClan')})` : row.name;
+    return t('ranking.clanRowAria', { rank: row.rank, tag: row.tag, name, members: row.members, value: tn('ranking.balls', row.value) });
+  }
+
+  private clanRow(row: ClanBoardRow): string {
+    const you = row.isMine ? `<span class="rank-you">${escapeHtml(t('ranking.yourClan'))}</span>` : '';
+    return /* html */ `
+      <li class="rank-row${row.isMine ? ' is-me' : ''}" tabindex="0" data-focusable aria-label="${escapeHtml(this.clanLabel(row))}">
+        <span class="rank-row__place" aria-hidden="true">${escapeHtml(t('ranking.place', { rank: row.rank }))}</span>
+        <span class="rank-avatar rank-avatar--clan" aria-hidden="true">${clanTagHtml(row.tag)}</span>
+        <span class="rank-row__name" aria-hidden="true"><span>${escapeHtml(row.name)}</span><span class="rank-row__sub">${escapeHtml(tn('clan.memberCount', row.members))}</span>${you}</span>
+        <span class="rank-row__value" aria-hidden="true">${escapeHtml(tn('ranking.balls', row.value))}</span>
+      </li>`;
   }
 
   private rowLabel(board: Board, row: LeaderboardRow): string {
@@ -241,12 +305,18 @@ export class RankingSheet {
     }
     const state = this.states.get(this.current);
     // Ainda carregando (ou deu erro): sem posição pra mostrar.
-    if (state?.kind !== 'rows') {
+    if (state?.kind !== 'rows' && state?.kind !== 'clans') {
       this.footer.hidden = true;
       return;
     }
-    const me = state.rows.find((row) => row.isMe);
-    const text = me ? t('ranking.yourPlace', { rank: me.rank }) : t('ranking.notRanked');
+    let text: string;
+    if (state.kind === 'clans') {
+      const mine = state.rows.find((row) => row.isMine);
+      text = mine ? t('ranking.clanPlace', { rank: mine.rank }) : t('ranking.clanNotRanked');
+    } else {
+      const me = state.rows.find((row) => row.isMe);
+      text = me ? t('ranking.yourPlace', { rank: me.rank }) : t('ranking.notRanked');
+    }
     this.footer.innerHTML = /* html */ `
       <span class="rank-footer__icon is-me" aria-hidden="true">${Icons.podium}</span>
       <p><strong>${escapeHtml(text)}</strong></p>`;

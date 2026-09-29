@@ -2,6 +2,7 @@ import type { MenuAction } from '../core/GamepadInput';
 import type { OnlinePlay } from '../net/OnlinePlay';
 import { MATCH_WIN_PASS_XP, highlights, isSunset, standings, timeLeft, winners, type HighlightKind, type NetMatch, type Side } from '../net/match';
 import { onLocaleChange, t } from '../i18n';
+import { clanTagHtml } from './clanText';
 import { escapeHtml } from './html';
 import { Icons } from './icons';
 import { MergeIcon, EMOTE_ICONS } from './emoteIcons';
@@ -302,13 +303,16 @@ export class MatchHud {
     else if (top.length > 1) title = t('match.result.draw');
     else if (top[0].isTeam) title = t('match.result.winTeam', { name: t(`team.${top[0].key}` as 'team.0') });
     else title = t('match.result.winPlayer', { name: m.board.find((e) => e.uid === top[0].uids[0])?.nick ?? '?' });
+    const tags = new Map(net.players.map((p) => [p.uid, p.tag]));
     const rows = list
       .map((side) => {
         const mine = side.uids.includes(self);
         const names = side.uids
           .map((uid) => {
             const entry = m.board.find((e) => e.uid === uid);
-            return `<span class="match-row__nick${uid === self ? ' is-self' : ''}">${escapeHtml(entry?.nick ?? '?')}</span>`;
+            // A tag da turma vem do visual de quem ainda está na sala (o placar só guarda o apelido).
+            const tag = tags.get(uid) ?? null;
+            return `<span class="match-row__nick${uid === self ? ' is-self' : ''}">${clanTagHtml(tag)}${escapeHtml(entry?.nick ?? '?')}</span>`;
           })
           .join('');
         const badge = side.isTeam

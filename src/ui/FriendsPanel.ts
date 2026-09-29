@@ -2,6 +2,7 @@ import { onLocaleChange, t, tn, type MessageKey } from '../i18n';
 import type { OnlineOutcome } from '../net/OnlinePlay';
 import { FRIEND_NICK_MAX, canInvite, friendRoomBlock, type Friend, type FriendProfile, type FriendRequest } from '../online/Friends';
 import type { Social } from '../online/Social';
+import { clanTagHtml } from './clanText';
 import { escapeHtml } from './html';
 import { friendAvatar, friendWhere } from './friendText';
 import { Icons } from './icons';
@@ -288,7 +289,7 @@ export class FriendsPanel {
     return /* html */ `
       <span class="friend__avatar" data-status="${status}" aria-hidden="true">${friendAvatar(profile)}<span class="friend__dot"></span></span>
       <span class="friend__text">
-        <strong class="friend__nick">${escapeHtml(profile.nickname)}</strong>
+        <strong class="friend__nick">${clanTagHtml(profile.tag)}${escapeHtml(profile.nickname)}</strong>
         ${where ? `<span class="friend__where">${escapeHtml(where)}</span>` : ''}
       </span>`;
   }

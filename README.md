@@ -29,8 +29,8 @@ Um besouro rola-bosta de massinha num jardim em miniatura. Você rola uma bola d
 | 🛒 **Feirinha e moedas** | Duas moedas (🪙 moedas e 💧 **gotas de orvalho**, as raras), ganhas nas conquistas, nos baús e no passe. A loja vende cascos, acessórios e baús; quem já jogava ganhou tudo retroativo (ver abaixo) |
 | 🎁 **Baús 3D** | Cada nível novo dá um baú (madeira, prata, cristal ou **do Sol**), que **cai no jardim** e abre numa cerimônia no estilo Clash Royale: os prêmios saem **um por vez** (moedas, orvalho e, às vezes, um visual com suspense de raridade) e no fim vem o resumo |
 | 🌸 **Passe Florada** | Temporada até 27/10 com 20 níveis, 12 desafios e 8 visuais exclusivos (o último é o casco **Girassol**) |
-| 🌐 **Online** | Até **6 besouros no mesmo jardim**: crie uma sala e passe o código (ou o link) pros amigos. Cada um rola a sua bola, e o que um engole some pra todo mundo (ver abaixo) |
-| 🏆 **Conta e ranking** | Entre com e-mail e senha (ou Google) pra **salvar o besouro na nuvem** e continuar de qualquer aparelho, e dispute o **ranking global** em 4 abas: enterradas, da semana, montanha e coleção (ver abaixo) |
+| 🌐 **Online** | Até **6 besouros no mesmo jardim**: procure partida, crie uma sala e passe o código (ou o link), chame os amigos ou a sua **turma**. Cada um rola a sua bola, e o que um engole some pra todo mundo; tem Disputa em times com pódio (ver abaixo) |
+| 🏆 **Conta e ranking** | Entre com e-mail e senha (ou Google) pra **salvar o besouro na nuvem** e continuar de qualquer aparelho, e dispute o **ranking global** em 5 abas: enterradas, da semana, montanha, coleção e turmas (ver abaixo) |
 | 💩 **Montinho fresquinho** | Mais ou menos 1 em cada 10 montinhos nasce fresquinho: mais claro e dourado, com três moscas e um brilho de vez em quando. Vale o dobro de bola e conta como raro |
 | 🌧️ **Clima** | Nada muda de supetão: nuvenzinhas passando no sol → o céu fecha devagar → **garoa que vai engrossando** → chuva que "respira" (trechos fracos e rajadas) → amaina aos poucos → abre. Cada chuva é sorteada: **pancada** curta e fraca ou **tempestade** longa com raio, trovoada ao longe antes de chegar e depois de ir embora. O céu fecha, a luz fica difusa, tudo fica molhado e brilhante |
 | 💧 **Poças** | Seis bacias rasas (uma de lama no meio da trilha) que enchem na chuva, com anéis de gota, reflexo do céu e borda rasa transparente. Secam devagar |
@@ -205,6 +205,7 @@ Conta é **opcional**: sem ela o jogo continua igualzinho, salvando no aparelho.
 | 📅 **Semana** | Bolas enterradas desde segunda (zera toda **segunda à 0h de Brasília**, com contagem regressiva) — dá chance pra quem chegou agora |
 | ⛰️ **Montanha** | A soma do tamanho de todas as bolas enterradas (premia bola grande) |
 | 📖 **Coleção** | Figurinhas diferentes no catálogo da toca |
+| 🏷️ **Turmas** | Bolas enterradas pelos membros de cada **turma** desde segunda (zera junto com a Semana). No lugar do besourinho vai a tag da turma, e cada linha diz quantos membros ela tem |
 
 > "Maior bola" ficou de fora de propósito: o teto é 30 cm, então virava um empate geral.
 
@@ -271,7 +272,22 @@ Em **Jogar online → Amigos** (ou no "Chamar amigos" do lobby):
 
 A bolinha no "Jogar online" do menu conta pedidos e convites esperando.
 
-> 🚧 Vem aí: turmas (clãs), com tag no apelido e ranking de turmas. O plano está nas notas do projeto.
+#### 🏷️ Turmas: a sua galera fixa
+
+Em **Jogar online → Turma** (dentro de uma sala, pelo "Ver a turma" do lobby):
+
+| | |
+|---|---|
+| 🏗️ **Criar** | Nome (3 a 20) + **tag de 2 a 4 letras ou números** (vira maiúscula sozinha, sem acento). Os dois são únicos e passam pelo mesmo filtro de palavrão do apelido. Quem cria vira o **líder** (coroa). Até **20 por turma**, uma turma por vez |
+| 🔎 **Entrar** | Procurando pela **tag** (com ou sem colchete). Turma **aberta** entra na hora; **fechada**, só com convite |
+| 📨 **Convidar** | Qualquer membro chama **amigos** pra turma (a amizade é o "sim" dos dois). O convite chega no canto da tela (**Ver** abre a turma, e aceitar é lá, com calma) e vale **7 dias** |
+| 🏷️ **Tag no apelido** | `[KHE] Nick` em tudo que mostra gente: na placa em cima do besouro, no lobby, na lista de amigos, nos convites e no cartão do resultado da Disputa. Entrou ou saiu de uma turma no meio da sala? A tag muda pra todo mundo na hora |
+| 🎮 **Jogar com a turma** | Fora de sala, cria uma sala (Jardim livre) e **chama todo mundo da turma que está com o jogo aberto**; dentro de uma sala, só chama (também no lobby: **Chamar a turma**). O convite é o mesmo dos amigos: canto da tela, **J** / **→** / **Entrar** |
+| 📊 **Ranking de turmas** | Aba **Turmas** no ranking: o que os membros enterram **desde segunda** soma pra turma (e cada um vê a sua parte na lista). Conta só o que a pessoa enterrou **estando** na turma: trocar de turma não leva nem duplica ponto |
+| 👑 **Líder** | Abre/fecha a turma, **tira** alguém (e ele só volta com convite) e **passa a liderança**, tudo pelo ⋯, com confirmação. Se o líder sai, quem está há mais tempo assume; o último a sair fecha a turma |
+| 🔒 **Privacidade** | Colega de turma vê se você está **online, numa sala ou offline**, mas **não o código da sala**: ele só chega por convite (ou pela amizade). Tem criança jogando: turma aberta não vira porta dos fundos pra sala de ninguém |
+
+A bolinha do "Jogar online" também conta os convites de turma.
 
 ---
 
@@ -334,6 +350,10 @@ Projeto **Dawnroll** no Supabase (`msmauxysewzacyotifcr`, Canadá). O schema int
 | `blocks` | Quem bloqueou quem | Idem |
 | `room_invites` | Convites pra sala (um por par de/para, vencem em 2 min) | Idem |
 | `presence` | No menu ou jogando sozinho, e quando o jogo avisou por último ("numa sala" sai do ponto da sala, não do que o cliente diz) | Idem |
+| `clans` | Turmas: nome e tag (únicos, com filtro de palavrão na própria tabela), aberta/fechada, `hidden` (moderação) e o placar da semana | **Ninguém lê direto**: só pelas funções (o ranking de turmas é público) |
+| `clan_members` | Quem está em cada turma (uma por jogador), o líder (um por turma) e a parte de cada um na semana | Idem |
+| `clan_invites` | Convites pra turma (um por turma/pessoa, vencem em 7 dias) | Idem |
+| `clan_bans` | Quem o líder tirou (só volta com convite) | Idem |
 
 | Função (RPC) | Pra quê |
 |---|---|
@@ -355,10 +375,18 @@ Projeto **Dawnroll** no Supabase (`msmauxysewzacyotifcr`, Canadá). O schema int
 | `invite_friend` | Chama um amigo online pra sua sala (até 30 por hora) |
 | `touch_presence` | O "estou aqui" do jogo (a cada 30 s): devolve pedidos esperando, amigos online e os convites válidos |
 | `dismiss_invite` / `go_offline` | "Agora não" no convite / aparece offline na hora (fechou a aba) |
+| `create_clan` / `find_clan` / `join_clan` / `leave_clan` | Turma: cria (até 3 por dia), acha pela tag (60 buscas por hora), entra (aberta, ou com convite; até 10 por dia) e sai |
+| `kick_clan_member` / `promote_clan_member` / `set_clan_open` | Só o líder: tira alguém, passa a liderança, abre/fecha |
+| `invite_to_clan` / `respond_clan_invite` | Chama um **amigo** pra turma (até 30 por hora) / aceita (entra mesmo fechada) ou recusa |
+| `my_clan` | A tela Turma de uma vez: a turma (lotação, posição na semana), o seu papel, os membros (onde cada um está, **sem código de sala**, e a parte na semana) e, sem turma, os convites |
+| `call_clan` | "Jogar com a turma": convite de sala pra quem da turma está online e fora dela (até 10 por hora) |
+| `clan_leaderboard` | Ranking das turmas na semana (público) + a sua turma no fim se estiver fora do topo |
 
 **🌐 O online por dentro:** o jogo em si **não passa pelo servidor**. Os besouros de uma sala conversam direto pelo navegador (WebRTC), com o dono da sala no centro repassando pros outros. O Supabase só faz o "aperto de mão" (canal **privado** do Realtime `room:<id>`, que só membro da sala abre: RLS em `realtime.messages`; o acesso público ao Realtime está desligado) e guarda quem está em qual sala. Pra quem está numa rede que não deixa conectar direto (4G, CGNAT), a função **`turn-credentials`** (Edge Function) entrega uma credencial temporária do TURN do Cloudflare (1 TB/mês grátis), só pra quem está logado (a chave fica nos segredos da função, `CF_TURN_KEY_ID` e `CF_TURN_API_TOKEN`; sem eles, a função devolve só STUN). Sala pública força tudo pelo TURN (ninguém vê o IP de ninguém). Uma faxina (`pg_cron`, de 5 em 5 min) apaga sala morta, vaga esquecida e registro velho.
 
-**📨 Avisos dos amigos na hora:** pedido, aceite e convite saem do próprio banco (`realtime.send`) pro canal **privado** `user:<id>` — só o dono do canal lê, e ninguém escreve nele pela API. O jogo só abre esse canal quando a conta tem amigo ou pedido enviado (conta sem ninguém não gasta conexão do Realtime). Sem o canal (limite de conexões, rede), a presença consulta a cada 15 s e entrega o mesmo. Outra faxina (de 10 em 10 min) apaga convite vencido, presença velha e pedido parado há 60 dias.
+**📨 Avisos dos amigos na hora:** pedido, aceite e convite (de sala e de turma) saem do próprio banco (`realtime.send`) pro canal **privado** `user:<id>` — só o dono do canal lê, e ninguém escreve nele pela API. O jogo só abre esse canal quando a conta tem amigo, pedido enviado ou turma (conta sem ninguém não gasta conexão do Realtime). Sem o canal (limite de conexões, rede), a presença consulta a cada 15 s e entrega o mesmo. Outra faxina (de 10 em 10 min) apaga convite vencido, presença velha e pedido parado há 60 dias.
+
+**🏷️ Placar das turmas por gatilho:** ninguém manda "a turma fez X pontos". Quando o `record_burials` conta um enterro no ranking individual (com o ritmo e os tetos de sempre), um gatilho em `player_stats` soma o mesmo na turma em que a pessoa está naquela hora (e na parte dela). Importar o progresso de convidado não conta. O convite de sala de colega de turma vale na presença igual ao de amigo (e bloqueio barra dos dois jeitos).
 
 **🛡️ Segurança e anti-trapaça.** O jogo roda no navegador, então não dá pra barrar 100% de trapaça; o servidor corta o grosso:
 
@@ -369,6 +397,7 @@ Projeto **Dawnroll** no Supabase (`msmauxysewzacyotifcr`, Canadá). O schema int
 - Importação de convidado: no máximo **150 enterros** (e 30 cm por enterro), uma vez por conta.
 - Figurinhas saem do próprio save, com teto de 99 (o jogo tem 58: acima disso é save forjado, fácil de achar).
 - Amigos, bloqueios, convites e presença: tabelas **sem nenhum grant** (nem leitura); cada função confere que a pessoa é amiga (e não bloqueada) antes de mostrar sala, presença ou convite. Id e código que chegam no jogo são conferidos (formato) antes de ir pra tela.
+- Turmas: também **sem nenhum grant**. Nome e tag com o filtro de palavrão **na tabela** (constraint), tag sempre maiúscula de 2 a 4. Na sala, a tag que chega de outro jogador é conferida no formato (mesmo modelo de confiança do apelido: o banco filtra na criação).
 - Advisor de segurança do Supabase: só os avisos informativos de "RLS sem política" nas tabelas fechadas de propósito (acesso só pelas funções) e o de proteção contra senha vazada (desligada no Auth; já estava assim antes do online).
 
 **🧹 Moderação** (SQL Editor do Supabase):
@@ -376,6 +405,8 @@ Projeto **Dawnroll** no Supabase (`msmauxysewzacyotifcr`, Canadá). O schema int
 ```sql
 -- Esconder alguém do ranking (a pessoa ainda joga e se vê)
 update public.profiles set hidden = true where lower(nickname) = lower('Apelido Aqui');
+-- Esconder uma turma (some do ranking, da busca e da tag dos membros; quem é da turma ainda vê)
+update public.clans set hidden = true where tag = 'TAG';
 -- Ver os maiores números pra achar trapaça
 select p.nickname, s.buried, s.week_buried, s.total_cm, s.stickers, s.last_burial_at
 from public.player_stats s join public.profiles p on p.id = s.user_id order by s.buried desc limit 20;
@@ -527,6 +558,8 @@ src/
 │   ├── Rooms.ts            # salas no banco: criar, entrar pelo código, procurar partida, sair, ponto, assumir, estado da Disputa
 │   ├── Friends.ts          # amigos no banco (pedir, aceitar, tirar, bloquear, chamar, presença) + leitura conferida e regras puras da lista
 │   ├── Social.ts           # os amigos vivos: presença a cada 30 s, canal de avisos `user:<id>`, convites, pedidos e aceites que viram aviso
+│   ├── Clans.ts            # turmas no banco (criar, achar, entrar, líder, convidar, chamar, ranking) + leitura conferida e regras puras (tag, nome, ordem)
+│   ├── ClanStore.ts        # a turma viva: carrega ao entrar na conta (a tag vai pra sala), se atualiza com a placa aberta, convite novo vira aviso
 │   ├── CloudSave.ts        # sobe o save com trava de revisão; junta com a nuvem ao entrar e em conflito
 │   ├── BurialQueue.ts      # fila de enterros a caminho do ranking (sobrevive a fechar o jogo e ficar offline)
 │   ├── saveMerge.ts        # junta dois saves sem perder progresso (maior contador, união das listas)
@@ -543,6 +576,8 @@ src/
     ├── FriendsPanel.ts     # tela "Amigos" (dentro da placa online): adicionar, pedidos, onde cada um está, entrar/chamar, tirar/bloquear
     ├── InviteToast.ts      # aviso dos amigos no canto, sem pausar: convite (J / → / toque), pedido e aceite; faixa compacta no celular
     ├── friendText.ts       # besourinho do amigo e a frase de onde ele está (lista, lobby, convite)
+    ├── ClanPanel.ts        # tela "Turma" (dentro da placa online): convites, procurar pela tag, criar; a sua turma, membros, líder, jogar com a turma
+    ├── clanText.ts         # a pílula da tag ([KHE] Nick) e as frases da turma
     ├── MatchHud.ts         # Disputa no HUD: relógio + placar, pôr do sol, contagem 3-2-1-Já!, cartão do resultado
     ├── matchIcons.ts       # ícones dos times (sol, gota, flor) e da Disputa
     ├── OnlineHud.ts        # chip da sala, placas de apelido com balão de reação, "Aqui!" no chão, botões do toque
@@ -567,7 +602,7 @@ src/
     ├── spatialNav.ts       # navegação do controle no menu: vizinho na direção apertada (grade e lista)
     ├── Menu.ts             # menu de início/pausa: toca, guarda-roupa, ranking, conta (chip), configurações e como jogar
     ├── AccountSheet.ts     # placa da conta: Google, e-mail + senha, apelido, estado da nuvem, sair e excluir
-    ├── RankingSheet.ts     # placa do ranking: 4 abas, pódio, lista, "você" e o convite pra entrar
+    ├── RankingSheet.ts     # placa do ranking: 5 abas (4 de jogador + Turmas), pódio, lista, "você" e o convite pra entrar
     ├── NicknameDialog.ts   # janelinha "Escolha seu apelido" (quem entrou pelo Google)
     ├── NicknameField.ts    # campo de apelido com checagem ao vivo (usado nos três lugares)
     ├── controls.ts         # seletor, chave e slider acessíveis (teclado, leitor de tela)
@@ -697,6 +732,10 @@ Ferramentas de medição (descartáveis, em `shots/lead/`, fora do git): `bench.
 - **"Numa sala" vem do ponto da sala, não do cliente:** a presença só guarda "menu" ou "jogando"; se o amigo está numa sala, o banco sabe pelo ponto que a sala já bate (e só mostra a sala a quem é amigo). Não dá pra fingir estar numa sala, e a sala que fechou some da lista sozinha.
 - **Aviso sai da diferença entre duas listas:** pedido novo e "aceitou" chegam pelo canal, mas também pela consulta periódica (sem canal). A lista nova é comparada com a anterior e o que mudou vira aviso, uma vez só (o canal marca o que já avisou). Abrindo o jogo, só o pedido recente (menos de 10 min) avisa: pedido velho fica na bolinha, sem aparecer a cada recarregada.
 - **Convite no canto não pausa e não rouba o controle:** jogando com o mouse preso não dá pra clicar, então o convite entra com **J** (ou → no direcional; as cartas de poder, que usam o direcional, têm a vez). No celular vira uma faixa de uma linha no topo que some em 12 s (em pé ela cobria o placar e a dica; deitada, o meio da tela). Mouse ou foco em cima segura o aviso na tela.
+- **Turma sem código de sala:** o colega de turma pode ser um desconhecido que achou a turma aberta pela tag. Por isso a lista da turma mostra só "online / numa sala / offline"; o código da sala anda só por convite ("Jogar com a turma") ou pela amizade (colega que também é amigo ganha o "Entrar" da lista de amigos).
+- **A tag viaja no visual:** o `look` que a sala já troca (casco + acessórios) ganhou a tag. Assim ela chega no "oi" de quem entra e muda pra todo mundo quando alguém entra ou sai de uma turma no meio da sala, sem mensagem nova no protocolo (e sem trocar a versão dele: página velha só ignora o campo).
+- **Ponto de turma pelo gatilho, não pelo cliente:** o placar da semana da turma sai do mesmo `record_burials` do ranking (um gatilho soma na turma do momento). Não tem RPC de "somar ponto na turma" pra ninguém abusar, e trocar de turma não carrega ponto.
+- **Tirado só volta com convite:** numa turma aberta, tirar alguém não adiantaria se ele pudesse entrar de novo pela tag. O "tirado" fica marcado e só um convite (de alguém da turma) libera.
 - **Placa que se atualiza sozinha sem roubar o foco:** a lista de amigos atualiza a cada 15 s com a placa aberta; redesenhar trocava o campo do código e o botão focado por novos. Agora o foco (e o cursor do campo) volta pro mesmo controle, e o formulário de adicionar amigo nem é redesenhado.
 - **O "welcome" do dono chega antes de a sessão abrir:** o dono da sala se dá as boas-vindas dentro do `NetSession.open`, antes de ele devolver a sessão. Por isso a sessão avisa que existe logo no começo (`onOpen`): relógio da sala e o próprio id já valem ali (antes, a bola do dono nascia sem dono e o broto de quem entra podia nascer com a hora errada).
 - **Online sem atrasar o jogo:** o `supabase-js` é importado sob demanda depois do jardim abrir (pedaço separado do bundle). O navegador continua sendo a cópia de trabalho do save; a nuvem recebe o JSON inteiro alguns segundos depois (espera 3 s, no máximo 15 s mudando sem parar) e ao trocar de aba/fechar.

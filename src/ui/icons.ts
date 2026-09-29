@@ -65,6 +65,13 @@ export const Icons = {
   more: `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5.5" cy="12" r="2.1" fill="currentColor"/><circle cx="12" cy="12" r="2.1" fill="currentColor"/><circle cx="18.5" cy="12" r="2.1" fill="currentColor"/></svg>`,
   /** Convidar (aviãozinho de papel). */
   send: stroke('<path d="M21 3.5 10.5 13.5"/><path d="M21 3.5 14.5 21l-4-7.5-7.5-4z"/>'),
+  // Turma
+  /** Turma (bandeirinha no mastro). */
+  flag: stroke('<path d="M5.5 21V3.5"/><path d="M5.5 4.5h11.2l-2.6 4 2.6 4H5.5"/>'),
+  /** Turma fechada (cadeado). */
+  lock: stroke('<rect x="4.5" y="10.5" width="15" height="10" rx="3"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/><path d="M12 14.5v2.2"/>'),
+  /** Procurar (lupa). */
+  search: stroke('<circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l5.5 5.5"/>'),
   /** Marca do Google (cores oficiais: o botão segue a orientação de marca deles). */
   google: `<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#4285F4" d="M22.6 12.3c0-.8-.1-1.6-.2-2.3H12v4.4h6a5.1 5.1 0 0 1-2.2 3.3v2.8h3.6c2.1-1.9 3.2-4.8 3.2-8.2z"/><path fill="#34A853" d="M12 23c3 0 5.5-1 7.4-2.7l-3.6-2.8c-1 .7-2.3 1.1-3.8 1.1-2.9 0-5.4-2-6.3-4.6H2v2.9A11 11 0 0 0 12 23z"/><path fill="#FBBC05" d="M5.7 14c-.2-.7-.4-1.3-.4-2s.1-1.4.4-2V7.1H2A11 11 0 0 0 1 12c0 1.8.4 3.4 1.2 4.9z"/><path fill="#EA4335" d="M12 5.4c1.6 0 3.1.6 4.3 1.7l3.2-3.2A11 11 0 0 0 2 7.1L5.7 10c.9-2.6 3.4-4.6 6.3-4.6z"/></svg>`,
 };

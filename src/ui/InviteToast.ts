@@ -1,14 +1,20 @@
 import { t } from '../i18n';
+import type { ClanInvite } from '../online/Clans';
 import type { FriendProfile, RoomInvite } from '../online/Friends';
+import { taggedName } from './clanText';
 import { escapeHtml } from './html';
 import { friendAvatar, modeName } from './friendText';
 import { Icons } from './icons';
 
-/** Um aviso da fila: convite pra sala, pedido de amizade ou pedido aceito. */
-type Notice = { kind: 'invite'; invite: RoomInvite } | { kind: 'request'; from: FriendProfile } | { kind: 'accepted'; from: FriendProfile };
+/** Um aviso da fila: convite pra sala, pedido de amizade, pedido aceito ou convite pra turma. */
+type Notice =
+  | { kind: 'invite'; invite: RoomInvite }
+  | { kind: 'request'; from: FriendProfile }
+  | { kind: 'accepted'; from: FriendProfile }
+  | { kind: 'clan'; invite: ClanInvite };
 
-/** Quanto cada aviso fica (o convite fica mais: dá tempo de terminar a jogada). */
-const SHOW_MS: Record<Notice['kind'], number> = { invite: 20_000, request: 8000, accepted: 5000 };
+/** Quanto cada aviso fica (o convite de sala fica mais: dá tempo de terminar a jogada). */
+const SHOW_MS: Record<Notice['kind'], number> = { invite: 20_000, request: 8000, accepted: 5000, clan: 10_000 };
 /** No toque, a faixa (que cobre o topo do HUD) fica no máximo isso. */
 const TOUCH_MAX_MS = 12_000;
 /** Mouse ou foco em cima pausou; saiu: ainda fica mais esse tanto. */
@@ -24,7 +30,8 @@ export type ToastDevice = 'keyboard' | 'gamepad' | 'touch';
  *  - convite: "Fulano te chamou pra sala" com Entrar (tecla J, direcional →
  *    ou toque) e Agora não; some em 20 s (o convite continua na central
  *    online até vencer);
- *  - pedido de amizade (com "Ver", que abre os amigos) e pedido aceito.
+ *  - pedido de amizade (com "Ver", que abre os amigos) e pedido aceito;
+ *  - convite pra turma (com "Ver", que abre a turma: aceitar é lá, com calma).
  *
  * Um por vez, em fila; convite passa na frente dos outros avisos. Mouse ou foco
  * em cima segura o aviso na tela (ninguém perde o botão no meio do clique). O
@@ -38,6 +45,8 @@ export class InviteToast {
   onDismiss: ((invite: RoomInvite) => void) | null = null;
   /** "Ver" (pedido de amizade): abre os amigos. */
   onOpenFriends: (() => void) | null = null;
+  /** "Ver" (convite pra turma): abre a turma. */
+  onOpenClan: (() => void) | null = null;
 
   private readonly card: HTMLElement;
   private readonly live: HTMLElement;
@@ -95,6 +104,10 @@ export class InviteToast {
 
   showAccepted(from: FriendProfile): void {
     this.enqueue({ kind: 'accepted', from });
+  }
+
+  showClanInvite(invite: ClanInvite): void {
+    this.enqueue({ kind: 'clan', invite });
   }
 
   /** O convite não vale mais (entrou pela central, venceu): sai da tela e da fila. */
@@ -193,7 +206,8 @@ export class InviteToast {
     if (button.matches('[data-go]') && notice.kind === 'invite') this.accept(notice.invite);
     else if (button.matches('[data-see]')) {
       this.leave();
-      this.onOpenFriends?.();
+      if (notice.kind === 'clan') this.onOpenClan?.();
+      else this.onOpenFriends?.();
     } else if (button.matches('[data-dismiss]')) {
       if (notice.kind === 'invite') this.onDismiss?.(notice.invite);
       this.leave();
@@ -204,17 +218,18 @@ export class InviteToast {
     if (notice.kind === 'invite') {
       const device = this.device();
       const key = device === 'keyboard' ? ` ${t('invite.spokenKey')}` : device === 'gamepad' ? ` ${t('invite.spokenPad')}` : '';
-      return `${t('invite.label')}: ${t('invite.body', { name: notice.invite.from.nickname })} (${modeName(notice.invite.mode)}).${key}`;
+      return `${t('invite.label')}: ${t('invite.body', { name: nameOf(notice.invite.from) })} (${modeName(notice.invite.mode)}).${key}`;
     }
-    if (notice.kind === 'request') return t('invite.requestBody', { name: notice.from.nickname });
-    return t('invite.acceptedBody', { name: notice.from.nickname });
+    if (notice.kind === 'clan') return `${t('invite.clanLabel')}: ${clanBody(notice.invite)}`;
+    if (notice.kind === 'request') return t('invite.requestBody', { name: nameOf(notice.from) });
+    return t('invite.acceptedBody', { name: nameOf(notice.from) });
   }
 
   private draw(): void {
     const notice = this.current;
     if (!notice) return;
     this.card.dataset.kind = notice.kind;
-    const who = notice.kind === 'invite' ? notice.invite.from : notice.from;
+    const who = notice.kind === 'invite' || notice.kind === 'clan' ? notice.invite.from : notice.from;
     const close = (label: string) =>
       `<button class="social-toast__close" type="button" data-dismiss aria-label="${escapeHtml(label)}">${Icons.close}</button>`;
     let label: string;
@@ -224,19 +239,25 @@ export class InviteToast {
       const device = this.device();
       const key = device === 'keyboard' ? `<kbd class="keycap social-toast__key">J</kbd>` : device === 'gamepad' ? `<kbd class="keycap social-toast__key">→</kbd>` : '';
       label = `${t('invite.label')} · ${modeName(notice.invite.mode)}`;
-      body = t('invite.body', { name: who.nickname });
+      body = t('invite.body', { name: nameOf(who) });
       actions = /* html */ `
         <button class="social-toast__go" type="button" data-go>${Icons.enter}<span>${escapeHtml(t('invite.join'))}</span>${key}</button>
         ${close(t('invite.dismiss'))}`;
+    } else if (notice.kind === 'clan') {
+      label = t('invite.clanLabel');
+      body = clanBody(notice.invite);
+      actions = /* html */ `
+        <button class="social-toast__go social-toast__go--soft" type="button" data-see>${Icons.flag}<span>${escapeHtml(t('invite.see'))}</span></button>
+        ${close(t('invite.close'))}`;
     } else if (notice.kind === 'request') {
       label = t('invite.requestLabel');
-      body = t('invite.requestBody', { name: who.nickname });
+      body = t('invite.requestBody', { name: nameOf(who) });
       actions = /* html */ `
         <button class="social-toast__go social-toast__go--soft" type="button" data-see>${Icons.userPlus}<span>${escapeHtml(t('invite.see'))}</span></button>
         ${close(t('invite.close'))}`;
     } else {
       label = t('invite.acceptedLabel');
-      body = t('invite.acceptedBody', { name: who.nickname });
+      body = t('invite.acceptedBody', { name: nameOf(who) });
       actions = close(t('invite.close'));
     }
     this.card.innerHTML = /* html */ `
@@ -249,3 +270,9 @@ export class InviteToast {
       <span class="social-toast__timer" aria-hidden="true"></span>`;
   }
 }
+
+/** Apelido com a tag da turma na frente ("[KHE] Nick"). */
+const nameOf = (profile: FriendProfile) => taggedName(profile.nickname, profile.tag);
+
+/** "Fulano te chamou pra turma [KHE] Os Rola" (quem chama é da própria turma: a tag já vem na turma, não repete no nome). */
+const clanBody = (invite: ClanInvite) => t('invite.clanBody', { name: invite.from.nickname, clan: `[${invite.clan.tag}] ${invite.clan.name}` });

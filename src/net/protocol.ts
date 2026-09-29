@@ -241,13 +241,19 @@ function wrapAngle(a: number): number {
 
 // --- Eventos (JSON, canal `event`) --------------------------------------------------
 
-/** O visual de um jogador (o casco e os 4 acessórios; validados contra o catálogo na chegada). */
+/**
+ * Como o jogador aparece pros outros: o casco e os 4 acessórios (validados
+ * contra o catálogo na chegada) e a tag da turma ("KHE" → [KHE] Nick). Mudou
+ * no meio da sala (guarda-roupa, entrou numa turma) → o evento `look` espalha.
+ */
 export interface NetLook {
   skin: string;
   head: string | null;
   face: string | null;
   neck: string | null;
   back: string | null;
+  /** Tag da turma (2 a 4 letras/números, maiúscula); ausente/null = sem turma. */
+  tag?: string | null;
 }
 
 export interface NetMember {
@@ -386,6 +392,7 @@ export const EMOTE_HERE = 7;
 /** Maior evento aceito (o `welcome` com o mundo inteiro fica bem abaixo disso). */
 const MAX_EVENT_CHARS = 64 * 1024;
 const LOOK_ID = /^[a-zA-Z][a-zA-Z0-9]{0,31}$/;
+const CLAN_TAG = /^[A-Z0-9]{2,4}$/;
 
 const isInt = (v: unknown, min: number, max: number): v is number => typeof v === 'number' && Number.isInteger(v) && v >= min && v <= max;
 const isNum = (v: unknown, min: number, max: number): v is number => typeof v === 'number' && Number.isFinite(v) && v >= min && v <= max;
@@ -400,7 +407,8 @@ const isBallId = (v: unknown): v is number => isInt(v, 1, 0xffffffff);
 function isLook(v: unknown): v is NetLook {
   if (!v || typeof v !== 'object') return false;
   const l = v as Record<string, unknown>;
-  return typeof l.skin === 'string' && LOOK_ID.test(l.skin) && isSlotId(l.head) && isSlotId(l.face) && isSlotId(l.neck) && isSlotId(l.back);
+  const tagOk = l.tag === undefined || l.tag === null || (typeof l.tag === 'string' && CLAN_TAG.test(l.tag));
+  return typeof l.skin === 'string' && LOOK_ID.test(l.skin) && isSlotId(l.head) && isSlotId(l.face) && isSlotId(l.neck) && isSlotId(l.back) && tagOk;
 }
 
 function isMember(v: unknown): v is NetMember {

@@ -94,6 +94,8 @@ export interface OnlinePlayer {
   uid: string;
   slot: number;
   nick: string;
+  /** Tag da turma (null = sem turma). */
+  tag: string | null;
   look: NetLook;
   isHost: boolean;
   isSelf: boolean;
@@ -106,6 +108,8 @@ export interface NameplateSource {
   uid: string;
   slot: number;
   nick: string;
+  /** Tag da turma (null = sem turma). */
+  tag: string | null;
   /** Um pouco acima da cabeça. */
   position: THREE.Vector3;
   isHost: boolean;
@@ -303,6 +307,7 @@ export class OnlinePlay {
       uid: m.uid,
       slot: m.slot,
       nick: m.nick,
+      tag: m.look.tag ?? null,
       look: m.look,
       isHost: m.uid === session.host,
       isSelf: m.uid === session.selfId,
@@ -513,6 +518,7 @@ export class OnlinePlay {
         uid,
         slot: remote.member.slot,
         nick: remote.member.nick,
+        tag: remote.member.look.tag ?? null,
         position: new THREE.Vector3(p.x, p.y + 1.4, p.z),
         isHost: uid === session.host,
         emote: this.emotes.get(uid)?.e ?? -1,
@@ -524,7 +530,7 @@ export class OnlinePlay {
     const mine = this.emotes.get(session.selfId);
     if (mine) {
       const p = this.bridge.beetle.renderPosition(1, tmpPos);
-      out.push({ uid: session.selfId, slot: session.slot, nick: '', position: new THREE.Vector3(p.x, p.y + 1.4, p.z), isHost: false, emote: mine.e, dizzy: false, team: this.teamOf(session.selfId) });
+      out.push({ uid: session.selfId, slot: session.slot, nick: '', tag: null, position: new THREE.Vector3(p.x, p.y + 1.4, p.z), isHost: false, emote: mine.e, dizzy: false, team: this.teamOf(session.selfId) });
     }
     return out;
   }
@@ -578,13 +584,18 @@ export class OnlinePlay {
     return this.balls.renewMain(why);
   }
 
-  /** O visual mudou (guarda-roupa): os outros veem a roupa nova. */
+  /** O visual mudou (guarda-roupa, turma nova): os outros veem a roupa (e a tag) nova. */
   lookChanged(): void {
     const look = this.bridge.profile().look;
     const key = JSON.stringify(look);
     if (key === this.lastLook) return;
     this.lastLook = key;
+    // A minha linha na sala também (o lobby e o "oi" que o dono manda pra quem chega depois).
+    const session = this.session;
+    const me = session?.member(session.selfId);
+    if (me) me.look = look;
     this.send({ t: 'look', look });
+    this.changed();
   }
 
   /** Poder Cheiro de chuva: o clima é do dono. Sendo o dono, chama direto. */

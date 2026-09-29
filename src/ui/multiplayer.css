@@ -1680,6 +1680,8 @@
 }
 .friends__list {
   display: grid;
+  /* Uma coluna que encolhe: frase longa (onde o amigo está, a turma do convite) corta com reticências em vez de empurrar a placa pro lado. */
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-2);
   margin: 0;
   padding: 0;
@@ -2273,5 +2275,354 @@
   .online__friends-btn,
   .friend__btn {
     transition: none;
+  }
+}
+
+/* ==========================================================================
+   Turmas: a pílula da tag ([KHE] antes do apelido, em todo lugar que mostra
+   gente), a tela "Turma" (cartão, busca, criar, membros), o botão na central,
+   "Chamar a turma" no lobby e a aba Turmas do ranking.
+   ========================================================================== */
+
+/* A pílula: índigo com a letra creme, como um broche de massinha. A tag sempre
+   aparece com o apelido do lado (ela é um enfeite, não substitui o nome). */
+.clan-tag {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  margin-right: 6px;
+  padding: 1px 6px 2px;
+  border-radius: 7px;
+  background: var(--dawn-indigo);
+  color: var(--dawn-cream);
+  box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.25);
+  font-family: var(--font-display);
+  font-size: 0.72em;
+  font-weight: 900;
+  line-height: 1.35;
+  letter-spacing: 0.06em;
+  vertical-align: 0.12em;
+  white-space: nowrap;
+}
+/* Em cima do besouro: a placa já é escura, então a pílula vira creme (contraste dos dois lados). */
+.clan-tag--plate {
+  margin-right: 1px;
+  background: var(--dawn-cream);
+  color: var(--dawn-indigo);
+  box-shadow: none;
+  font-size: 11px;
+  vertical-align: 0;
+}
+/* No lugar do ícone (botão da central, cartão do lobby) e no pódio do ranking: 4 letras cabem no círculo de 40 px. */
+.clan-tag--icon,
+.clan-tag--podium {
+  margin: 0;
+  padding: 0;
+  background: none;
+  box-shadow: none;
+  color: inherit;
+  font-size: 11px;
+  letter-spacing: 0;
+}
+.clan-tag--podium {
+  font-size: 13px;
+}
+.online__link-btn--inline {
+  padding: 0 2px;
+  font-size: inherit;
+}
+.clan-tag--big {
+  display: grid;
+  place-items: center;
+  min-width: 64px;
+  height: 64px;
+  margin: 0;
+  padding: 0 10px;
+  border-radius: 20px;
+  background:
+    radial-gradient(120% 90% at 30% 20%, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0) 60%),
+    linear-gradient(160deg, var(--dawn-violet) 0%, var(--dawn-indigo) 100%);
+  box-shadow: 0 4px 0 var(--dawn-night), inset 0 2px 0 rgba(255, 255, 255, 0.18);
+  font-size: 22px;
+  letter-spacing: 0.08em;
+  vertical-align: 0;
+}
+.online__nick .clan-tag,
+.friend__nick .clan-tag,
+.match-row__nick .clan-tag {
+  font-size: 11px;
+}
+
+/* --- Central: Amigos e Turma, lado a lado quando cabe ------------------------------ */
+.online__social-btns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--space-2);
+}
+.online__clan-btn {
+  background: linear-gradient(180deg, #fffdf8 0%, #fff0dc 100%);
+}
+.online__clan-btn .online__quick-icon {
+  background: var(--dawn-violet);
+}
+
+/* --- Lobby: "Chamar a turma" -------------------------------------------------------- */
+.online__clan-call {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: linear-gradient(90deg, #ecebff 0%, #fffdf8 100%);
+  box-shadow: inset 4px 0 0 var(--dawn-violet), 0 2px 0 rgba(43, 42, 94, 0.08);
+}
+.online__clan-avatar {
+  background: var(--dawn-indigo);
+  color: var(--dawn-cream);
+}
+.friend__note[data-tone='ok'] {
+  color: var(--online-good-text);
+}
+
+/* --- Tela "Turma" ----------------------------------------------------------------- */
+.clan[hidden],
+.clan__forms[hidden] {
+  display: none;
+}
+.clan__invites:empty,
+.clan__mine:empty {
+  display: none;
+}
+.clan__forms,
+.clan__mine {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.clan__blurb {
+  margin: 0;
+}
+.clan__tag-input {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 900;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+.clan__tag-input::placeholder {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: none;
+}
+.clan__found:empty {
+  display: none;
+}
+/* Criar: um cartão lilás (o "papel" da turma), separado da busca amarela. */
+.clan__create {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(180deg, #f6f3ff 0%, #ebe6ff 100%);
+  box-shadow: var(--inner-highlight), 0 4px 0 rgba(75, 63, 134, 0.22);
+}
+.clan__create .online__hint {
+  margin: calc(-1 * var(--space-1)) 0 0;
+}
+.clan__fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 118px;
+  gap: var(--space-3);
+}
+.clan__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.clan__field .clan__tag-input {
+  text-align: center;
+}
+.clan__create .online__rule {
+  padding: 0;
+  background: none;
+  box-shadow: none;
+}
+.clan__closed {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--color-ink-soft);
+  font-size: 14px;
+  font-weight: 800;
+}
+.clan__closed svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* O cartão da turma (a minha, a achada na busca): tag grande, nome, lotação, posição na semana. */
+.clan-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  background:
+    radial-gradient(130% 120% at 100% 0%, rgba(255, 181, 71, 0.2), rgba(255, 181, 71, 0) 55%),
+    linear-gradient(180deg, #fffdf8 0%, #f3efff 100%);
+  box-shadow: var(--shadow-clay), var(--inner-highlight);
+  animation: online-player-in var(--dur-med) var(--ease-out);
+}
+.clan-card--found {
+  padding: var(--space-3);
+  box-shadow: 0 3px 0 rgba(43, 42, 94, 0.12), var(--inner-highlight);
+}
+.clan-card__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+.clan-card__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.clan-card__name {
+  overflow: hidden;
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 900;
+  line-height: 1.15;
+  color: var(--dawn-indigo);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.clan-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  color: var(--color-ink-soft);
+  font-size: 14px;
+  font-weight: 700;
+}
+.clan-card__access {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.clan-card__access svg {
+  width: 14px;
+  height: 14px;
+}
+.clan-card__week {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  background: rgba(255, 181, 71, 0.18);
+  color: #7a4a10;
+  font-weight: 800;
+}
+.clan-card__week svg {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  color: var(--dawn-sun-deep);
+}
+.clan-card__actions {
+  display: flex;
+  justify-content: flex-end;
+}
+.clan-card__play + .online__hint {
+  margin: calc(-1 * var(--space-1)) 0 0;
+}
+.clan__nick {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.clan__nick-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.clan__leader {
+  display: grid;
+  flex-shrink: 0;
+  color: var(--rank-gold);
+}
+.clan__leader svg {
+  width: 16px;
+  height: 16px;
+}
+.clan__nick .online__badge {
+  padding: 1px 8px;
+  font-size: 11px;
+}
+.clan__setting {
+  margin: 0;
+}
+.clan__leave {
+  align-self: flex-start;
+}
+.clan__leave-confirm {
+  padding: var(--space-3);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: rgba(179, 64, 42, 0.07);
+}
+
+/* --- Ranking: aba Turmas ------------------------------------------------------------ */
+.rank-avatar--clan {
+  background: var(--dawn-indigo);
+  color: var(--dawn-cream);
+  box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.25);
+}
+.rank-avatar--clan .clan-tag {
+  margin: 0;
+  padding: 0;
+  background: none;
+  box-shadow: none;
+  color: inherit;
+  font-size: 11px;
+  letter-spacing: 0;
+}
+.rank-row__sub {
+  flex-shrink: 0;
+  color: var(--color-ink-soft);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+@media (max-width: 440px) {
+  .clan__fields {
+    grid-template-columns: minmax(0, 1fr) 96px;
+  }
+  .clan-tag--big {
+    min-width: 56px;
+    height: 56px;
+    font-size: 19px;
+  }
+  .clan-card__name {
+    font-size: 19px;
+  }
+  .rank-row__sub {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .clan-card {
+    animation: none;
   }
 }

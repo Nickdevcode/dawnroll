@@ -38,6 +38,8 @@ export interface SocialState {
   invites: RoomInvite[];
   /** Canal de avisos na hora ligado (sem ele, a presença consulta mais vezes). */
   live: boolean;
+  /** Convites pra turma esperando (o que a presença contou; a lista em si é da `ClanStore`). */
+  clanInvites: number;
 }
 
 /** "Estou aqui" a cada tanto (a presença do banco vence em 75 s). */
@@ -74,16 +76,20 @@ export class Social {
   onAccepted: ((from: FriendProfile) => void) | null = null;
   /** Um convite saiu (dispensado ou usado pela central): o aviso do canto some junto. */
   onWithdraw: ((inviteId: number) => void) | null = null;
+  /** Chegou convite pra turma (canal) ou a contagem mudou (presença): a turma busca de novo. */
+  onClanNews: (() => void) | null = null;
 
   private readonly listeners = new Set<() => void>();
-  private _state: SocialState = { list: null, loading: false, failed: false, requests: 0, online: 0, invites: [], live: false };
+  private _state: SocialState = { list: null, loading: false, failed: false, requests: 0, online: 0, invites: [], live: false, clanInvites: 0 };
   private client: SupabaseClient | null = null;
   private userId: string | null = null;
   private accessToken: string | null = null;
   private activity: PresenceStatus = 'menu';
   private sentActivity: PresenceStatus | null = null;
-  /** Tem amigo ou pedido enviado (vale abrir o canal de avisos). */
+  /** Tem amigo, pedido enviado ou turma (vale abrir o canal de avisos). */
   private hasPeople = false;
+  /** Tem turma (colega de turma também chama pra sala). */
+  private inClan = false;
   private channel: RealtimeChannel | null = null;
   /** O canal falhou: só tenta de novo depois disso (ms desde 1970). */
   private channelRetryAt = 0;
@@ -169,7 +175,7 @@ export class Social {
       return;
     }
     this.announceChanges(this._state.list, list);
-    this.hasPeople = list.friends.length + list.outgoing.length > 0;
+    this.hasPeople = list.friends.length + list.outgoing.length > 0 || this.inClan;
     this.syncChannel();
     this.update({
       list,
@@ -222,6 +228,15 @@ export class Social {
     return status;
   }
 
+  /** Entrou ou saiu de uma turma: o canal de avisos abre (ou pode fechar) sem esperar a próxima presença. */
+  setInClan(inClan: boolean): void {
+    if (this.inClan === inClan) return;
+    this.inClan = inClan;
+    this.hasPeople = inClan || (this._state.list ? this._state.list.friends.length + this._state.list.outgoing.length > 0 : this.hasPeople);
+    this.syncChannel();
+    this.schedule();
+  }
+
   /** Já chamou esse amigo agora há pouco (o convite ainda vale)? */
   invitedRecently(userId: string, now = Date.now()): boolean {
     const at = this.invitedAt.get(userId);
@@ -269,12 +284,13 @@ export class Social {
     this.accessToken = null;
     this.sentActivity = null;
     this.hasPeople = false;
+    this.inClan = false;
     this.announced.clear();
     this.dismissed.clear();
     this.announcedRequests.clear();
     this.announcedAccepts.clear();
     this.invitedAt.clear();
-    this._state = { list: null, loading: false, failed: false, requests: 0, online: 0, invites: [], live: false };
+    this._state = { list: null, loading: false, failed: false, requests: 0, online: 0, invites: [], live: false, clanInvites: 0 };
     this.emit();
   }
 
@@ -314,10 +330,13 @@ export class Social {
   /** O que a presença trouxe: contadores, convites (o banco manda os válidos) e o canal. */
   private absorb(info: PresenceInfo): void {
     const hadPeople = this.hasPeople;
-    this.hasPeople = info.friends > 0;
+    this.inClan = info.clan;
+    this.hasPeople = info.friends > 0 || info.clan;
     const requestsGrew = info.requests > this._state.requests;
+    const clanChanged = info.clanInvites !== this._state.clanInvites;
     const invites = liveInvites(info.invites.filter((i) => !this.dismissed.has(i.id)));
-    this.update({ requests: info.requests, online: info.online, invites });
+    this.update({ requests: info.requests, online: info.online, invites, clanInvites: info.clanInvites });
+    if (clanChanged) this.onClanNews?.();
     this.announce(invites);
     this.syncChannel();
     // Chegou pedido sem o canal: a lista vem (e o aviso sai dela). Amigo novo/aceito: a lista aberta acompanha.
@@ -355,6 +374,11 @@ export class Social {
   }
 
   private receive(push: SocialPush): void {
+    if (push.kind === 'clan_invite') {
+      this.update({ clanInvites: this._state.clanInvites + 1 });
+      this.onClanNews?.();
+      return;
+    }
     if (push.kind === 'invite') {
       if (this.dismissed.has(push.invite.id)) return;
       const invites = liveInvites([push.invite, ...this._state.invites]);

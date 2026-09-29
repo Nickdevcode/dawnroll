@@ -17,6 +17,7 @@ import { PAD_LABELS, type MenuAction, type PadStyle } from '../core/GamepadInput
 import type { Progression } from '../progression/Progression';
 import { skin } from '../progression/skins';
 import type { Online } from '../online/Online';
+import type { ClanStore } from '../online/ClanStore';
 import type { Social } from '../online/Social';
 import { Icons } from './icons';
 import { GameIcons } from './gameIcons';
@@ -149,6 +150,7 @@ export class Menu {
     private readonly progression: Progression,
     private readonly online: Online,
     private readonly social: Social,
+    private readonly clans: ClanStore,
   ) {
     this.element = document.createElement('div');
     this.element.className = 'menu';
@@ -215,7 +217,7 @@ export class Menu {
     this.pass = new PassSheet(progression);
     this.ranking = new RankingSheet(online);
     this.account = new AccountSheet(online, progression);
-    this.onlineSheet = new OnlineSheet(online, social);
+    this.onlineSheet = new OnlineSheet(online, social, clans);
     this.element.append(this.onlineSheet.element, this.burrow.element, this.wardrobe.element, this.shop.element, this.pass.element, this.ranking.element, this.account.element);
     parent.append(this.element);
     this.nicknameDialog = new NicknameDialog(parent, online, progression, () => this.isVisible && this.revealed);
@@ -286,6 +288,7 @@ export class Menu {
     });
     online.subscribe(() => this.updateAccountChip());
     social.subscribe(() => this.updateOnlineBadge());
+    clans.subscribe(() => this.updateOnlineBadge());
     onLocaleChange(() => this.refreshTexts());
     this.syncControls(settings.get());
     this.refreshTexts();
@@ -508,10 +511,16 @@ export class Menu {
     this.onlineSheet.showFriends();
   }
 
-  /** Bolinha do "Jogar online": quantos pedidos de amizade e convites esperam. */
+  /** Abre direto a turma ("Ver" no aviso de convite pra turma). */
+  openClan(): void {
+    if (this.openSheet !== 'online') this.open('online');
+    this.onlineSheet.showClan();
+  }
+
+  /** Bolinha do "Jogar online": quantos pedidos de amizade e convites (de sala e de turma) esperam. */
   private updateOnlineBadge(): void {
     const { requests, invites } = this.social.state;
-    const count = requests + invites.length;
+    const count = requests + invites.length + this.clans.invites.length;
     this.onlineBadge.hidden = count === 0;
     this.onlineBadge.textContent = String(count);
     // Sem novidade, o nome vem do próprio texto do botão (com o código da sala, se estiver numa).
@@ -609,7 +618,7 @@ export class Menu {
           </ul>
           <h3 class="sheet__heading" data-t="help.online"></h3>
           <ul class="help-list">
-            <li data-t="help.online1"></li><li data-t="help.online2"></li><li data-t="help.online3"></li><li data-t="help.online4"></li><li data-t="help.online5"></li>
+            <li data-t="help.online1"></li><li data-t="help.online2"></li><li data-t="help.online3"></li><li data-t="help.online4"></li><li data-t="help.online5"></li><li data-t="help.online6"></li>
           </ul>
           <h3 class="sheet__heading" data-t="help.controls"></h3>
           ${controls}

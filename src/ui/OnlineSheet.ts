@@ -3,11 +3,15 @@ import { MAX_PLAYERS, effectiveRules, type NetRules, type RoomModeId } from '../
 import type { OnlineOutcome, OnlinePlay, OnlinePlayer } from '../net/OnlinePlay';
 import { MATCH_MINUTES, timeLeft } from '../net/match';
 import { TEAM_SIZES, teamCount, type TeamSize } from '../net/teams';
+import type { CallClanStatus } from '../online/Clans';
+import type { ClanStore } from '../online/ClanStore';
 import { canInvite, type RoomInvite } from '../online/Friends';
 import type { Online } from '../online/Online';
 import { ROOM_CODE, normalizeRoomCode } from '../online/Rooms';
 import type { Social } from '../online/Social';
 import { DEFAULT_SKIN, isSkinId, skin } from '../progression/skins';
+import { ClanPanel } from './ClanPanel';
+import { clanTagHtml, taggedName } from './clanText';
 import { FriendsPanel } from './FriendsPanel';
 import { friendAvatar, friendWhere, modeName } from './friendText';
 import { escapeHtml } from './html';
@@ -34,7 +38,8 @@ function focusSelector(el: HTMLElement): string | null {
  *   - numa sala (o lobby): o código grande (copiar / mandar convite), o modo,
  *     o tempo e os times (o dono escolhe; os outros veem), quem está em cada
  *     time, chamar amigos, "Começar disputa" (dono) e ir pro jardim / sair.
- * E a tela "Amigos" (`FriendsPanel`), que abre por cima dessas com o voltar.
+ * E as telas "Amigos" (`FriendsPanel`) e "Turma" (`ClanPanel`), que abrem por
+ * cima dessas com o voltar.
  *
  * O link `?sala=CÓDIGO` abre esta placa já entrando na sala (ver `joinFromLink`).
  */
@@ -48,11 +53,15 @@ export class OnlineSheet {
   private readonly body: HTMLElement;
   private readonly title: HTMLElement;
   private readonly friends: FriendsPanel;
+  private readonly clan: ClanPanel;
   private net: OnlinePlay | null = null;
   private busy: 'create' | 'join' | 'leave' | 'quick-garden' | 'quick-match' | null = null;
   /** Amigos com "Chamar" em andamento (lobby) e o recado do último que falhou. */
   private readonly calling = new Set<string>();
   private callNote: { id: string; text: string } | null = null;
+  /** Resultado do último "Chamar a turma" (no lobby). */
+  private clanNote: { text: string; tone: 'ok' | 'error' } | null = null;
+  private callingClan = false;
   private unwatch: (() => void) | null = null;
   private error: MessageKey | null = null;
   private codeDraft = '';
@@ -66,6 +75,7 @@ export class OnlineSheet {
   constructor(
     private readonly online: Online,
     private readonly social: Social,
+    private readonly clans: ClanStore,
   ) {
     this.element = document.createElement('section');
     this.element.className = 'sheet sheet--online';
@@ -86,7 +96,11 @@ export class OnlineSheet {
     this.friends = new FriendsPanel(social, () => (this.net?.active ? this.net.code : null));
     this.friends.onBack = () => this.showMain(true);
     this.friends.onJoin = (code) => this.joinCode(code);
-    this.element.querySelector('[data-scroll]')?.append(this.friends.element);
+    this.clan = new ClanPanel(clans, social, () => (this.net?.active ? this.net.code : null));
+    this.clan.onBack = () => this.showMain(true, '[data-clan]');
+    this.clan.onJoin = (code) => this.joinCode(code);
+    this.clan.onPlay = () => this.playWithClan();
+    this.element.querySelector('[data-scroll]')?.append(this.friends.element, this.clan.element);
     this.body.addEventListener('click', (e) => this.onClick(e));
     this.body.addEventListener('keydown', (e) => this.onKeyDown(e));
     this.body.addEventListener('input', (e) => this.onInput(e));
@@ -97,11 +111,14 @@ export class OnlineSheet {
     online.subscribe(() => {
       if (!this.element.hidden) this.render();
       if (this.pendingCode && online.player) void this.joinFromLink(this.pendingCode);
-      // Saiu da conta com os amigos abertos: volta pra central (que explica a conta).
-      if (!online.player && this.friends.visible) this.showMain(false);
+      // Saiu da conta com os amigos (ou a turma) abertos: volta pra central (que explica a conta).
+      if (!online.player && (this.friends.visible || this.clan.visible)) this.showMain(false);
     });
     social.subscribe(() => {
-      if (!this.element.hidden && !this.friends.visible) this.render();
+      if (!this.element.hidden && !this.subPanelOpen) this.render();
+    });
+    clans.subscribe(() => {
+      if (!this.element.hidden && !this.subPanelOpen) this.render();
     });
     onLocaleChange(() => {
       this.syncTitle();
@@ -125,6 +142,7 @@ export class OnlineSheet {
   prepare(): void {
     this.error = null;
     this.callNote = null;
+    this.clanNote = null;
     this.unwatch ??= this.social.watch();
     this.showMain(false);
     this.render(true);
@@ -137,13 +155,29 @@ export class OnlineSheet {
     this.unwatch?.();
     this.unwatch = null;
     this.friends.hide();
+    this.clan.hide();
+  }
+
+  /** A tela Amigos ou Turma está por cima da central/lobby. */
+  private get subPanelOpen(): boolean {
+    return this.friends.visible || this.clan.visible;
   }
 
   /** A tela dos amigos (pelo botão da central, do lobby ou pelo "Ver" do aviso de pedido). */
   showFriends(): void {
     if (!this.online.player) return;
     this.body.hidden = true;
+    this.clan.hide();
     this.friends.show();
+    this.syncTitle();
+  }
+
+  /** A tela da turma (pelo botão da central ou pelo "Ver" do aviso de convite pra turma). */
+  showClan(): void {
+    if (!this.online.player) return;
+    this.body.hidden = true;
+    this.friends.hide();
+    this.clan.show();
     this.syncTitle();
   }
 
@@ -153,18 +187,19 @@ export class OnlineSheet {
     this.body.querySelector<HTMLButtonElement>('[data-play-room]')?.focus({ preventScroll: true });
   }
 
-  /** Volta da tela dos amigos pra central/lobby. */
-  private showMain(focusFriends: boolean): void {
-    if (!this.friends.visible && !this.body.hidden) return;
+  /** Volta da tela dos amigos (ou da turma) pra central/lobby; `focus` = o botão que abriu a tela. */
+  private showMain(focusBack: boolean, focus = '[data-friends]'): void {
+    if (!this.subPanelOpen && !this.body.hidden) return;
     this.friends.hide();
+    this.clan.hide();
     this.body.hidden = false;
     this.syncTitle();
     this.render(true);
-    if (focusFriends) this.body.querySelector<HTMLElement>('[data-friends]')?.focus({ preventScroll: true });
+    if (focusBack) this.body.querySelector<HTMLElement>(focus)?.focus({ preventScroll: true });
   }
 
   private syncTitle(): void {
-    this.title.textContent = t(this.friends.visible ? 'friends.title' : 'online.title');
+    this.title.textContent = t(this.friends.visible ? 'friends.title' : this.clan.visible ? 'clan.title' : 'online.title');
   }
 
   /**
@@ -202,6 +237,8 @@ export class OnlineSheet {
     const net = this.net;
     if (target.matches('[data-sign-in]')) this.onOpenAccount?.();
     else if (target.matches('[data-friends]')) this.showFriends();
+    else if (target.matches('[data-clan]')) this.showClan();
+    else if (target.matches('[data-call-clan]')) void this.callClan();
     else if (target.matches('[data-invite-join]')) void this.acceptInvite(Number(target.dataset.inviteJoin));
     else if (target.matches('[data-invite-dismiss]')) this.dismissInvite(Number(target.dataset.inviteDismiss));
     else if (target.matches('[data-call]')) void this.call(target.dataset.call ?? '');
@@ -284,7 +321,7 @@ export class OnlineSheet {
     this.error = null;
     this.render();
     const outcome = await this.net.join(code);
-    if (outcome.ok && this.friends.visible) this.showMain(false);
+    if (outcome.ok && this.subPanelOpen) this.showMain(false);
     this.finish(outcome);
     return outcome;
   }
@@ -314,6 +351,46 @@ export class OnlineSheet {
     this.calling.delete(id);
     if (status !== 'sent') this.callNote = { id, text: t(`friends.invite.${status}` as MessageKey, { name: friend?.nickname ?? '' }) };
     this.render();
+  }
+
+  /**
+   * "Jogar com a turma" (tela Turma): fora de sala, cria uma (Jardim livre,
+   * privada); aí chama quem da turma está online e mostra o lobby com o
+   * resultado. Devolve o erro pra tela Turma mostrar (null = foi pro lobby).
+   */
+  private async playWithClan(): Promise<string | null> {
+    const net = this.net;
+    if (!net) return t('online.error.connect');
+    if (!net.active) {
+      if (this.busy) return t('online.error.unknown');
+      this.busy = 'create';
+      this.error = null;
+      const outcome = await net.create();
+      this.busy = null;
+      if (!outcome.ok) return t(`online.error.${outcome.error}` as MessageKey);
+    }
+    const { status, count } = await this.clans.call();
+    this.clanNote = this.clanCallNote(status, count);
+    this.showMain(false);
+    this.body.querySelector<HTMLButtonElement>('[data-play-room]')?.focus({ preventScroll: true });
+    return null;
+  }
+
+  /** "Chamar a turma" no lobby. */
+  private async callClan(): Promise<void> {
+    if (this.callingClan) return;
+    this.callingClan = true;
+    this.clanNote = null;
+    this.render();
+    const { status, count } = await this.clans.call();
+    this.callingClan = false;
+    this.clanNote = this.clanCallNote(status, count);
+    this.render();
+  }
+
+  private clanCallNote(status: CallClanStatus, count: number): { text: string; tone: 'ok' | 'error' } {
+    if (status === 'sent') return { text: tn('clan.call.sent', count), tone: 'ok' };
+    return { text: t(`clan.call.${status}` as MessageKey), tone: 'error' };
   }
 
   private async leave(): Promise<void> {
@@ -440,7 +517,10 @@ export class OnlineSheet {
       </section>
       <section class="online__section" aria-labelledby="online-friends-title">
         <h3 class="online__label" id="online-friends-title">${escapeHtml(t('online.friendsTitle'))}</h3>
-        ${this.friendsButtonHtml()}
+        <div class="online__social-btns">
+          ${this.friendsButtonHtml()}
+          ${this.clanButtonHtml()}
+        </div>
         <button class="account-submit online__wide" type="button" data-create ${busy ? 'disabled' : ''}>
           ${Icons.group}<span>${escapeHtml(t(busy === 'create' ? 'online.creating' : 'online.create'))}</span>
         </button>
@@ -473,7 +553,7 @@ export class OnlineSheet {
         <li class="online__invite">
           <span class="friend__avatar" aria-hidden="true">${friendAvatar(invite.from)}</span>
           <span class="friend__text">
-            <strong class="friend__nick">${escapeHtml(t('invite.body', { name: invite.from.nickname }))}</strong>
+            <strong class="friend__nick">${escapeHtml(t('invite.body', { name: taggedName(invite.from.nickname, invite.from.tag) }))}</strong>
             <span class="friend__where">${escapeHtml(modeName(invite.mode))}</span>
           </span>
           <span class="friend__actions">
@@ -511,6 +591,51 @@ export class OnlineSheet {
       </button>`;
   }
 
+  /** "Turma" na central: a sua (Nome · N online) ou o convite pra criar/entrar; bolinha = convites pra turma. */
+  private clanButtonHtml(): string {
+    const clan = this.clans.clan;
+    const invites = this.clans.invites.length;
+    const members = this.clans.state.mine?.members ?? [];
+    const meta = clan
+      ? t('clan.hubMeta', { name: clan.name, n: members.filter((m) => m.status !== 'offline' && m.id !== this.clans.selfId).length })
+      : invites > 0
+        ? tn('clan.inviteCount', invites)
+        : t('clan.hubEmpty');
+    return /* html */ `
+      <button class="online__friends-btn online__clan-btn" type="button" data-clan>
+        <span class="online__quick-icon" aria-hidden="true">${clan ? clanTagHtml(clan.tag, 'clan-tag--icon') : Icons.flag}</span>
+        <span class="online__friends-text">
+          <strong>${escapeHtml(t('clan.title'))}</strong>
+          <span>${escapeHtml(meta)}</span>
+        </span>
+        ${invites > 0 ? `<span class="online__friends-badge" aria-hidden="true">${invites}</span>` : ''}
+        <span class="online__friends-chevron" aria-hidden="true">${Icons.back}</span>
+      </button>`;
+  }
+
+  /** Lobby, com turma: "Nome da turma · N online" + "Chamar a turma" (convite de sala pra quem está online). */
+  private clanCallHtml(): string {
+    const clan = this.clans.clan;
+    if (!clan) return '';
+    const members = this.clans.state.mine?.members ?? [];
+    const online = members.filter((m) => m.status !== 'offline' && m.id !== this.clans.selfId).length;
+    const note = this.clanNote ? `<p class="friend__note" data-tone="${this.clanNote.tone}" role="status">${escapeHtml(this.clanNote.text)}</p>` : '';
+    return /* html */ `
+      <div class="online__clan-call">
+        <div class="friend__row">
+          <span class="friend__avatar online__clan-avatar" aria-hidden="true">${clanTagHtml(clan.tag, 'clan-tag--icon')}</span>
+          <span class="friend__text">
+            <strong class="friend__nick">${escapeHtml(clan.name)}</strong>
+            <span class="friend__where">${escapeHtml(t('friends.onlineCount', { n: online }))} · <button class="online__link-btn online__link-btn--inline" type="button" data-clan>${escapeHtml(t('clan.see'))}</button></span>
+          </span>
+          <span class="friend__actions"><span class="friend__cta">
+            <button class="friend__btn friend__btn--primary" type="button" data-call-clan ${this.callingClan ? 'disabled' : ''}>${Icons.group}<span>${escapeHtml(t(this.callingClan ? 'clan.calling' : 'clan.callShort'))}</span></button>
+          </span></span>
+        </div>
+        ${note}
+      </div>`;
+  }
+
   /**
    * Lobby: "Chamar amigos" com os que estão online e fora da sala (até 4; o
    * resto em "Todos os amigos"). Sem amigo online, diz isso e leva pros amigos.
@@ -532,7 +657,7 @@ export class OnlineSheet {
             <div class="friend__row">
               <span class="friend__avatar" data-status="${friend.status}" aria-hidden="true">${friendAvatar(friend)}<span class="friend__dot"></span></span>
               <span class="friend__text">
-                <strong class="friend__nick">${escapeHtml(friend.nickname)}</strong>
+                <strong class="friend__nick">${clanTagHtml(friend.tag)}${escapeHtml(friend.nickname)}</strong>
                 <span class="friend__where">${escapeHtml(friendWhere(friend, code))}</span>
               </span>
               <span class="friend__actions"><span class="friend__cta">${action}</span></span>
@@ -554,6 +679,7 @@ export class OnlineSheet {
           <h3 class="online__label" id="online-call-title">${escapeHtml(t('friends.callTitle'))}</h3>
           <button class="online__link-btn" type="button" data-friends>${escapeHtml(t(list && list.friends.length === 0 ? 'friends.addShort' : 'friends.all'))}</button>
         </div>
+        ${this.clanCallHtml()}
         ${rows ? `<ul class="friends__list">${rows}</ul>` : ''}
         ${empty ? `<p class="online__note">${escapeHtml(empty)}</p>` : ''}
       </section>`;
@@ -651,7 +777,7 @@ export class OnlineSheet {
     return /* html */ `
       <li class="online__player" data-slot="${p.slot}" tabindex="0" data-focusable>
         <span class="online__avatar" aria-hidden="true">${skinIcon(look)}</span>
-        <span class="online__nick" title="${escapeHtml(p.nick)}">${escapeHtml(p.nick)}</span>${badges}
+        <span class="online__nick" title="${escapeHtml(taggedName(p.nick, p.tag))}">${clanTagHtml(p.tag)}${escapeHtml(p.nick)}</span>${badges}
       </li>`;
   }
 

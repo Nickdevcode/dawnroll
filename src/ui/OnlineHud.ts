@@ -3,6 +3,7 @@ import { MAX_PLAYERS } from '../net/protocol';
 import type { NameplateSource, OnlinePlay } from '../net/OnlinePlay';
 import type { Input } from '../core/Input';
 import { onLocaleChange, t, type MessageKey } from '../i18n';
+import { clanTagHtml } from './clanText';
 import { escapeHtml } from './html';
 import { Icons } from './icons';
 import { EMOTE_ICONS, EmoteButtonIcon, MergeIcon } from './emoteIcons';
@@ -224,7 +225,7 @@ export class OnlineHud {
         plate.hidden = true;
         continue;
       }
-      const key = `${source.slot}|${source.nick}|${source.isHost}|${source.emote}|${source.dizzy}|${source.team}`;
+      const key = `${source.slot}|${source.nick}|${source.tag}|${source.isHost}|${source.emote}|${source.dizzy}|${source.team}`;
       const changed = this.shown.get(plate) !== key;
       if (changed) {
         this.shown.set(plate, key);
@@ -237,7 +238,7 @@ export class OnlineHud {
           ? `<span class="nameplate__bubble">${EMOTE_ICONS[source.emote] ?? ''}<span>${escapeHtml(t(`emote.${source.emote}` as MessageKey))}</span></span>`
           : '';
         const name = source.nick
-          ? `<span class="nameplate__tag">${source.team >= 0 ? `<span class="nameplate__team">${TEAM_ICONS[source.team] ?? ''}</span>` : ''}${source.isHost ? `<span class="nameplate__crown">${Icons.crown}</span>` : ''}<span class="nameplate__nick">${escapeHtml(source.nick)}</span></span>`
+          ? `<span class="nameplate__tag">${source.team >= 0 ? `<span class="nameplate__team">${TEAM_ICONS[source.team] ?? ''}</span>` : ''}${source.isHost ? `<span class="nameplate__crown">${Icons.crown}</span>` : ''}${clanTagHtml(source.tag, 'clan-tag--plate')}<span class="nameplate__nick">${escapeHtml(source.nick)}</span></span>`
           : '';
         plate.innerHTML = bubble + name;
       }

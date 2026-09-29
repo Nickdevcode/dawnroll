@@ -39,6 +39,7 @@ import { giverName } from './ui/RoundPanel';
 import { Menu } from './ui/Menu';
 import { AchievementToast } from './ui/AchievementToast';
 import { InviteToast } from './ui/InviteToast';
+import { ClanStore } from './online/ClanStore';
 import { Social } from './online/Social';
 import type { RoomInvite } from './online/Friends';
 import { ChestOverlay } from './ui/ChestOverlay';
@@ -180,6 +181,8 @@ export class Game {
   private readonly online = new Online({ save: this.save, replaceSave: (next) => this.replaceSave(next) });
   /** Amigos, convites e presença (anda sozinho com a conta aberta). */
   private readonly social = new Social(this.online);
+  /** A turma (tag antes do apelido, convites, "Jogar com a turma"). */
+  private readonly clans = new ClanStore(this.online, this.social);
   private readonly progression = new Progression(this.save, () => {
     writeSave(this.save);
     this.online.saveChanged();
@@ -331,7 +334,7 @@ export class Game {
     this.graphics = new Graphics(canvas);
     this.input = new Input(canvas);
     this.hud = new Hud(uiRoot, this.input);
-    this.menu = new Menu(uiRoot, this.hud.isTouch, this.progression, this.online, this.social);
+    this.menu = new Menu(uiRoot, this.hud.isTouch, this.progression, this.online, this.social, this.clans);
     // Depois do menu: o aviso de conquista fica por cima dele (dá pra conquistar comendo na toca).
     const achievementToast = (this.achievementToast = new AchievementToast(uiRoot));
     this.progression.onAchievement = (unlock) => {
@@ -499,6 +502,18 @@ export class Game {
       if (!this.menu.isVisible) this.pause();
       this.menu.openFriends();
     };
+    this.clans.onInvite = (invite) => {
+      toast.showClanInvite(invite);
+      this.audio.notify();
+    };
+    toast.onOpenClan = () => {
+      if (!this.menu.isVisible) this.pause();
+      this.menu.openClan();
+    };
+    // Entrou numa turma (ou saiu) com a sala aberta: a tag nova vai pros outros (o `look` só sai se mudou).
+    this.clans.subscribe(() => {
+      if (this.net?.active) this.net.lookChanged();
+    });
   }
 
   /** "Entrar" no convite (aviso ou atalho): entra na sala sem parar o jogo; com o menu aberto, mostra o lobby. */
@@ -2087,7 +2102,7 @@ export class Game {
   /** Visual salvo agora (o que a sala vê). */
   private currentLook(): NetLook {
     const outfit = this.progression.outfit;
-    return { skin: this.progression.skin, head: outfit.head, face: outfit.face, neck: outfit.neck, back: outfit.back };
+    return { skin: this.progression.skin, head: outfit.head, face: outfit.face, neck: outfit.neck, back: outfit.back, tag: this.clans.tag };
   }
 
   /**
