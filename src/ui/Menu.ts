@@ -1,4 +1,5 @@
-import { settings, QUALITY_PRESETS, type GameSettings, type QualityPreset, type ShadowQuality } from '../core/settings';
+import { settings, HOLD_MODES, QUALITY_PRESETS, type GameSettings, type QualityPreset, type ShadowQuality } from '../core/settings';
+import type { HoldMode, InputDevice } from '../core/Input';
 import type { SaveData } from '../core/save';
 import {
   LOCALE_NAMES,
@@ -13,7 +14,7 @@ import {
   type LanguagePreference,
   type MessageKey,
 } from '../i18n';
-import { PAD_LABELS, type MenuAction, type PadStyle } from '../core/GamepadInput';
+import { PAD_LABELS, type MenuAction, type PadButton, type PadStyle } from '../core/GamepadInput';
 import type { Progression } from '../progression/Progression';
 import { skin } from '../progression/skins';
 import type { Online } from '../online/Online';
@@ -39,6 +40,7 @@ import { HangerIcon, skinIcon } from './lookIcons';
 import { escapeHtml } from './html';
 import { bindTabs, tabsMarkup } from './tabs';
 import { nearestInDirection } from './spatialNav';
+import { padCapKind } from './prompts';
 
 /**
  * Menu de início e de pausa: a "madrugada" por cima do jardim (que continua
@@ -96,9 +98,19 @@ export class Menu {
   onShowcaseDrag: ((dx: number) => void) | null = null;
   /** Pediu pra abrir um baú (Feirinha ou boas-vindas): o jogo faz a cerimônia. */
   onOpenChest: ((key: string) => void) | null = null;
+  /** "Jogar o tutorial de novo" (Como jogar). */
+  onReplayTutorial: (() => void) | null = null;
+  /** "Pular tutorial" (pausa, com o tutorial na tela). */
+  onSkipTutorial: (() => void) | null = null;
 
   private readonly playButton: HTMLButtonElement;
   private readonly playLabel: HTMLElement;
+  private readonly skipTutorialButton: HTMLButtonElement;
+  private readonly replayTutorialButton: HTMLButtonElement;
+  /** Controle ligado (a ajuda mostra os botões dele mesmo usando o teclado). */
+  private padConnected = false;
+  private inputDevice: InputDevice = 'keyboard';
+  private padStyle: PadStyle = 'xbox';
   private readonly record: HTMLElement;
   private readonly burrowMeta: HTMLElement;
   private readonly burrowBadge: HTMLElement;
@@ -170,6 +182,9 @@ export class Menu {
           <button class="menu__play" type="button" data-play disabled>
             <span class="menu__play-icon">${Icons.play}</span><span data-play-label></span>
           </button>
+          <button class="menu__skip-tutorial" type="button" data-tutorial-skip hidden>
+            <span data-t="tutorial.skipLong"></span>
+          </button>
           <button class="menu__link menu__link--online" type="button" data-open="online" aria-expanded="false" aria-controls="sheet-online" hidden>
             <span class="menu__link-icon">${Icons.group}<span class="menu__link-badge" data-online-badge hidden></span></span>
             <span data-t="menu.online"></span><span class="menu__link-meta" data-online-meta></span>
@@ -202,9 +217,9 @@ export class Menu {
         </div>
         <p class="menu__record" data-record></p>
         <p class="menu__pad-legend" data-pad-legend hidden>
-          <kbd class="padcap" data-pad="a"></kbd><span data-t="pad.select"></span>
-          <kbd class="padcap" data-pad="b"></kbd><span data-t="pad.back"></span>
-          <span class="menu__pad-tabs"><kbd class="padcap" data-pad="lb"></kbd><kbd class="padcap" data-pad="rb"></kbd><span data-t="pad.tabs"></span></span>
+          <kbd class="padcap padcap--face" data-pad="a" data-btn="a"></kbd><span data-t="pad.select"></span>
+          <kbd class="padcap padcap--face" data-pad="b" data-btn="b"></kbd><span data-t="pad.back"></span>
+          <span class="menu__pad-tabs"><kbd class="padcap padcap--shoulder" data-pad="lb" data-btn="lb"></kbd><kbd class="padcap padcap--shoulder" data-pad="rb" data-btn="rb"></kbd><span data-t="pad.tabs"></span></span>
         </p>
       </div>
       ${this.settingsSheet()}
@@ -241,6 +256,8 @@ export class Menu {
     const $ = <T extends HTMLElement>(sel: string) => this.element.querySelector(sel) as T;
     this.playButton = $('[data-play]');
     this.playLabel = $('[data-play-label]');
+    this.skipTutorialButton = $('[data-tutorial-skip]');
+    this.replayTutorialButton = $('[data-tutorial-replay]');
     this.record = $('[data-record]');
     this.burrowMeta = $('[data-burrow-meta]');
     this.burrowBadge = $('[data-burrow-badge]');
@@ -365,13 +382,36 @@ export class Menu {
     this.open('burrow', intro);
   }
 
-  /** Controle ligado/desligado: mostra a legenda de botões e a ajuda no estilo certo (Xbox ou PlayStation). */
+  /** Controle ligado/desligado: a ajuda passa a mostrar os botões dele (no estilo certo: Xbox, PlayStation, Switch). */
   setGamepad(style: PadStyle | null): void {
-    (this.element.querySelector('[data-pad-legend]') as HTMLElement).hidden = style === null;
-    (this.element.querySelector('[data-pad-help]') as HTMLElement).hidden = style === null;
-    if (!style) return;
+    this.padConnected = style !== null;
+    if (style) this.padStyle = style;
+    this.refreshPadHelp();
+  }
+
+  /**
+   * Dispositivo em uso mudou: a legenda de botões do menu só aparece no controle, e a
+   * ajuda põe na frente os controles de quem está jogando.
+   */
+  setInputDevice(device: InputDevice, style: PadStyle): void {
+    this.inputDevice = device;
+    this.padStyle = style;
+    this.refreshPadHelp();
+  }
+
+  /** Tutorial na tela: a pausa ganha o "Pular tutorial". Numa sala online o "Jogar o tutorial" espera. */
+  setTutorialState(active: boolean, canReplay: boolean): void {
+    this.skipTutorialButton.hidden = !active;
+    this.replayTutorialButton.disabled = !canReplay;
+  }
+
+  private refreshPadHelp(): void {
+    const onPad = this.inputDevice === 'gamepad';
+    (this.element.querySelector('[data-pad-legend]') as HTMLElement).hidden = !onPad;
+    (this.element.querySelector('[data-pad-help]') as HTMLElement).hidden = !(onPad || this.padConnected);
     this.element.querySelectorAll<HTMLElement>('[data-pad]').forEach((el) => {
-      el.textContent = PAD_LABELS[style][el.dataset.pad as keyof (typeof PAD_LABELS)['xbox']];
+      el.textContent = PAD_LABELS[this.padStyle][el.dataset.pad as PadButton];
+      el.dataset.style = this.padStyle;
     });
   }
 
@@ -576,7 +616,8 @@ export class Menu {
   private helpSheet(): string {
     const keys = (...caps: string[]) => caps.map((c) => `<kbd class="keycap">${c}</kbd>`).join('');
     const keyT = (key: MessageKey) => `<kbd class="keycap" data-t="${key}"></kbd>`;
-    const pad = (button: keyof (typeof PAD_LABELS)['xbox']) => `<kbd class="keycap padcap" data-pad="${button}"></kbd>`;
+    // O rótulo (A, ✕, B...) entra em `refreshPadHelp`, conforme o controle ligado.
+    const pad = (...buttons: PadButton[]) => buttons.map((b) => `<kbd class="keycap padcap padcap--${padCapKind(b)}" data-pad="${b}" data-btn="${b}"></kbd>`).join('');
     const row = (caps: string, action: MessageKey) => `<div class="keys__row"><dt>${caps}</dt><dd data-t="${action}"></dd></div>`;
     const controls = this.isTouch
       ? /* html */ `<ul class="touch-list">
@@ -584,7 +625,7 @@ export class Menu {
           <li data-t="touch.jump"></li><li data-t="touch.recall"></li><li data-t="touch.burrow"></li>
           <li data-t="touch.ability"></li><li data-t="touch.online"></li>
         </ul>`
-      : /* html */ `<dl class="keys">
+      : /* html */ `<dl class="keys help__keyboard">
           ${row(keys('W', 'A', 'S', 'D'), 'controls.move')}
           ${row(keyT('key.mouse'), 'controls.look')}
           ${row(`${keys('E')}${keyT('key.click')}`, 'controls.grab')}
@@ -592,12 +633,13 @@ export class Menu {
           ${row(keys('Shift'), 'controls.run')}
           ${row(keys('R'), 'controls.recall')}
           ${row(keys('T'), 'controls.burrow')}
-          ${row(keys('Q'), 'controls.ability')}
+          ${row(`${keys('Q')}${keyT('key.rightClick')}`, 'controls.ability')}
+          ${row(keyT('key.middleClick'), 'controls.recenter')}
+          ${row(keyT('key.wheel'), 'controls.zoom')}
           ${row(keys('G'), 'controls.emote')}
           ${row(keys('F'), 'controls.merge')}
           ${row(keys('J'), 'controls.invite')}
-          ${row(keyT('key.wheel'), 'controls.zoom')}
-          ${row(keys('Esc'), 'controls.pause')}
+          ${row(keys('Esc', 'P'), 'controls.pause')}
         </dl>`;
     return /* html */ `
       <section class="sheet" id="sheet-help" role="region" aria-labelledby="sheet-help-title" hidden>
@@ -606,6 +648,10 @@ export class Menu {
           <button class="sheet__close" type="button" data-close data-t-aria="menu.close">${Icons.close}</button>
         </header>
         <div class="sheet__body">
+          <button class="help__tutorial" type="button" data-tutorial-replay>
+            <span class="help__tutorial-icon" aria-hidden="true">${Icons.play}</span>
+            <span class="help__tutorial-text"><strong data-t="tutorial.replay"></strong><span data-t="tutorial.replayHint"></span></span>
+          </button>
           <h3 class="sheet__heading" data-t="help.round"></h3>
           <ol class="steps">
             <li data-t="help.step1"></li><li data-t="help.step2"></li><li data-t="help.step3"></li>
@@ -620,24 +666,31 @@ export class Menu {
           <ul class="help-list">
             <li data-t="help.online1"></li><li data-t="help.online2"></li><li data-t="help.online3"></li><li data-t="help.online4"></li><li data-t="help.online5"></li><li data-t="help.online6"></li>
           </ul>
-          <h3 class="sheet__heading" data-t="help.controls"></h3>
-          ${controls}
-          <div data-pad-help hidden>
-            <h3 class="sheet__heading" data-t="help.gamepad"></h3>
-            <dl class="keys">
-              ${row(keyT('key.leftStick'), 'controls.move')}
-              ${row(keyT('key.rightStick'), 'controls.look')}
-              ${row(`${pad('rt')}${pad('x')}`, 'controls.grab')}
-              ${row(pad('a'), 'controls.jump')}
-              ${row(`${pad('lt')}${pad('b')}`, 'controls.run')}
-              ${row(pad('y'), 'controls.recall')}
-              ${row(pad('ability'), 'controls.ability')}
-              ${row(keys('↓'), 'controls.emote')}
-              ${row(keys('←'), 'controls.merge')}
-              ${row(keys('→'), 'controls.invite')}
-              ${row(`${pad('lb')}${pad('rb')}`, 'controls.zoom')}
-              ${row(pad('start'), 'controls.pause')}
-            </dl>
+          <div class="help__controls">
+            <div class="help__device help__device--main">
+              <h3 class="sheet__heading" data-t="help.controls"></h3>
+              ${controls}
+            </div>
+            <div class="help__device help__device--pad" data-pad-help hidden>
+              <h3 class="sheet__heading" data-t="help.gamepad"></h3>
+              <dl class="keys">
+                ${row(pad('ls'), 'controls.move')}
+                ${row(pad('rs'), 'controls.look')}
+                ${row(pad('rt'), 'controls.grab')}
+                ${row(pad('a'), 'controls.jump')}
+                ${row(pad('lt', 'b'), 'controls.run')}
+                ${row(pad('l3'), 'controls.sprintToggle')}
+                ${row(pad('y'), 'controls.recall')}
+                ${row(pad('view'), 'controls.burrow')}
+                ${row(pad('x', 'up'), 'controls.ability')}
+                ${row(pad('r3'), 'controls.recenter')}
+                ${row(pad('lb', 'rb'), 'controls.zoom')}
+                ${row(pad('down'), 'controls.emote')}
+                ${row(pad('left'), 'controls.merge')}
+                ${row(pad('right'), 'controls.invite')}
+                ${row(pad('start'), 'controls.pause')}
+              </dl>
+            </div>
           </div>
         </div>
       </section>`;
@@ -721,10 +774,18 @@ export class Menu {
     volume('ambience', 'settings.ambience', 'ambienceVolume');
 
     // Controles
-    this.row('controls', 'sensitivity', 'settings.sensitivity', null,
+    const holdMode = (id: string, key: 'grabMode' | 'runMode') =>
+      add(segmented<HoldMode>(`set-${id}`, HOLD_MODES.map((mode) => ({ value: mode, label: () => t(`settings.holdMode.${mode}` as MessageKey) })), (v) => settings.update({ [key]: v } as Partial<GameSettings>)), (s) => s[key]).element;
+    this.row('controls', 'sensitivity', this.isTouch ? 'settings.sensitivityTouch' : 'settings.sensitivity', null,
       add(slider('set-sensitivity', { min: 40, max: 200, step: 10, format: percent }, (v) => settings.update({ mouseSensitivity: v / 100 })), (s) => Math.round(s.mouseSensitivity * 100)).element);
+    this.row('controls', 'stick', 'settings.stickSensitivity', null,
+      add(slider('set-stick', { min: 40, max: 200, step: 10, format: percent }, (v) => settings.update({ stickSensitivity: v / 100 })), (s) => Math.round(s.stickSensitivity * 100)).element);
     this.row('controls', 'invert', 'settings.invertY', null,
       add(toggle('set-invert', null, (v) => settings.update({ invertY: v })), (s) => s.invertY).element);
+    this.row('controls', 'autocam', 'settings.autoCamera', 'settings.autoCamera.hint',
+      add(toggle('set-autocam', 'set-autocam-hint', (v) => settings.update({ autoCamera: v })), (s) => s.autoCamera).element);
+    this.row('controls', 'grabmode', 'settings.grabMode', this.isTouch ? 'settings.grabMode.touchHint' : 'settings.grabMode.hint', holdMode('grabmode', 'grabMode'));
+    this.row('controls', 'runmode', 'settings.runMode', 'settings.runMode.hint', holdMode('runmode', 'runMode'));
     this.row('controls', 'shake', 'settings.shake', 'settings.shake.hint',
       add(toggle('set-shake', 'set-shake-hint', (v) => settings.update({ cameraShake: v })), (s) => s.cameraShake).element);
     this.row('controls', 'vibration', 'settings.vibration', null,
@@ -753,6 +814,8 @@ export class Menu {
 
   private bindEvents(): void {
     this.playButton.addEventListener('click', () => this.onPlay?.());
+    this.skipTutorialButton.addEventListener('click', () => this.onSkipTutorial?.());
+    this.replayTutorialButton.addEventListener('click', () => this.onReplayTutorial?.());
     for (const name of SHEETS) {
       this.openers[name].addEventListener('click', () => (this.openSheet === name ? this.closeSheet() : this.open(name)));
     }

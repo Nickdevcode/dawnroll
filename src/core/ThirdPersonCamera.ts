@@ -4,6 +4,10 @@ import { terrainHeight } from '../world/Terrain';
 
 const MIN_PITCH = -0.15;
 const MAX_PITCH = 1.2;
+/** Ângulo vertical de sempre (o do começo e o que o "recentralizar" devolve). */
+const DEFAULT_PITCH = 0.42;
+/** Rapidez do "recentralizar" (1/s): chega em ~0,3 s sem cortar seco. */
+const RECENTER_RATE = 11;
 const MOUSE_SENSITIVITY = 0.0028;
 /** Raio da "lente" nas consultas de colisão: maior que o plano de corte perto (nada raspa na tela). */
 export const CAMERA_PROBE_RADIUS = 0.3;
@@ -48,7 +52,9 @@ export interface CameraBall {
 export class ThirdPersonCamera {
   /** Ângulo horizontal: 0 = câmera no +Z do alvo olhando para -Z. */
   yaw = Math.PI;
-  pitch = 0.42;
+  pitch = DEFAULT_PITCH;
+  /** Recentralizando: o ângulo pra onde a câmera está indo (null = parada). */
+  private recenterYaw: number | null = null;
 
   private zoom = 1;
   private distance = 5;
@@ -71,8 +77,6 @@ export class ThirdPersonCamera {
 
   constructor(private readonly camera: THREE.PerspectiveCamera) {}
 
-  /** Multiplicador da velocidade do mouse/dedo (configurações). */
-  sensitivity = 1;
   /** Inverte o olhar vertical (configurações). */
   invertY = false;
   /** Desligar a tremida ajuda quem enjoa com câmera mexendo (configurações). */
@@ -95,8 +99,19 @@ export class ThirdPersonCamera {
     this.occlusionLift = 0;
   }
 
+  /**
+   * Câmera de volta pra trás do besouro, olhando pra onde ele olha (R3 / botão do meio,
+   * como nos jogos de aventura). Mexer na câmera no meio do caminho cancela.
+   */
+  recenter(facing: THREE.Vector3): void {
+    if (facing.x === 0 && facing.z === 0) return;
+    this.recenterYaw = Math.atan2(-facing.x, -facing.z);
+  }
+
   applyLook(dx: number, dy: number, zoomSteps: number): void {
-    const k = MOUSE_SENSITIVITY * this.sensitivity;
+    if (dx !== 0 || dy !== 0) this.recenterYaw = null;
+    // A sensibilidade de cada dispositivo (mouse/dedo x analógico) já vem aplicada pelo Input.
+    const k = MOUSE_SENSITIVITY;
     this.yaw -= dx * k;
     this.pitch = clamp(this.pitch + dy * k * (this.invertY ? -1 : 1), MIN_PITCH, MAX_PITCH);
     this.zoom = clamp(this.zoom + zoomSteps * 0.12, 0.55, 2.2);
@@ -124,6 +139,7 @@ export class ThirdPersonCamera {
    * @param pushing se está empurrando
    */
   update(dt: number, player: THREE.Vector3, ball: THREE.Vector3, ballRadius: number, pushing: boolean): void {
+    if (this.recenterYaw !== null) this.stepRecenter(dt, this.recenterYaw);
     // Foco: no besouro; empurrando, puxa em direção à bola.
     const target = new THREE.Vector3().copy(player).add(new THREE.Vector3(0, 0.6, 0));
     if (pushing) target.lerp(ball, 0.55);
@@ -196,6 +212,16 @@ export class ThirdPersonCamera {
   }
 
   /** Direção do foco para a câmera num ângulo vertical. */
+  private stepRecenter(dt: number, target: number): void {
+    let delta = (target - this.yaw) % (Math.PI * 2);
+    if (delta > Math.PI) delta -= Math.PI * 2;
+    if (delta < -Math.PI) delta += Math.PI * 2;
+    const k = 1 - Math.exp(-RECENTER_RATE * dt);
+    this.yaw += delta * k;
+    this.pitch += (DEFAULT_PITCH - this.pitch) * k;
+    if (Math.abs(delta) < 0.01 && Math.abs(DEFAULT_PITCH - this.pitch) < 0.01) this.recenterYaw = null;
+  }
+
   private direction(pitch: number): THREE.Vector3 {
     const cosPitch = Math.cos(pitch);
     return this.offset.set(Math.sin(this.yaw) * cosPitch, Math.sin(pitch), Math.cos(this.yaw) * cosPitch);

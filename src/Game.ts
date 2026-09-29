@@ -82,6 +82,10 @@ import { DizzyStars } from './fx/DizzyStars';
 import type { DebugBots } from './net/debugBots';
 import { Podium } from './world/Podium';
 import { MATCH_WIN_PASS_XP, standings, startSpot, type MatchView, type NetMatch } from './net/match';
+import { TutorialGuide, type TutorialScene } from './tutorial/TutorialGuide';
+import { hasPlayed, tutorialStartStep, writeTutorial } from './tutorial/storage';
+import type { TutorialStepId } from './tutorial/steps';
+import type { TutorialWorld } from './tutorial/Tutorial';
 
 /** Evita "espiral da morte" quando a aba volta do segundo plano. */
 const MAX_FRAME_TIME = 0.1;
@@ -100,6 +104,10 @@ const FRESH_GLINT_RANGE = 18;
 const FRESH_GLINT_RANGE_NOSE = 45;
 /** A primeira vez que a toca é apresentada, ela abre sozinha depois do placar. */
 const BURROW_INTRO_DELAY = 5;
+/** Tutorial: a bola mais longe que isso do besouro (sem ninguém empurrando) ganha a dica de trazer ela. */
+const TUTORIAL_FAR_BALL = 7;
+/** Retrato do mundo quando não há tutorial (reaproveitado: nada de objeto novo por quadro). */
+const IDLE_TUTORIAL_WORLD: TutorialWorld = { suspended: true, running: false, pushing: false, ballCm: 0, buryCm: 0, ballFar: false };
 const FRESH_GLINT_COLOR = new THREE.Color('#ffd479');
 /** Online: brilho do broto nascendo e da bola que você pegou; o "ainda imune" é mais clarinho. */
 const SPROUT_GOLD = new THREE.Color('#e6c46a');
@@ -238,6 +246,13 @@ export class Game {
   private elapsed = 0;
   private pushTutorialTime = 0;
   private lastLookTime = 0;
+  /** Tutorial da primeira vez: passos, cartão e marcadores. */
+  private readonly tutorialGuide: TutorialGuide;
+  /** Onde o tutorial começa no primeiro "Jogar" deste aparelho (null = já fez, ou já jogava antes dele existir). */
+  private tutorialStart: TutorialStepId | null = null;
+  /** O tutorial em curso começou sozinho (primeira vez), não pelo "Jogar o tutorial" da ajuda. */
+  private tutorialAuto = false;
+  private tutorialScene: TutorialScene | null = null;
 
   // Estado de água/lama (passo fixo → efeitos e dicas).
   private ballWater = 0;
@@ -334,6 +349,7 @@ export class Game {
     this.graphics = new Graphics(canvas);
     this.input = new Input(canvas);
     this.hud = new Hud(uiRoot, this.input);
+    this.tutorialGuide = new TutorialGuide(this.hud);
     this.menu = new Menu(uiRoot, this.hud.isTouch, this.progression, this.online, this.social, this.clans);
     // Depois do menu: o aviso de conquista fica por cima dele (dá pra conquistar comendo na toca).
     const achievementToast = (this.achievementToast = new AchievementToast(uiRoot));
@@ -445,6 +461,22 @@ export class Game {
         this.audio.notify();
       }
     };
+    // Quem mostra tecla/botão acompanha o dispositivo em uso (o que a pessoa mexeu por último, de propósito).
+    this.input.onDeviceChange((device, style) => {
+      this.hud.setInputDevice(device, style);
+      this.menu.setInputDevice(device, style);
+    });
+    this.menu.setInputDevice(this.input.device, this.input.padStyle);
+    this.menu.onReplayTutorial = () => this.replayTutorial();
+    this.menu.onSkipTutorial = () => this.skipTutorial();
+    this.hud.tutorial.onSkip = () => this.skipTutorial();
+    const tutorial = this.tutorialGuide.tutorial;
+    tutorial.onStepDone = (step) => {
+      if (step === 'eat') this.audio.achievement();
+      else this.audio.notify();
+      this.rumble(0.12, 0.3, 90);
+    };
+    tutorial.onEnd = () => this.menu.setTutorialState(false, !this.net?.active);
     document.addEventListener('pointerlockchange', this.onPointerLockChange);
     // Perdeu o mouse sem pausar (ex.: escolheu poder pelo controle): um clique na cena prende de novo.
     // Com o cartão do resultado aberto não: o mouse solto é pra clicar nele.
@@ -464,8 +496,6 @@ export class Game {
       if (isTextField(e.target)) return;
       // Enter na tela inicial também começa (acessível pelo teclado).
       if (this.menu.isVisible && !this.startDisabled && document.activeElement === document.body && (e.code === 'Enter' || e.code === 'NumpadEnter')) this.start();
-      // T abre a toca (despensa, catálogo e poderes).
-      if (e.code === 'KeyT' && !e.repeat && this.started && !this.paused && !this.choosing) this.openBurrow();
       // J entra no convite que está no canto da tela (jogando com o mouse preso, não dá pra clicar).
       if (e.code === 'KeyJ' && !e.repeat && !this.chestOverlay.isOpen && this.inviteToast.acceptShortcut()) e.preventDefault();
       // Escolhendo poder o mouse já está solto: Esc pausa como no resto do jogo.
@@ -630,6 +660,22 @@ export class Game {
     boot.step(1, 'loader.ready');
 
     this.startDisabled = false;
+    // Primeira vez neste aparelho (sem conta: o que vale é o navegador)? O tutorial começa no "Jogar".
+    this.tutorialStart = tutorialStartStep(this.save);
+    const game = this;
+    this.tutorialScene = {
+      camera: this.graphics.camera,
+      get beetle() {
+        return game.beetle.center;
+      },
+      get ball() {
+        return game.ball.root.position;
+      },
+      get ballRadius() {
+        return game.ball.radius;
+      },
+      nearestPiles: (near, count, out, minDistance) => this.collectibles.nearestPiles(near, count, out, minDistance),
+    };
     this.applySettings(settings.get());
     settings.subscribe((s, changed) => this.applySettings(s, changed));
     this.menu.setReady();
@@ -667,6 +713,7 @@ export class Game {
       if (event === 'jump') {
         this.audio.jump(feet);
         this.effects.jump(feet);
+        this.tutorialGuide.tutorial.noteJump();
       } else if (event === 'land') {
         const strength = THREE.MathUtils.clamp((this.beetle.landingSpeed - 6) / 10, 0, 1);
         this.audio.land(feet, strength);
@@ -676,6 +723,8 @@ export class Game {
         this.audio.grab(feet);
       } else if (event === 'release') {
         this.audio.release(feet);
+        // Agarrar no modo "alternar": a bola foi embora (pulo, enterro), a próxima pega é outra apertada.
+        this.input.releaseGrabLatch();
       } else if (event === 'mount') {
         // Equilibrista: pulinho pra cima da bola.
         this.audio.jump(feet);
@@ -1105,6 +1154,14 @@ export class Game {
     this.hud.setVisible(true);
     this.hud.perkPicker.setSuspended(false);
     this.started = true;
+    if (this.tutorialStart && !this.net.active) {
+      this.tutorialGuide.tutorial.begin(this.tutorialStart);
+      this.tutorialAuto = true;
+      this.tutorialStart = null;
+      // "Chegou a Feirinha! O que você já tinha virou presente" é o aviso de quem jogava antes
+      // das moedas: pra quem está chegando agora (o primeiro enterro já dá conquista) não faz sentido.
+      this.progression.markWelcomed();
+    }
     // Pros amigos: "jogando" (numa sala, o banco já sabe pelo ponto dela).
     this.social.setActivity('solo');
     this.announceGolden();
@@ -1184,6 +1241,11 @@ export class Game {
       for (const action of this.input.menuActions) this.chestOverlay.handleGamepad(action);
       return;
     }
+    // Start (controle) ou P (teclado) com o menu aberto: continua, como um "pausa" de ida e volta.
+    if (this.input.pausePressed) {
+      this.start();
+      return;
+    }
     // Analógico direito rola a placa aberta (Como jogar é só texto: sem isso, não dava pra ler tudo).
     this.menu.scrollSheet(this.input.gamepad.menuScroll);
     for (const action of this.input.menuActions) {
@@ -1214,6 +1276,8 @@ export class Game {
     if (this.menu.isVisible) return;
     if (this.input.pointerLocked) document.exitPointerLock();
     this.input.gamepad.suppressHeldDirection();
+    // Só com um passo na tela (no cartão final não há mais o que pular).
+    this.menu.setTutorialState(this.tutorialGuide.tutorial.step !== null, !this.net.active);
     this.menu.show(true);
     this.social.setActivity('menu');
     const online = this.net.active;
@@ -1224,12 +1288,76 @@ export class Game {
     this.hud.perkPicker.setSuspended(true);
   }
 
-  /** Pausa e abre a placa da toca (tecla T, botão do HUD ou a apresentação da primeira vez). */
+  /** Pausa e abre a placa da toca (T, View/Create no controle, botão do HUD ou a apresentação da primeira vez). */
   private openBurrow(intro = false): void {
     if (!this.started || this.choosing) return;
     this.burrowIntroTimer = 0;
+    const tutorial = this.tutorialGuide.tutorial;
+    // O tutorial pediu "abra a toca": ela abre com o recado de apresentação.
+    if (tutorial.step === 'eat') intro = true;
+    tutorial.noteBurrowOpened();
     this.pause();
     this.menu.openBurrow(intro);
+  }
+
+  /**
+   * Atalhos que valem com ou sem menu: a toca abre e FECHA na mesma tecla/botão (T,
+   * View/Create — como inventário nos jogos), e R3 / botão do meio põe a câmera de
+   * volta atrás do besouro.
+   */
+  private handleShortcuts(): void {
+    const input = this.input;
+    if (input.burrowPressed && !this.startDisabled && !this.chestOverlay.isOpen) {
+      if (!this.paused) {
+        if (!this.cardModal) this.openBurrow();
+      } else if (this.started && this.menu.currentSheet === 'burrow') {
+        this.start();
+      }
+    }
+    if (input.recenterPressed && this.started && !this.paused && !this.choosing) this.cameraRig.recenter(this.beetle.facing);
+  }
+
+  /** "Jogar o tutorial" (Como jogar): recomeça do primeiro passo e volta pro jardim. */
+  private replayTutorial(): void {
+    if (this.net.active || this.startDisabled) return;
+    this.tutorialGuide.tutorial.begin();
+    this.tutorialAuto = false;
+    this.tutorialStart = null;
+    this.start();
+  }
+
+  /** "Pular tutorial" (pausa ou o botão do cartão no toque). */
+  private skipTutorial(): void {
+    this.tutorialGuide.tutorial.skip();
+    this.tutorialStart = null;
+    this.menu.setTutorialState(false, !this.net.active);
+  }
+
+  /** Um quadro do tutorial: o que o jogador está fazendo → passos, cartão e marcadores. */
+  private updateTutorial(dt: number): void {
+    const tutorial = this.tutorialGuide.tutorial;
+    if (!tutorial.active) {
+      this.tutorialGuide.update(dt, IDLE_TUTORIAL_WORLD, null, false);
+      return;
+    }
+    const state = this.input.state;
+    const moving = Math.hypot(state.moveX, state.moveY) > 0.2;
+    const ballPos = this.ball.position(this.tmpBall);
+    const far = !this.beetle.pushing && !this.burrow.isBusy && this.ball.isSolid && ballPos.distanceTo(this.beetle.center) - this.ball.radius > TUTORIAL_FAR_BALL;
+    const online = this.net.active;
+    this.tutorialGuide.update(
+      dt,
+      {
+        suspended: !this.started || this.paused || this.choosing || online,
+        running: state.run && moving,
+        pushing: this.beetle.pushing,
+        ballCm: this.ball.diameterCm,
+        buryCm: MIN_BURY_RADIUS * 4,
+        ballFar: far,
+      },
+      this.tutorialScene,
+      this.started && !online && !this.podiumView,
+    );
   }
 
   private get paused(): boolean {
@@ -1270,7 +1398,12 @@ export class Game {
       this.audio.setMuted(s.muted);
       this.hud.setMuted(s.muted);
     }
-    this.cameraRig.sensitivity = s.mouseSensitivity;
+    // Sensibilidade por dispositivo: o mouse/dedo e o analógico têm escalas bem diferentes.
+    this.input.pointerLookScale = s.mouseSensitivity;
+    this.input.gamepad.lookScale = s.stickSensitivity;
+    this.input.grabMode = s.grabMode;
+    this.input.runMode = s.runMode;
+    this.hud.setHoldModes({ grab: s.grabMode, run: s.runMode });
     this.cameraRig.invertY = s.invertY;
     this.cameraRig.shakeEnabled = s.cameraShake;
     if (has('showFps') && !s.showFps) this.hud.setFps(null);
@@ -1312,8 +1445,8 @@ export class Game {
 
     this.input.update();
     const look = this.input.consumeLook();
-    this.hud.setInputDevice(this.input.device, this.input.gamepad.style);
     this.handleGamepadMenu();
+    this.handleShortcuts();
     this.updateEmoteWheel(look, frameTime);
 
     if (this.simulating) {
@@ -1325,9 +1458,10 @@ export class Game {
         // besouro espera (a câmera continua solta).
         if (this.net.inputLocked || this.cardModal) this.clearInput();
         this.cameraRig.applyLook(look.x, look.y, look.zoom);
+        this.tutorialGuide.tutorial.noteLook(Math.abs(look.x) + Math.abs(look.y));
       }
-      // No toque, mirar com o dedão é trabalhoso: a câmera volta sozinha pra trás do besouro.
-      if (this.hud.isTouch || this.input.device === 'gamepad') {
+      // No toque e no controle, mirar é trabalhoso: a câmera volta sozinha pra trás do besouro (dá pra desligar).
+      if ((this.hud.isTouch || this.input.device === 'gamepad') && settings.get().autoCamera) {
         if (look.x !== 0 || look.y !== 0) this.lastLookTime = this.elapsed;
         if (this.elapsed - this.lastLookTime > 0.9) this.cameraRig.autoFollow(frameTime, this.beetle.travelDirection());
       }
@@ -1392,7 +1526,11 @@ export class Game {
       const merge = this.net.balls.updateMerge(holding, FIXED_DT);
       this.mergeHint = merge.target ? { progress: merge.progress, nick: merge.target.local ? '' : this.net.nickOf(merge.target.owner) } : null;
     } else this.mergeHint = null;
+    const beforeX = this.beetle.center.x;
+    const beforeZ = this.beetle.center.z;
     this.beetle.fixedUpdate(FIXED_DT, state, this.cameraRig.yaw);
+    // Tutorial: só conta o que o jogador andou (não o empurrão de uma bola crescendo).
+    if (Math.hypot(state.moveX, state.moveY) > 0.2) this.tutorialGuide.tutorial.noteMove(Math.hypot(this.beetle.center.x - beforeX, this.beetle.center.z - beforeZ));
     this.updateRider(FIXED_DT);
     // Sangue quente: esquenta empurrando com o analógico/teclas apontando pra frente.
     this.progression.updateHeat(FIXED_DT, this.beetle.pushing && Math.hypot(state.moveX, state.moveY) > 0.3);
@@ -1534,7 +1672,9 @@ export class Game {
     if (outcome.meal && outcome.meal.chests.length > 0) this.achievementToast.showChests(outcome.meal.chests);
     if (outcome.pass && outcome.pass.tierAfter > outcome.pass.tierBefore) this.achievementToast.showPassTier(outcome.pass.tierAfter);
     // A toca se apresenta sozinha só no solo (no online ela abriria por cima da sala rodando).
-    if (outcome.introduceBurrow && !this.net.active) this.burrowIntroTimer = BURROW_INTRO_DELAY;
+    // Com o tutorial pedindo pra abrir, quem abre é o jogador (aprende a tecla/botão).
+    if (!online) this.tutorialGuide.tutorial.noteBuried();
+    if (outcome.introduceBurrow && !online && !this.tutorialGuide.tutorial.wantsBurrow) this.burrowIntroTimer = BURROW_INTRO_DELAY;
     this.effects.buried(at, result.diameterCm / 4);
     this.audio.buried(at, result.diameterCm / 4, record);
     this.cameraRig.shake(0.1);
@@ -1546,6 +1686,12 @@ export class Game {
    * aparelho, ou o começo de novo ao sair da conta): recalcula e redesenha.
    */
   private replaceSave(next: SaveData): void {
+    // Entrou numa conta que já tem progresso: quem já joga não precisa do tutorial da primeira vez.
+    if (this.tutorialStart && hasPlayed(next)) {
+      this.tutorialStart = null;
+      writeTutorial({ status: 'done' });
+    }
+    if (this.tutorialAuto && this.tutorialGuide.tutorial.active && next.buried > 1) this.skipTutorial();
     this.progression.replaceSave(next);
     this.hud.setProgress(this.save);
     this.menu.setProgress(this.save);
@@ -1666,6 +1812,7 @@ export class Game {
     this.updateAbilityHud();
     const hint = this.computeHint();
     this.hud.setHint(hint.kind, hint.value, hint.label);
+    this.updateTutorial(dt);
     this.updateBurrowMarker(player);
     this.updateNameplates();
     this.hud.updateMatch();
@@ -2695,7 +2842,8 @@ export class Game {
     if (this.beetle.pushing) return { kind: this.pushTutorialTime < 5 ? 'pushing' : 'none', value: 0 };
     const ballPos = this.ball.position(this.tmpBall);
     const dist = ballPos.distanceTo(this.beetle.center) - this.ball.radius;
-    return { kind: dist < 1.4 ? 'grab' : 'none', value: 0 };
+    // O cartão do tutorial já está ensinando a agarrar: a dica de baixo não repete.
+    return { kind: dist < 1.4 && !this.tutorialGuide.tutorial.teachingGrab ? 'grab' : 'none', value: 0 };
   }
 
   /** Dicas do online (na frente das de sempre): tonto, broto chegando, fundir, empurrando junto, bola solta. */

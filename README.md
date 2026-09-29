@@ -39,7 +39,7 @@ Um besouro rola-bosta de massinha num jardim em miniatura. Você rola uma bola d
 | 🎥 **Câmera e colisões** | A lente é uma esfera (não um raio fino): nunca para dentro de pedra, brinquedo, pétala ou da própria bola de bosta. Espremida contra alguma coisa, ela sobe por cima em vez de entrar no besouro. Todo modelo tem colisão que acompanha a forma dele (a lâmina da pá, as pontas do morango, os dedos da luva, os cogumelinhos) |
 | 🌙 **Menu** | A "madrugada" por cima do jardim ao vivo: logo com o "o" virando um solzinho de massinha, e Jogar faz amanhecer. Toca, Guarda-roupa, Feirinha, Passe, Ranking, Configurações e Como jogar abrem em placas por cima, e a conta fica num chip no canto de cima |
 | 🌅 **Carregando** | A madrugada já aparece no primeiro quadro, antes do download do jogo: logo de massinha, estrelinhas e um **solzinho rolando pelo horizonte**, que é a própria barra de progresso (física, chão, jardim, grama, bichos, shaders). No fim o miolo some e o céu se funde no menu |
-| ⚙️ **Configurações** | Qualidade (Auto, Baixa, Média, Alta, Ultra ou Personalizada), resolução, sombras, oclusão ambiente, desfoque de maquete, brilho, densidade da grama, FPS, volumes (geral, música, efeitos, natureza e clima — cada slider toca uma prévia do próprio canal), sensibilidade e inversão da câmera, tremida de câmera e vibração do controle. Tudo aplica na hora e fica salvo |
+| ⚙️ **Configurações** | Qualidade (Auto, Baixa, Média, Alta, Ultra ou Personalizada), resolução, sombras, oclusão ambiente, desfoque de maquete, brilho, densidade da grama, FPS, volumes (geral, música, efeitos, natureza e clima — cada slider toca uma prévia do próprio canal), sensibilidade do mouse/toque e do analógico (separadas), inversão da câmera, câmera que volta sozinha (liga/desliga), agarrar e correr **segurando ou alternando** (aperta uma vez liga, outra desliga — bom pra quem cansa de segurar botão), tremida de câmera e vibração do controle. Tudo aplica na hora e fica salvo |
 | 🌐 **Idiomas** | Português (Brasil) e inglês. No automático, o jogo segue o idioma do navegador/sistema, e dá pra fixar um nas configurações |
 | 💨 **Efeitos** | Poeira nos passos e na bola, respingo ao pegar bosta, brilho ao grudar, confete nos marcos, rastro da bola no chão, fedor subindo dos montinhos, suor quando o besouro faz força, torrões e pétalas ao arrancar coisas, terra voando no enterro, respingos d'água, folhas caindo e pólen no ar |
 
@@ -47,21 +47,47 @@ Um besouro rola-bosta de massinha num jardim em miniatura. Você rola uma bola d
 
 ## 🎮 Como jogar
 
-| Ação | Teclado / mouse | Controle (Xbox / PlayStation) | Celular |
+| Ação | Teclado / mouse | Controle (Xbox · PlayStation · Switch) | Celular |
 |---|---|---|---|
 | Andar | `W` `A` `S` `D` (ou setas) | Analógico esquerdo | Analógico à esquerda |
 | Olhar em volta | Mouse | Analógico direito | Arrastar na metade direita |
-| **Agarrar / empurrar a bola** | **Segurar `E`** ou o botão esquerdo | **Segurar `RT` / `R2`** (ou `X` / `□`) | Botão da mão (liga/desliga) |
-| Pular | `Espaço` | `A` / `✕` | Botão de seta |
-| Correr | `Shift` | `LT` / `L2` (ou `B` / `○`) | Botão de correr |
-| Trazer a bola de volta | `R` | `Y` / `△` | Botão circular no topo |
-| Poder de apertar (Equilibrista) | `Q` ou botão direito do mouse | `RS` / `R3` (clicar o analógico direito) ou direcional ↑ | Botão azul da bola, do lado dos outros |
-| Abrir a toca | `T` | Pausa → **Toca** | Botão da toca no topo |
-| Escolher poder | `1` `2` `3` (ou setas + `Enter`, ou clique) | Direcional + `A` / `✕` | Tocar na carta |
-| Zoom | Roda do mouse | `LB` / `RB` (`L1` / `R1`) | — |
-| Pausar | `Esc` | `Start` / `Options` | Botão de pausa no topo |
+| **Agarrar / empurrar a bola** | **Segurar `E`** ou o botão esquerdo | **Segurar `RT` · `R2` · `ZR`** | Botão da mão (liga/desliga) |
+| Pular | `Espaço` | `A` · `✕` · `B` (o botão de baixo) | Botão de seta |
+| Correr | Segurar `Shift` | Segurar `LT` · `L2` (ou `B` · `○`); **clicar `L3` liga até você parar** | Botão de correr |
+| Trazer a bola de volta | `R` | `Y` · `△` | Botão circular no topo |
+| Poder de apertar (Equilibrista) | `Q` ou botão direito do mouse | `X` · `□` (ou direcional ↑) | Botão azul da bola, do lado dos outros |
+| **Abrir / fechar a toca** | `T` (a mesma tecla fecha) | **`View` · `Create`/`Share` · `−`** (o mesmo botão fecha) | Botão da toca no topo |
+| Câmera de volta atrás do besouro | Botão do meio do mouse | Clicar `R3` | Volta sozinha |
+| Escolher poder | `1` `2` `3` (ou setas + `Enter`, ou clique) | Direcional + `A` · `✕` | Tocar na carta |
+| Zoom | Roda do mouse | `LB` / `RB` · `L1` / `R1` | — |
+| Pausar | `Esc` ou `P` | `Start`/`Menu` · `Options` · `+` | Botão de pausa no topo |
 
-🎮 **Controle:** é só conectar (USB ou Bluetooth) e mexer. O jogo detecta se é de Xbox ou PlayStation e mostra os botões certos nas dicas. No menu, direcional/analógico andam pro vizinho na tela (o catálogo anda por linha e coluna), `A`/`✕` escolhe, `B`/`○` volta, `LB`/`RB` trocam de aba na Toca e nas Configurações e o analógico direito rola a placa aberta. Na escolha de poder, uma carta só fica destacada e é ela que o `A` pega. Com o controle, a câmera volta sozinha pra trás do besouro e ele vibra nas batidas e no enterro (dá pra desligar).
+🎮 **Controle:** é só conectar (USB ou Bluetooth) e mexer. O jogo reconhece **Xbox, PS4 (DualShock), PS5 (DualSense) e Switch Pro** e escreve o nome certo de cada botão nas dicas (no Xbox as letras coloridas, no PlayStation os símbolos). No menu, direcional/analógico andam pro vizinho na tela (o catálogo anda por linha e coluna), `A`/`✕` escolhe, `B`/`○` volta, `LB`/`RB` trocam de aba na Toca e nas Configurações e o analógico direito rola a placa aberta. Na escolha de poder, uma carta só fica destacada e é ela que o `A` pega. Andar no analógico é proporcional (meia inclinação = meia velocidade, com zona morta dentro e fora pra analógico gasto) e a câmera tem curva suave pra mirar fino. Com o controle, a câmera volta sozinha pra trás do besouro e ele vibra nas batidas e no enterro (as duas coisas dá pra desligar).
+
+🔀 **As dicas seguem o que você está usando:** mexeu no controle, toda dica (HUD, placar do enterro, tutorial, cartas, ajuda) passa a mostrar os botões dele; pegou o mouse ou o teclado, volta pra tecla — na hora, até no placar que já está na tela. Tremidinha do mouse na mesa, evento "fantasma" do navegador e tecla de volume **não** contam como troca (o que fazia o jogo pedir "aperte T" pra quem estava no controle). Em **Como jogar**, os controles de quem está jogando aparecem primeiro.
+
+### 🎓 Tutorial da primeira vez
+
+Quem abre o jogo pela primeira vez **neste aparelho** (sem precisar de conta: o que conta é o navegador) ganha um tutorial jogando, no jardim de verdade, um passo por vez:
+
+| # | Passo | Como se cumpre |
+|---|---|---|
+| 1 | 👀 Olhe em volta | Girar a câmera um pouco |
+| 2 | 🧭 Ande pelo jardim | Andar uns passos |
+| 3 | 💨 Corra | Correr um pouquinho |
+| 4 | ⬆️ Pule | Pular uma vez |
+| 5 | ✋ Agarre a sua bola | Agarrar (um marcador "Sua bola" aponta pra ela se estiver longe) |
+| 6 | 🟤 Faça a bola crescer | Chegar a 3 cm (setinhas apontam os montinhos mais perto e a barrinha mostra "2,4 / 3,0 cm") |
+| 7 | 🕳️ Enterre na toca | Seguir a bandeirinha e enterrar |
+| 8 | 🍽️ Coma o que enterrou | Abrir a toca com a tecla/botão (o botão da toca pulsa) |
+
+- 🎯 Cada passo mostra **a tecla ou o botão do dispositivo em uso** (e troca na hora se você pegar outro); no celular, o botão da tela que o passo usa **pulsa**.
+- ✅ Cumpriu: o ícone vira um check verde, toca um "plim" (e vibra no controle) e vem o próximo. No fim, "Tudo pronto!".
+- 🆘 Bola ficou longe? O cartão lembra de trazer ela de volta (`R` / `Y` / seta circular).
+- ⏭️ **Pular:** pause (`Esc`, `P`, `Start`) e toque em **Pular tutorial**; no celular tem um botão **Pular** no próprio cartão.
+- 🔁 **Refazer:** em **Como jogar → Jogar o tutorial**.
+- 💾 Parou no meio (fechou a aba)? Volta do passo em que estava. Quem **já jogava antes** (tem progresso no save) não vê o tutorial sozinho; e se entrar numa conta que já tem progresso no meio do tutorial, ele sai de cena.
+- 🎁 Quem está chegando agora não vê o aviso "Chegou a Feirinha! O que você já tinha virou presente" (é o aviso de quem jogava antes das moedas).
 
 ### 🟤 A mecânica
 - **Empurrar:** chega perto da bola e segura `E`. O besouro vira de costas, apoia a cabeça no chão e empurra com as patas traseiras, de ré, igualzinho ao rola-bosta de verdade. Você só aponta a direção.
@@ -467,8 +493,8 @@ src/
 │   └── unlocks.ts          # raridade, preço e regra de liberação (conquista, nível, Feirinha, passe ou baú)
 ├── core/
 │   ├── Physics.ts          # mundo Rapier, passo fixo 60 Hz, grupos de colisão
-│   ├── Input.ts            # teclado + mouse (pointer lock) + toque + controle; último dispositivo usado
-│   ├── GamepadInput.ts     # Gamepad API: analógicos, gatilhos, menu, vibração, Xbox x PlayStation
+│   ├── Input.ts            # teclado + mouse (pointer lock) + toque + controle; dispositivo em uso (com filtro de ruído), segurar/alternar
+│   ├── GamepadInput.ts     # Gamepad API: mapeamento, zonas mortas e curvas, menu, vibração, Xbox / PS4 / PS5 / Switch
 │   ├── settings.ts         # configurações salvas e validadas, predefinições de qualidade
 │   ├── device.ts           # perfis de qualidade (PC x celular)
 │   ├── save.ts             # progresso no localStorage (recorde, XP, despensa, catálogo, conquistas, visual), validado (`parseSave` serve pra nuvem também)
@@ -567,9 +593,16 @@ src/
 │   ├── storage.ts          # dono do save local, revisão e fila (localStorage, validado)
 │   ├── nicknames.ts        # formato do apelido e sugestões sorteadas (pt/en)
 │   └── authErrors.ts       # erro do Supabase → mensagem que a interface sabe explicar
+├── tutorial/               # tutorial da primeira vez (sem DOM nem física)
+│   ├── steps.ts            # os 8 passos, textos por dispositivo e metas
+│   ├── Tutorial.ts         # passo atual, progresso, "feito!", cartão final (o jogo conta o que acontece)
+│   ├── TutorialGuide.ts    # ponte com o jogo: marcadores no mundo (a sua bola, os montinhos) + cartão
+│   └── storage.ts          # onde parou, guardado no aparelho (quem já jogava fica como "feito")
 ├── i18n/                   # dicionários pt-BR/en tipados + detecção do idioma do navegador
 └── ui/
-    ├── Hud.ts              # HUD em jogo, dicas, marcador da toca, resultado, toque
+    ├── Hud.ts              # HUD em jogo, dicas, marcador da toca, resultado, toque, marcadores do tutorial
+    ├── prompts.ts          # "aperte X": a tecla/botão de cada ação em cada dispositivo (todas as dicas passam aqui)
+    ├── TutorialCard.ts     # cartão do passo do tutorial (ícone, texto com a tecla certa, barrinha, pular)
     ├── RoundPanel.ts       # nível, pedidos (recolhíveis) e poderes da rodada no HUD
     ├── PerkPicker.ts       # as cartas de "escolha um poder" (no online: por cima do jogo, sem congelar)
     ├── OnlineSheet.ts      # placa "Jogar online": convites, procurar partida, amigos, criar sala, entrar com código; o lobby (modo, tempo, times, chamar amigos)
@@ -610,7 +643,8 @@ src/
     ├── styles.css          # design tokens + HUD
     ├── menu.css            # o menu "madrugada → amanhecer"
     ├── online.css          # chip da conta, placa da conta, ranking e a janelinha do apelido
-    └── economy.css         # carteira, Feirinha, passe, cerimônia do baú e boas-vindas
+    ├── economy.css         # carteira, Feirinha, passe, cerimônia do baú e boas-vindas
+    └── tutorial.css        # cartão e marcadores do tutorial, botões do controle coloridos, "Jogar o tutorial"
 ```
 
 ---

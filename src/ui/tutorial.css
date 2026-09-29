@@ -1,0 +1,567 @@
+/* ==========================================================================
+   Tutorial da primeira vez, botões do controle nas dicas e ajuda de controles
+   ========================================================================== */
+
+/* --- Cartão do passo (canto de cima, à direita, embaixo dos botões do HUD) --- */
+.tutor {
+  --tutor-leaf: #4f9a3a;
+  position: absolute;
+  z-index: 2;
+  top: calc(max(var(--space-4), env(safe-area-inset-top)) + 60px);
+  right: max(var(--space-4), env(safe-area-inset-right));
+  width: min(330px, calc(100% - 2 * var(--space-4)));
+  padding: var(--space-3) var(--space-4) var(--space-3);
+  border-radius: 22px;
+  background: linear-gradient(180deg, var(--color-cream) 0%, var(--color-cream-2) 100%);
+  color: var(--color-ink);
+  box-shadow: var(--shadow-clay), var(--inner-highlight);
+  pointer-events: none;
+  transition: box-shadow var(--dur-med) var(--ease-out);
+}
+.tutor[hidden] {
+  display: none;
+}
+.tutor.is-entering {
+  animation: tutor-in var(--dur-slow) var(--ease-spring);
+}
+.tutor.is-done {
+  box-shadow: 0 0 0 3px var(--tutor-leaf), var(--shadow-clay), var(--inner-highlight);
+}
+
+.tutor__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.tutor__eyebrow {
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-ink-soft);
+}
+.tutor__dots {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.tutor__dots li {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: rgba(58, 42, 34, 0.18);
+  transition:
+    width var(--dur-med) var(--ease-out),
+    background-color var(--dur-med) var(--ease-out);
+}
+.tutor__dots li.is-past {
+  background: var(--tutor-leaf);
+}
+.tutor__dots li.is-current {
+  width: 16px;
+  background: var(--color-accent);
+}
+
+.tutor__main {
+  display: grid;
+  grid-template-columns: 44px 1fr;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+}
+.tutor__icon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: linear-gradient(180deg, #ffc462 0%, var(--color-accent) 100%);
+  color: #3a2208;
+  box-shadow: 0 3px 0 var(--color-accent-deep), inset 0 2px 0 rgba(255, 255, 255, 0.5);
+  transition: background-color var(--dur-med) var(--ease-out);
+}
+.tutor__icon svg {
+  width: 24px;
+  height: 24px;
+}
+.tutor.is-done .tutor__icon {
+  background: var(--tutor-leaf);
+  color: #fff;
+  box-shadow: 0 3px 0 #356b27, inset 0 2px 0 rgba(255, 255, 255, 0.35);
+  animation: tutor-check var(--dur-slow) var(--ease-spring);
+}
+.tutor__title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 19px;
+  font-weight: 900;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+}
+.tutor__body {
+  margin: 3px 0 0;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.5;
+  color: var(--color-ink-soft);
+}
+.tutor__body .keycap,
+.tutor__tip .keycap,
+.tutor__foot .keycap {
+  height: 24px;
+  min-width: 24px;
+  margin: 0 2px;
+  font-size: 12px;
+  vertical-align: middle;
+}
+
+.tutor__bar {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+.tutor__bar[hidden] {
+  display: none;
+}
+.tutor__track {
+  height: 8px;
+  border-radius: var(--radius-pill);
+  background: rgba(58, 42, 34, 0.12);
+  overflow: hidden;
+}
+.tutor__fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--color-accent) 0%, var(--tutor-leaf) 100%);
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform 160ms var(--ease-out);
+}
+.tutor__cm {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--color-dung);
+  font-variant-numeric: tabular-nums;
+}
+.tutor__cm:empty {
+  display: none;
+}
+
+.tutor__tip {
+  margin: var(--space-2) 0 0;
+  padding: 6px 10px;
+  border-radius: 12px;
+  background: #ffe2c2;
+  color: #7a3b12;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.4;
+}
+.tutor__tip[hidden] {
+  display: none;
+}
+
+.tutor__foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  margin-top: var(--space-2);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-ink-soft);
+}
+.tutor__foot[hidden] {
+  display: none;
+}
+.tutor__skip {
+  display: none;
+  min-height: 36px;
+  padding: 0 var(--space-4);
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: rgba(58, 42, 34, 0.08);
+  color: var(--color-ink-soft);
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+  pointer-events: auto;
+  touch-action: manipulation;
+}
+.tutor__skip:focus-visible {
+  outline: 3px solid var(--color-accent);
+  outline-offset: 2px;
+}
+.tutor__foot.is-touch .tutor__skip {
+  display: inline-flex;
+  align-items: center;
+}
+.tutor__foot.is-touch .tutor__skip-hint {
+  display: none;
+}
+
+.tutor.is-finish .tutor__icon {
+  background: linear-gradient(180deg, #ffd978 0%, var(--color-accent) 100%);
+  animation: tutor-check var(--dur-slow) var(--ease-spring);
+}
+
+@keyframes tutor-in {
+  0% {
+    opacity: 0;
+    transform: translateX(24px) scale(0.96);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes tutor-check {
+  0% {
+    transform: scale(0.6) rotate(-12deg);
+  }
+  100% {
+    transform: none;
+  }
+}
+
+/*
+ * Toque: a coluna de botões (correr, agarrar, pular) desce pela direita — o cartão fica à
+ * esquerda dela. A dica e o aviso, que no toque moram no alto do meio, vão pra esquerda
+ * enquanto o cartão está na tela (senão passam por baixo dele).
+ */
+.is-touch .tutor {
+  --tutor-w: min(300px, 40vw);
+  right: calc(max(var(--space-5), env(safe-area-inset-right)) + 76px + var(--space-3));
+  width: var(--tutor-w);
+}
+/* No toque o "Pular" sobe pro cabeçalho (no lugar das bolinhas): o cartão fica mais baixo. */
+.is-touch .tutor__dots {
+  display: none;
+}
+.is-touch .tutor__head {
+  padding-right: 64px;
+}
+.tutor__foot.is-touch {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  margin: 0;
+}
+.tutor__foot.is-touch .tutor__skip {
+  min-height: 32px;
+  padding: 0 var(--space-3);
+  font-size: 12px;
+}
+/* A dica (e o aviso) ficam no meio do espaço livre à esquerda do cartão. */
+.is-touch .hud:has(.tutor:not([hidden])) .hint,
+.is-touch .hud:has(.tutor:not([hidden])) .toast {
+  left: calc((100% - 108px - min(300px, 40vw)) / 2);
+  max-width: calc(100% - 140px - min(300px, 40vw));
+}
+.is-touch .hud:has(.tutor:not([hidden])) .toast {
+  white-space: normal;
+  text-align: center;
+}
+/* Celular em pé: o cartão ocupa a largura toda, embaixo da barra de cima; dica e aviso descem. */
+@media (orientation: portrait) and (max-width: 640px) {
+  .is-touch .tutor {
+    left: max(var(--space-4), env(safe-area-inset-left));
+    right: max(var(--space-4), env(safe-area-inset-right));
+    width: auto;
+    top: calc(max(var(--space-4), env(safe-area-inset-top)) + 146px);
+  }
+  .is-touch .hud:has(.tutor:not([hidden])) .hint,
+  .is-touch .hud:has(.tutor:not([hidden])) .toast {
+    left: 50%;
+    max-width: calc(100% - 2 * var(--space-4));
+    top: calc(max(var(--space-4), env(safe-area-inset-top)) + 300px);
+  }
+  .is-touch .hud:has(.tutor:not([hidden])) .toast {
+    top: calc(max(var(--space-4), env(safe-area-inset-top)) + 440px);
+  }
+}
+@media (max-height: 520px) {
+  .tutor {
+    top: calc(max(var(--space-2), env(safe-area-inset-top)) + 54px);
+    width: min(280px, 44vw);
+    padding: var(--space-2) var(--space-3);
+  }
+  .tutor__dots {
+    display: none;
+  }
+  .tutor__main {
+    grid-template-columns: 34px 1fr;
+    gap: var(--space-2);
+    margin-top: 4px;
+  }
+  .tutor__icon {
+    width: 34px;
+    height: 34px;
+  }
+  .tutor__icon svg {
+    width: 19px;
+    height: 19px;
+  }
+  .tutor__title {
+    font-size: 16px;
+  }
+  .tutor__body {
+    font-size: 12.5px;
+    line-height: 1.4;
+  }
+  .tutor__bar {
+    margin-top: var(--space-2);
+  }
+  /* Celular deitado: a dica desce pra baixo do cartão da bola e dos pedidos; o aviso vai pro pé da tela, entre o analógico e os botões. */
+  .is-touch .hud:has(.tutor:not([hidden])) .hint {
+    top: calc(max(var(--space-2), env(safe-area-inset-top)) + 150px);
+  }
+  .is-touch .hud:has(.tutor:not([hidden])) .toast {
+    top: auto;
+    bottom: max(var(--space-5), env(safe-area-inset-bottom));
+    left: 50%;
+    max-width: calc(100% - 2 * (var(--space-5) + 140px + var(--space-3)));
+  }
+}
+
+/* No toque, o botão da tela que o passo usa pulsa (e a toca, no passo de comer, em qualquer aparelho). */
+.hud[data-tutor='grab'] [data-touch-grab],
+.hud[data-tutor='jump'] [data-touch-jump],
+.hud[data-tutor='run'] [data-touch-run],
+.hud[data-tutor='move'] .joystick,
+.hud[data-tutor='eat'] [data-burrow-open] {
+  animation: tutor-pulse 1.5s var(--ease-out) infinite;
+}
+@keyframes tutor-pulse {
+  0%,
+  100% {
+    box-shadow: var(--shadow-clay), 0 0 0 0 rgba(244, 167, 59, 0.7);
+  }
+  60% {
+    box-shadow: var(--shadow-clay), 0 0 0 14px rgba(244, 167, 59, 0);
+  }
+}
+
+/* --- Marcadores do tutorial: a sua bola e os montinhos pra crescer --- */
+.tutor-marker {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  margin: -15px 0 0 -15px;
+  opacity: 0;
+  transition: opacity var(--dur-med) var(--ease-out);
+  will-change: transform;
+}
+.tutor-marker.is-visible {
+  opacity: 1;
+}
+.tutor-marker__arrow {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--color-accent);
+  color: #3a2208;
+  box-shadow: var(--shadow-clay), var(--inner-highlight);
+}
+.tutor-marker__arrow svg {
+  width: 18px;
+  height: 18px;
+}
+.tutor-marker[data-kind='pile'] .tutor-marker__arrow {
+  background: var(--color-cream);
+  color: var(--color-dung);
+}
+.tutor-marker.is-visible:not(.is-edge) {
+  animation: tutor-bob 1.4s var(--ease-out) infinite;
+}
+.tutor-marker__label {
+  padding: 3px var(--space-2);
+  border-radius: var(--radius-pill);
+  background: rgba(58, 42, 34, 0.78);
+  color: var(--color-cream);
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.tutor-marker__label:empty {
+  display: none;
+}
+@keyframes tutor-bob {
+  0%,
+  100% {
+    translate: 0 0;
+  }
+  50% {
+    translate: 0 -5px;
+  }
+}
+
+/* --- Botões do controle como "tecla": cor e forma de cada família --- */
+.padcap--stick {
+  border-radius: 50%;
+  min-width: 28px;
+  padding: 0;
+  box-shadow: inset 0 0 0 2px currentColor, 0 2px 0 rgba(15, 12, 40, 0.3);
+}
+.padcap--dpad {
+  border-radius: 7px;
+}
+.padcap--shoulder {
+  border-radius: 12px 12px 7px 7px;
+}
+/* Xbox: letra branca no botão colorido (tons escurecidos pra ler bem). */
+.padcap--face[data-style='xbox'][data-btn='a'] {
+  background: #2e8b3a;
+  color: #fff;
+}
+.padcap--face[data-style='xbox'][data-btn='b'] {
+  background: #c9352b;
+  color: #fff;
+}
+.padcap--face[data-style='xbox'][data-btn='x'] {
+  background: #2f6fd0;
+  color: #fff;
+}
+.padcap--face[data-style='xbox'][data-btn='y'] {
+  background: #e8b21f;
+  color: #3a2208;
+}
+/* PlayStation: o símbolo colorido no botão claro. */
+.padcap--face[data-style^='ps'] {
+  font-size: 15px;
+}
+.padcap--face[data-style^='ps'][data-btn='a'] {
+  color: #3b6fd4;
+}
+.padcap--face[data-style^='ps'][data-btn='b'] {
+  color: #d2463b;
+}
+.padcap--face[data-style^='ps'][data-btn='x'] {
+  color: #c25aa4;
+}
+.padcap--face[data-style^='ps'][data-btn='y'] {
+  color: #1f9c85;
+}
+
+/* --- Como jogar: tutorial de novo e os controles de quem está jogando primeiro --- */
+.help__tutorial {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  margin: var(--space-2) 0 var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border: 0;
+  border-radius: 18px;
+  background: linear-gradient(180deg, #ffe7b8 0%, #ffd58a 100%);
+  color: #3a2208;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  box-shadow: 0 4px 0 var(--dawn-sun-deep), inset 0 2px 0 rgba(255, 255, 255, 0.6);
+  transition:
+    transform var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out);
+}
+.help__tutorial:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+.help__tutorial:active:not(:disabled) {
+  transform: translateY(3px);
+  box-shadow: 0 1px 0 var(--dawn-sun-deep), inset 0 2px 0 rgba(255, 255, 255, 0.5);
+}
+.help__tutorial:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.help__tutorial:focus-visible {
+  outline: 3px solid var(--dawn-indigo);
+  outline-offset: 3px;
+}
+.help__tutorial-icon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--dawn-sun);
+  box-shadow: 0 3px 0 var(--dawn-sun-deep);
+}
+.help__tutorial-icon svg {
+  width: 20px;
+  height: 20px;
+}
+.help__tutorial-text {
+  display: grid;
+  gap: 1px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #6b4a1e;
+}
+.help__tutorial-text strong {
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 900;
+  color: #3a2208;
+}
+.help__controls {
+  display: flex;
+  flex-direction: column;
+}
+html[data-input='gamepad'] .help__device--pad {
+  order: -1;
+}
+
+/* Pausa com o tutorial na tela: "Pular tutorial" logo embaixo do Continuar. */
+.menu__skip-tutorial {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  margin: calc(-1 * var(--space-1)) 0 var(--space-3);
+  padding: 8px 18px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: rgba(255, 243, 226, 0.12);
+  color: var(--dawn-peach);
+  font: inherit;
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-out);
+}
+.menu__skip-tutorial[hidden] {
+  display: none;
+}
+.menu__skip-tutorial:hover {
+  background: rgba(255, 243, 226, 0.2);
+}
+.menu__skip-tutorial:focus-visible {
+  outline: 3px solid var(--dawn-sun);
+  outline-offset: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tutor.is-entering,
+  .tutor.is-done .tutor__icon,
+  .tutor-marker.is-visible:not(.is-edge),
+  .hud[data-tutor] [data-touch-grab],
+  .hud[data-tutor] [data-touch-jump],
+  .hud[data-tutor] [data-touch-run],
+  .hud[data-tutor] .joystick,
+  .hud[data-tutor] [data-burrow-open] {
+    animation: none;
+  }
+}

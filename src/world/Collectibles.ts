@@ -643,6 +643,24 @@ export class Collectibles {
     return out;
   }
 
+  /**
+   * Os `count` montinhos inteiros mais perto de um ponto, a partir de `minDistance`
+   * (tutorial: pra onde levar a bola). `out` é reaproveitado.
+   */
+  nearestPiles(near: THREE.Vector3, count: number, out: THREE.Vector3[], minDistance = 0): THREE.Vector3[] {
+    out.length = 0;
+    const found: Array<{ p: THREE.Vector3; d: number }> = [];
+    for (const pile of this.piles) {
+      if (pile.state !== 'idle') continue;
+      const p = pile.mesh.position;
+      const d = Math.hypot(p.x - near.x, p.z - near.z);
+      if (d >= minDistance) found.push({ p, d });
+    }
+    found.sort((a, b) => a.d - b.d);
+    for (let i = 0; i < Math.min(count, found.length); i++) out.push(found[i].p);
+    return out;
+  }
+
   /** Poder Faro: alguns montinhos comuns, sorteados, viram fresquinhos na hora. Devolve quais (pro online). */
   promoteFresh(count: number): number[] {
     const plain = this.piles.map((pile, i) => ({ pile, i })).filter(({ pile }) => pile.state === 'idle' && !pile.fresh);

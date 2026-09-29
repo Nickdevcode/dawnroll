@@ -1,5 +1,6 @@
 import { isTouchDevice, quality as deviceProfile } from './device';
 import type { LanguagePreference } from '../i18n';
+import type { HoldMode } from './Input';
 
 /**
  * Configurações do jogador (gráficos, áudio, controles, idioma), salvas no
@@ -34,15 +35,24 @@ export interface GameSettings extends GraphicsSettings {
   musicVolume: number;
   effectsVolume: number;
   ambienceVolume: number;
-  /** Multiplicador da velocidade da câmera (0,4 a 2). */
+  /** Multiplicador da câmera no mouse e no arrasto do toque (0,4 a 2). */
   mouseSensitivity: number;
+  /** Multiplicador da câmera no analógico do controle (0,4 a 2). */
+  stickSensitivity: number;
   invertY: boolean;
   cameraShake: boolean;
+  /** No controle e no toque, a câmera volta sozinha pra trás do besouro quando ninguém mexe nela. */
+  autoCamera: boolean;
+  /** Agarrar a bola: segurar o botão ou apertar pra ligar/desligar (acessibilidade; o toque é sempre alternância). */
+  grabMode: HoldMode;
+  /** Correr: segurar ou apertar pra ligar/desligar. */
+  runMode: HoldMode;
   /** Vibração do controle (quando o navegador e o controle suportam). */
   gamepadVibration: boolean;
 }
 
 export const QUALITY_PRESETS: readonly QualityPreset[] = ['auto', 'low', 'medium', 'high', 'ultra'];
+export const HOLD_MODES: readonly HoldMode[] = ['hold', 'toggle'];
 const GRAPHICS_KEYS: ReadonlyArray<keyof GraphicsSettings> = ['resolution', 'shadows', 'ambientOcclusion', 'depthOfField', 'bloom', 'grassDensity'];
 
 /** Densidade de pixels nativa da tela, com teto (acima de 2x o ganho não paga o custo). */
@@ -90,8 +100,12 @@ function defaults(): GameSettings {
     effectsVolume: 1,
     ambienceVolume: 0.8,
     mouseSensitivity: 1,
+    stickSensitivity: 1,
     invertY: false,
     cameraShake: true,
+    autoCamera: true,
+    grabMode: 'hold',
+    runMode: 'hold',
     gamepadVibration: true,
   };
 }
@@ -123,8 +137,12 @@ function sanitize(raw: unknown): GameSettings {
   if (inRange(r.effectsVolume, 0, 1)) out.effectsVolume = r.effectsVolume;
   if (inRange(r.ambienceVolume, 0, 1)) out.ambienceVolume = r.ambienceVolume;
   if (inRange(r.mouseSensitivity, 0.4, 2)) out.mouseSensitivity = r.mouseSensitivity;
+  if (inRange(r.stickSensitivity, 0.4, 2)) out.stickSensitivity = r.stickSensitivity;
   if (isBool(r.invertY)) out.invertY = r.invertY;
   if (isBool(r.cameraShake)) out.cameraShake = r.cameraShake;
+  if (isBool(r.autoCamera)) out.autoCamera = r.autoCamera;
+  if (oneOf(r.grabMode, HOLD_MODES)) out.grabMode = r.grabMode;
+  if (oneOf(r.runMode, HOLD_MODES)) out.runMode = r.runMode;
   if (isBool(r.gamepadVibration)) out.gamepadVibration = r.gamepadVibration;
   // Predefinição salva manda nos gráficos (a tela pode ter mudado de densidade desde a última vez).
   if (out.quality !== 'custom') Object.assign(out, presetGraphics(out.quality));

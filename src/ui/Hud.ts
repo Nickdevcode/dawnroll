@@ -1,5 +1,5 @@
 import type { Input, InputDevice } from '../core/Input';
-import { PAD_LABELS, type MenuAction, type PadStyle } from '../core/GamepadInput';
+import type { MenuAction, PadStyle } from '../core/GamepadInput';
 import { isTouchDevice } from '../core/device';
 import type { SaveData } from '../core/save';
 import { formatCm, onLocaleChange, t, tn, type MessageKey } from '../i18n';
@@ -17,6 +17,9 @@ import { OnlineHud } from './OnlineHud';
 import type { EmoteWheel } from './EmoteWheel';
 import type { NameplateSource, OnlinePlay } from '../net/OnlinePlay';
 import type * as THREE from 'three';
+import { actionLabel, withCaps, type PromptContext } from './prompts';
+import { TutorialCard, type HoldModes } from './TutorialCard';
+import type { TutorialView } from '../tutorial/Tutorial';
 
 /** Marcos de tamanho (cm) que disparam um aviso comemorativo; o nome vem do dicionário. */
 const MILESTONES: ReadonlyArray<[number, MessageKey]> = [
@@ -78,6 +81,11 @@ export interface RoundResult {
 
 /** Marcadores do Faro (montinhos fresquinhos) desenhados de uma vez. */
 const MAX_SCENT_MARKERS = 4;
+/** Marcadores do tutorial (a sua bola, ou os montinhos mais perto). */
+const MAX_TUTOR_MARKERS = 3;
+
+/** O que o tutorial aponta no mundo. */
+export type TutorMarkerKind = 'ball' | 'pile';
 
 /**
  * Interface em jogo: carregando, cartão da bola, dicas, avisos, marcador da toca,
@@ -105,6 +113,10 @@ export class Hud {
   private readonly burrowButton: HTMLButtonElement;
   private readonly burrowBadge: HTMLElement;
   private readonly scentMarkers: HTMLElement[] = [];
+  private readonly tutorMarkers: HTMLElement[] = [];
+  private tutorMarkerKind: TutorMarkerKind | null = null;
+  /** Cartão do tutorial da primeira vez. */
+  readonly tutorial: TutorialCard;
   private readonly ability: HTMLButtonElement;
   private readonly abilityRing: SVGCircleElement;
   private readonly abilityKey: HTMLElement;
@@ -136,6 +148,8 @@ export class Hud {
   private device: InputDevice = isTouchDevice ? 'touch' : 'keyboard';
   private padStyle: PadStyle = 'xbox';
   private markerState: BurrowMarkerState | null = null;
+  /** Agarrar/correr segurando ou alternando (as dicas dizem "segure" ou "aperte"). */
+  private holdModes: HoldModes = { grab: 'hold', run: 'hold' };
 
   readonly isTouch = isTouchDevice;
 
@@ -193,6 +207,15 @@ export class Hud {
       scentLayer.append(marker);
       this.scentMarkers.push(marker);
     }
+    const tutorLayer = $('[data-tutor-markers]');
+    for (let i = 0; i < MAX_TUTOR_MARKERS; i++) {
+      const marker = document.createElement('div');
+      marker.className = 'tutor-marker';
+      marker.innerHTML = `<div class="tutor-marker__arrow">${Icons.pointer}</div><div class="tutor-marker__label"></div>`;
+      tutorLayer.append(marker);
+      this.tutorMarkers.push(marker);
+    }
+    this.tutorial = new TutorialCard(this.hud);
     this.root.querySelectorAll<HTMLElement>('[data-t]').forEach((el) => this.texts.push([el, el.dataset.t as MessageKey]));
     this.root.querySelectorAll<HTMLElement>('[data-t-aria]').forEach((el) => this.texts.push([el, el.dataset.tAria as MessageKey, 'aria-label']));
 
@@ -349,15 +372,16 @@ export class Hud {
     this.currentHint = key;
     let html = '';
     switch (kind) {
-      case 'grab':
-        if (this.device === 'gamepad') html = escapeHtml(t('hint.grab.gamepad')).replace('{button}', this.padCap());
-        else if (this.device === 'touch') html = escapeHtml(t('hint.grab.touch'));
-        else html = escapeHtml(t('hint.grab.desktop')).replace('{key}', '<span class="keycap">E</span>');
+      case 'grab': {
+        const key: MessageKey = this.holdModes.grab === 'toggle' ? 'hint.grab.toggle' : this.device === 'gamepad' ? 'hint.grab.gamepad' : 'hint.grab.desktop';
+        html = this.device === 'touch' ? escapeHtml(t('hint.grab.touch')) : withCaps(t(key), 'grab', this.ctx);
         break;
-      case 'pushing':
-        if (this.device === 'gamepad') html = escapeHtml(t('hint.pushing.gamepad')).replace('{button}', this.padCap());
-        else html = escapeHtml(t(this.device === 'touch' ? 'hint.pushing.touch' : 'hint.pushing.desktop'));
+      }
+      case 'pushing': {
+        const key: MessageKey = this.holdModes.grab === 'toggle' ? 'hint.pushing.toggle' : this.device === 'gamepad' ? 'hint.pushing.gamepad' : 'hint.pushing.desktop';
+        html = this.device === 'touch' ? escapeHtml(t('hint.pushing.touch')) : withCaps(t(key), 'grab', this.ctx);
         break;
+      }
       case 'tooSmall':
         html = escapeHtml(t('hint.tooSmall', { cm: '{cm}' })).replace('{cm}', `<strong>${formatCm(value)}</strong>`);
         break;
@@ -368,9 +392,8 @@ export class Hud {
         html = escapeHtml(t('hint.dissolving'));
         break;
       case 'ability':
-        if (this.device === 'gamepad') html = escapeHtml(t('hint.ability.gamepad', { button: '{button}' })).replace('{button}', `<span class="keycap padcap">${escapeHtml(PAD_LABELS[this.padStyle].ability)}</span>`);
-        else if (this.device === 'touch') html = escapeHtml(t('hint.ability.touch'));
-        else html = escapeHtml(t('hint.ability.desktop', { key: '{key}' })).replace('{key}', '<span class="keycap">Q</span>');
+        if (this.device === 'touch') html = escapeHtml(t('hint.ability.touch'));
+        else html = withCaps(t('hint.ability'), 'ability', this.ctx);
         break;
       case 'abilityFar':
         html = escapeHtml(t('hint.ability.far'));
@@ -388,13 +411,12 @@ export class Hud {
         html = escapeHtml(t('hint.coPush', { name: label }));
         break;
       case 'steal':
-        html = this.withGrabKey(t('hint.steal', { name: label, key: '{key}' }));
+        html = withCaps(t('hint.steal', { name: label, key: '{key}' }), 'grab', this.ctx);
         break;
       case 'merge':
       case 'mergeOwn': {
         const text = kind === 'merge' ? t('hint.merge', { name: label, key: '{key}' }) : t('hint.mergeOwn', { key: '{key}' });
-        const cap = this.device === 'gamepad' ? '<span class="keycap padcap">←</span>' : this.device === 'touch' ? '' : '<span class="keycap">F</span>';
-        html = escapeHtml(this.device === 'touch' ? text.replace(' {key}', '').replace('{key}', '') : text).replace('{key}', cap);
+        html = withCaps(text, 'merge', this.ctx);
         // Segurando: a barrinha enche até fundir.
         if (value > 0) html += `<span class="hint-progress" style="--p:${Math.min(1, value).toFixed(3)}"></span>`;
         break;
@@ -420,6 +442,56 @@ export class Hud {
     this.setHint(this.hintState.kind, this.hintState.value, this.hintState.label);
     this.refreshAbilityKey();
     this.perkPicker.setDevice(device, padStyle);
+    // O cartão do enterro ainda na tela: "aperte T" vira o botão do controle (e vice-versa).
+    if (this.lastResult && this.resultTimer > 0) this.fillResult(this.lastResult);
+  }
+
+  /** Configuração de agarrar/correr mudou: as dicas refazem o verbo. */
+  setHoldModes(modes: HoldModes): void {
+    if (modes.grab === this.holdModes.grab && modes.run === this.holdModes.run) return;
+    this.holdModes = { ...modes };
+    this.currentHint = '';
+    this.setHint(this.hintState.kind, this.hintState.value, this.hintState.label);
+  }
+
+  /** Dispositivo em uso + estilo do controle (pras dicas de botão). */
+  get ctx(): PromptContext {
+    return { device: this.device, style: this.padStyle };
+  }
+
+  /**
+   * Tutorial: o cartão do passo e, no toque, o botão da tela que o passo usa pulsa
+   * (`data-tutor` no HUD). `null` esconde.
+   */
+  setTutorial(view: TutorialView | null): void {
+    this.tutorial.render(view, this.ctx, this.holdModes);
+    const focus = view?.kind === 'step' && !view.done ? view.step : '';
+    if ((this.hud.dataset.tutor ?? '') !== focus) this.hud.dataset.tutor = focus;
+  }
+
+  /** Marcadores do tutorial: a sua bola ("Sua bola") ou os montinhos mais perto. Lista vazia esconde. */
+  setTutorMarkers(points: readonly ProjectedPoint[], kind: TutorMarkerKind | null): void {
+    const margins = this.markerMargins();
+    if (kind !== this.tutorMarkerKind) {
+      this.tutorMarkerKind = kind;
+      const label = kind === 'ball' ? t('tutorial.marker.ball') : '';
+      this.tutorMarkers.forEach((el, i) => {
+        el.dataset.kind = kind ?? '';
+        (el.lastElementChild as HTMLElement).textContent = i === 0 ? label : '';
+      });
+    }
+    this.tutorMarkers.forEach((el, i) => {
+      const point = points[i];
+      if (!point) {
+        el.classList.remove('is-visible');
+        return;
+      }
+      const { x, y, angle, onScreen } = placeMarker(point, margins, window.innerWidth, window.innerHeight);
+      el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)`;
+      (el.firstElementChild as HTMLElement).style.transform = `rotate(${angle.toFixed(1)}deg)`;
+      el.classList.add('is-visible');
+      el.classList.toggle('is-edge', !onScreen);
+    });
   }
 
   /**
@@ -445,9 +517,9 @@ export class Hud {
     this.ability.title = `${t('hud.ability')} · ${state}`;
   }
 
-  /** A tecla escrita no botão do poder acompanha o dispositivo (Q, RS/R3; no toque, nada). */
+  /** A tecla escrita no botão do poder acompanha o dispositivo (Q, X/□; no toque, nada). */
   private refreshAbilityKey(): void {
-    const label = this.device === 'gamepad' ? PAD_LABELS[this.padStyle].ability : this.device === 'touch' ? '' : 'Q';
+    const label = actionLabel('ability', this.ctx);
     if (label === this.abilityKeyLabel) return;
     this.abilityKeyLabel = label;
     this.abilityKey.textContent = label;
@@ -584,18 +656,6 @@ export class Hud {
     return this.isTouch ? { top: 150, bottom: 190, side: 70 } : { top: 120, bottom: 70, side: 56 };
   }
 
-  /** Texto com `{key}` trocado pela tecla/botão de agarrar do dispositivo em uso (no toque, sem tecla). */
-  private withGrabKey(text: string): string {
-    if (this.device === 'touch') return escapeHtml(text.replace(' {key}', '').replace('{key}', ''));
-    const cap = this.device === 'gamepad' ? this.padCap() : '<span class="keycap">E</span>';
-    return escapeHtml(text).replace('{key}', cap);
-  }
-
-  /** Botão de segurar a bola (RT / R2) como "tecla" na dica. */
-  private padCap(): string {
-    return `<span class="keycap padcap">${escapeHtml(PAD_LABELS[this.padStyle].rt)}</span>`;
-  }
-
   private fillResult(result: RoundResult): void {
     const $ = (sel: string) => this.result.querySelector(sel) as HTMLElement;
     $('[data-result-value]').textContent = formatCm(Math.round(result.diameterCm * 10) / 10);
@@ -633,10 +693,7 @@ export class Hud {
       lines.push([GameIcons.catalog, escapeHtml(t('result.new', { names: names.join(', ') + more }))]);
     }
     if (outcome.stored) {
-      let hint: string;
-      if (this.device === 'gamepad') hint = escapeHtml(t('result.burrow.gamepad'));
-      else if (this.device === 'touch') hint = escapeHtml(t('result.burrow.touch'));
-      else hint = escapeHtml(t('result.burrow.desktop', { key: '{key}' })).replace('{key}', '<span class="keycap">T</span>');
+      const hint = this.device === 'touch' ? escapeHtml(t('result.burrow.touch')) : withCaps(t('result.burrow'), 'burrow', this.ctx);
       lines.push([GameIcons.burrow, hint]);
     }
     return lines;
@@ -754,6 +811,7 @@ export class Hud {
     return /* html */ `
       <div class="hud" data-hud>
         <div class="scent-layer" data-scent aria-hidden="true"></div>
+        <div class="scent-layer" data-tutor-markers aria-hidden="true"></div>
         <div class="burrow-marker" data-burrow aria-hidden="true">
           <div class="burrow-marker__arrow" data-burrow-arrow>${Icons.pointer}</div>
           <div class="burrow-marker__label" data-burrow-label></div>

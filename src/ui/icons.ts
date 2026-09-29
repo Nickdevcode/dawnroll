@@ -15,6 +15,8 @@ export const Icons = {
   jump: stroke('<path d="M12 19V6"/><path d="M6 11l6-6 6 6"/>', 2.4),
   recall: stroke('<path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/><circle cx="12" cy="12" r="3"/>'),
   run: stroke('<path d="M5 12h10"/><path d="M11 6l6 6-6 6"/><path d="M19 6v12"/>', 2.4),
+  /** Andar (as quatro direções). */
+  move: stroke('<path d="M12 4v16M4 12h16"/><path d="M9.2 6.8 12 4l2.8 2.8M9.2 17.2 12 20l2.8-2.8M6.8 9.2 4 12l2.8 2.8M17.2 9.2 20 12l-2.8 2.8"/>'),
   trophy: stroke('<path d="M8 4h8v5a4 4 0 0 1-8 0z"/><path d="M8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4"/><path d="M12 13v4M8.5 20h7M10 17h4"/>'),
   /** Seta do marcador da toca (aponta para cima; o HUD gira). */
   pointer: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l7 11h-4.5v7h-5v-7H5z" fill="currentColor"/></svg>`,

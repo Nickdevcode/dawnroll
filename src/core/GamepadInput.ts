@@ -1,25 +1,41 @@
 /**
- * Controle (Gamepad API, mapeamento "standard" — Xbox, PlayStation e a maioria
- * dos genéricos). O navegador não avisa quando um botão muda: o estado é lido
+ * Controle (Gamepad API, mapeamento "standard" — Xbox, PlayStation, Switch Pro e a
+ * maioria dos genéricos). O navegador não avisa quando um botão muda: o estado é lido
  * a cada quadro (`poll`) e as "apertadas" saem da comparação com o quadro anterior.
  *
- * Mapeamento (Xbox / PlayStation):
- *   analógico esquerdo  andar            analógico direito   câmera
- *   A / ✕               pular            RT / R2 (ou X / □)  segurar a bola
- *   LT / L2 (ou B / ○)  correr           Y / △               trazer a bola
- *   LB / RB             zoom             Start / Options     pausar
- *   RS / R3 (ou ↑)      poder de apertar (Equilibrista)
+ * Mapeamento (Xbox · PlayStation), no padrão dos jogos de aventura em 3ª pessoa
+ * (gatilhos pras ações de segurar, botões de face pras de apertar):
+ *   analógico esquerdo  andar (L3: corrida liga/desliga)
+ *   analógico direito   câmera (R3: câmera volta pra trás do besouro)
+ *   A · ✕               pular
+ *   RT · R2             segurar a bola
+ *   LT · L2  (ou B · ○) correr, segurando
+ *   X · □   (ou ↑)      poder de apertar (Equilibrista)
+ *   Y · △               trazer a bola
+ *   LB / RB · L1 / R1   zoom
+ *   View · Create/Share abrir/fechar a toca
+ *   Start · Options     pausar
+ *   direcional ↓ ← →    online: reações, fundir (segurar), entrar no convite
  * No menu: direcional ou analógico navegam, A escolhe, B volta, LB/RB trocam de aba e o
  * analógico direito rola a placa aberta.
  */
 
-export type PadStyle = 'xbox' | 'playstation';
+/** Família do controle: decide o nome/forma de cada botão nas dicas. */
+export type PadStyle = 'xbox' | 'ps4' | 'ps5' | 'nintendo';
 export type MenuAction = 'up' | 'down' | 'left' | 'right' | 'confirm' | 'back' | 'start' | 'prevTab' | 'nextTab';
 
-/** Rótulo de cada botão no estilo do controle (para dicas e ajuda). */
-export const PAD_LABELS: Record<PadStyle, Record<'a' | 'b' | 'x' | 'y' | 'lb' | 'rb' | 'lt' | 'rt' | 'start' | 'ability', string>> = {
-  xbox: { a: 'A', b: 'B', x: 'X', y: 'Y', lb: 'LB', rb: 'RB', lt: 'LT', rt: 'RT', start: 'Start', ability: 'RS' },
-  playstation: { a: '✕', b: '○', x: '□', y: '△', lb: 'L1', rb: 'R1', lt: 'L2', rt: 'R2', start: 'Options', ability: 'R3' },
+/** Botões com nome nas dicas (os do direcional e dos analógicos também). */
+export type PadButton = 'a' | 'b' | 'x' | 'y' | 'lb' | 'rb' | 'lt' | 'rt' | 'view' | 'start' | 'l3' | 'r3' | 'ls' | 'rs' | 'up' | 'down' | 'left' | 'right';
+
+/**
+ * Rótulo de cada botão no estilo do controle. No Switch o botão de baixo se chama B
+ * (a posição manda: o de baixo pula em qualquer controle).
+ */
+export const PAD_LABELS: Record<PadStyle, Record<PadButton, string>> = {
+  xbox: { a: 'A', b: 'B', x: 'X', y: 'Y', lb: 'LB', rb: 'RB', lt: 'LT', rt: 'RT', view: 'View', start: 'Menu', l3: 'L3', r3: 'R3', ls: 'L', rs: 'R', up: '↑', down: '↓', left: '←', right: '→' },
+  ps4: { a: '✕', b: '○', x: '□', y: '△', lb: 'L1', rb: 'R1', lt: 'L2', rt: 'R2', view: 'Share', start: 'Options', l3: 'L3', r3: 'R3', ls: 'L', rs: 'R', up: '↑', down: '↓', left: '←', right: '→' },
+  ps5: { a: '✕', b: '○', x: '□', y: '△', lb: 'L1', rb: 'R1', lt: 'L2', rt: 'R2', view: 'Create', start: 'Options', l3: 'L3', r3: 'R3', ls: 'L', rs: 'R', up: '↑', down: '↓', left: '←', right: '→' },
+  nintendo: { a: 'B', b: 'A', x: 'Y', y: 'X', lb: 'L', rb: 'R', lt: 'ZL', rt: 'ZR', view: '−', start: '+', l3: 'L3', r3: 'R3', ls: 'L', rs: 'R', up: '↑', down: '↓', left: '←', right: '→' },
 };
 
 const enum Button {
@@ -31,7 +47,7 @@ const enum Button {
   RB = 5,
   LT = 6,
   RT = 7,
-  Back = 8,
+  View = 8,
   Start = 9,
   L3 = 10,
   R3 = 11,
@@ -41,10 +57,18 @@ const enum Button {
   Right = 15,
 }
 
-/** Zona morta dos analógicos (controle gasto "anda sozinho" abaixo disso). */
+/** Zona morta interna dos analógicos (controle gasto "anda sozinho" abaixo disso). */
 const DEADZONE = 0.16;
+/** Zona morta externa: analógico gasto nem sempre chega em 1; daqui pra fora já é o máximo. */
+const OUTER_DEADZONE = 0.94;
 /** Gatilho conta como apertado a partir daqui. */
 const TRIGGER = 0.35;
+/**
+ * Analógico conta como "mexeu de propósito" (troca as dicas pro controle) quando passa
+ * daqui. Bem acima da zona morta: controle largado na mesa, com o analógico torto ou
+ * um eixo parado em -1 (mapeamento não padrão), não rouba as dicas de quem está no teclado.
+ */
+const INTENT = 0.5;
 /** Velocidade da câmera no analógico, em "pixels de mouse" por segundo (a câmera converte). */
 const LOOK_SPEED_X = 950;
 const LOOK_SPEED_Y = 560;
@@ -56,13 +80,29 @@ const MENU_STICK = 0.6;
 /** Rolagem da placa pelo analógico direito, em pixels por segundo na ponta. */
 const MENU_SCROLL_SPEED = 900;
 
-/** Zona morta radial + curva quadrática (precisão perto do centro, velocidade na ponta). */
-function stick(x: number, y: number): [number, number] {
+/**
+ * Zona morta radial + resposta. Andar é linear (meia inclinação = meia velocidade, como
+ * nos jogos de plataforma); a câmera usa curva quadrática (precisão perto do centro,
+ * velocidade na ponta).
+ */
+function stick(x: number, y: number, exponent: 1 | 2): [number, number] {
   const len = Math.hypot(x, y);
   if (len < DEADZONE) return [0, 0];
-  const scaled = Math.min(1, (len - DEADZONE) / (1 - DEADZONE));
-  const k = (scaled * scaled) / len;
+  const scaled = Math.min(1, (len - DEADZONE) / (OUTER_DEADZONE - DEADZONE));
+  const k = (exponent === 2 ? scaled * scaled : scaled) / len;
   return [x * k, y * k];
+}
+
+/** Estilo pelo nome que o navegador dá ao controle (vendor/product quando tem). */
+export function padStyleFromId(id: string): PadStyle {
+  // Xbox primeiro: "Xbox Wireless Controller" também contém "Wireless Controller", que é
+  // o nome que o controle de PS4 dá em vários navegadores. 045e = Microsoft, 054c = Sony, 057e = Nintendo.
+  if (/xbox|045e|xinput/i.test(id)) return 'xbox';
+  // DualSense (PS5) e DualSense Edge: 0ce6 / 0df2.
+  if (/dualsense|0ce6|0df2/i.test(id)) return 'ps5';
+  if (/054c|playstation|dualshock|wireless controller/i.test(id)) return 'ps4';
+  if (/057e|nintendo|pro controller|joy-con/i.test(id)) return 'nintendo';
+  return 'xbox';
 }
 
 export class GamepadInput {
@@ -77,16 +117,27 @@ export class GamepadInput {
   zoom = 0;
   grab = false;
   run = false;
+  /** L3 apertado agora: liga/desliga a corrida (desliga sozinha quando o besouro para). */
+  sprintTogglePressed = false;
   jumpPressed = false;
   recallPressed = false;
   startPressed = false;
-  /** Poder de apertar (clicar o analógico direito ou direcional pra cima). */
+  /** View/Create/Share: abre (ou fecha) a toca. */
+  burrowPressed = false;
+  /** R3: a câmera volta pra trás do besouro. */
+  recenterPressed = false;
+  /** Poder de apertar (X / □, ou direcional pra cima). */
   abilityPressed = false;
   /** Online: direcional ← segurado (fundir a bola) e ↓ apertado (roda de reações). */
   mergeHeld = false;
   emotePressed = false;
-  /** Algo foi mexido no controle neste quadro (o jogo passa a mostrar dicas de controle). */
+  /** Algo foi mexido no controle neste quadro (qualquer entrada, até leve). */
   active = false;
+  /**
+   * Alguém usou o controle DE PROPÓSITO neste quadro: botão que acabou de ser apertado ou
+   * analógico que acabou de passar da metade. É isso que troca as dicas pro controle.
+   */
+  intent = false;
   /** Ações de menu deste quadro (bordas, com repetição ao segurar a direção). */
   readonly menuActions: MenuAction[] = [];
   /**
@@ -96,11 +147,15 @@ export class GamepadInput {
   readonly dpadPressed = { left: false, right: false, down: false };
   /** Rolagem pedida pelo analógico direito neste quadro (pixels; positivo = pra baixo). */
   menuScroll = 0;
+  /** Multiplicador da câmera no analógico (configurações). */
+  lookScale = 1;
 
   onConnectionChange: ((connected: boolean, style: PadStyle) => void) | null = null;
 
   private index = -1;
   private previous: boolean[] = [];
+  /** Cada eixo estava além de `INTENT` no quadro anterior (pra achar a borda). */
+  private previousAxes: boolean[] = [];
   private repeatDir: MenuAction | null = null;
   private repeatTimer = 0;
 
@@ -115,8 +170,9 @@ export class GamepadInput {
     this.menuActions.length = 0;
     this.dpadPressed.left = this.dpadPressed.right = this.dpadPressed.down = false;
     this.jumpPressed = this.recallPressed = this.startPressed = this.abilityPressed = this.emotePressed = false;
+    this.burrowPressed = this.recenterPressed = this.sprintTogglePressed = false;
     this.moveX = this.moveY = this.lookX = this.lookY = this.zoom = this.menuScroll = 0;
-    this.grab = this.run = this.active = this.mergeHeld = false;
+    this.grab = this.run = this.active = this.intent = this.mergeHeld = false;
 
     const pad = this.pad();
     if (!pad) return;
@@ -124,20 +180,24 @@ export class GamepadInput {
     const down = (b: Button) => pressed[b] ?? false;
     const edge = (b: Button) => down(b) && !(this.previous[b] ?? false);
 
-    const [mx, my] = stick(pad.axes[0] ?? 0, pad.axes[1] ?? 0);
-    const [lx, ly] = stick(pad.axes[2] ?? 0, pad.axes[3] ?? 0);
+    const [mx, my] = stick(pad.axes[0] ?? 0, pad.axes[1] ?? 0, 1);
+    const [lx, ly] = stick(pad.axes[2] ?? 0, pad.axes[3] ?? 0, 2);
     this.moveX = mx;
     this.moveY = -my;
-    this.lookX = lx * LOOK_SPEED_X * dt;
-    this.lookY = ly * LOOK_SPEED_Y * dt;
+    this.lookX = lx * LOOK_SPEED_X * this.lookScale * dt;
+    this.lookY = ly * LOOK_SPEED_Y * this.lookScale * dt;
     this.zoom = ((down(Button.RB) ? 1 : 0) - (down(Button.LB) ? 1 : 0)) * 5 * dt;
-    this.grab = down(Button.RT) || down(Button.X);
-    this.run = down(Button.LT) || down(Button.B) || down(Button.L3);
+    this.grab = down(Button.RT);
+    this.run = down(Button.LT) || down(Button.B);
+    this.sprintTogglePressed = edge(Button.L3);
     this.jumpPressed = edge(Button.A);
     this.recallPressed = edge(Button.Y);
-    this.abilityPressed = edge(Button.R3) || edge(Button.Up);
-    this.startPressed = edge(Button.Start) || edge(Button.Back);
+    this.abilityPressed = edge(Button.X) || edge(Button.Up);
+    this.startPressed = edge(Button.Start);
+    this.burrowPressed = edge(Button.View);
+    this.recenterPressed = edge(Button.R3);
     this.active = mx !== 0 || my !== 0 || lx !== 0 || ly !== 0 || pressed.some(Boolean);
+    this.intent = pressed.some((p, i) => p && !(this.previous[i] ?? false)) || this.axisIntent(pad.axes);
 
     this.dpadPressed.left = edge(Button.Left);
     this.dpadPressed.right = edge(Button.Right);
@@ -165,6 +225,17 @@ export class GamepadInput {
       }
     }
     this.previous = pressed;
+  }
+
+  /** Algum eixo acabou de passar da metade (e não estava lá no quadro anterior). */
+  private axisIntent(axes: readonly number[]): boolean {
+    let crossed = false;
+    for (let i = 0; i < axes.length; i++) {
+      const beyond = Math.abs(axes[i] ?? 0) >= INTENT;
+      if (beyond && !(this.previousAxes[i] ?? true)) crossed = true;
+      this.previousAxes[i] = beyond;
+    }
+    return crossed;
   }
 
   /**
@@ -221,14 +292,13 @@ export class GamepadInput {
 
   private adopt(pad: Gamepad): void {
     this.index = pad.index;
-    // Xbox primeiro: "Xbox Wireless Controller" também contém "Wireless Controller", que é
-    // o nome que o controle de PS4 dá em vários navegadores. 045e = Microsoft, 054c = Sony.
-    const id = pad.id;
-    const style: PadStyle = /xbox|045e/i.test(id) ? 'xbox' : /054c|playstation|dualshock|dualsense|wireless controller/i.test(id) ? 'playstation' : 'xbox';
+    const style = padStyleFromId(pad.id);
     const changed = !this.connected || style !== this.style;
     this.connected = true;
     this.style = style;
-    this.previous = [];
+    // Tudo o que já estava apertado/inclinado quando o controle chegou não conta como borda.
+    this.previous = pad.buttons.map((b) => b.pressed);
+    this.previousAxes = pad.axes.map((v) => Math.abs(v) >= INTENT);
     if (changed) this.onConnectionChange?.(true, style);
   }
 }
