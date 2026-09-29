@@ -16,7 +16,7 @@ import {
   type PlayerSnapshot,
 } from './protocol';
 import { RoomChannel } from './transport/signaling';
-import { StarNet, netSimFromUrl } from './transport/StarNet';
+import { StarNet, forceRelayFromUrl, netSimFromUrl } from './transport/StarNet';
 import { iceConfig } from './transport/iceServers';
 import type { Lane } from './transport/PeerLink';
 import { claimHost, heartbeat, joinRoom, leaveRoom, leaveRoomOnUnload, reportConnection, type RoomInfo } from '../online/Rooms';
@@ -192,16 +192,20 @@ export class NetSession {
 
   // --- Ciclo de vida ------------------------------------------------------------------
 
-  /** Sai da sala de verdade (botão "Sair"). */
+  /**
+   * Sai da sala de verdade (botão "Sair"): avisa ("bye"), sai do banco (que já
+   * passa a sala pro próximo) e só então fecha as conexões. Fechar antes cortava
+   * o "bye" no caminho (pelo TURN, principalmente) e o próximo demorava a assumir.
+   */
   async leave(): Promise<void> {
     if (this.isClosed()) return;
     this.say({ t: 'bye' });
-    this.shutdown('left');
     try {
-      await leaveRoom(this.client);
+      await Promise.race([leaveRoom(this.client), sleep(1500)]);
     } catch {
       // Sem rede: a faxina do banco tira a vaga em ~3 min.
     }
+    this.shutdown('left');
   }
 
   private async begin(): Promise<void> {
@@ -215,7 +219,7 @@ export class NetSession {
       this.shutdown('signal');
       throw new Error('signal');
     }
-    this.star = new StarNet(this.channel, this.selfId, () => iceConfig(this.client), this.room.visibility === 'public', netSimFromUrl());
+    this.star = new StarNet(this.channel, this.selfId, () => iceConfig(this.client), this.room.visibility === 'public' || forceRelayFromUrl(), netSimFromUrl());
     this.star.onMessage = (peer, lane, data) => (this._isHost ? this.hostReceive(peer, lane, data) : this.clientReceive(peer, lane, data));
     this.star.onLinkClose = (peer) => this.linkClosed(peer);
     this.channel.onHostAnnounce = (uid) => {

@@ -9,12 +9,16 @@ import type { RealtimeChannel, SupabaseClient } from '@supabase/supabase-js';
  */
 
 export interface SignalMessage {
-  kind: 'offer' | 'answer';
+  /** Oferta, resposta, ou caminhos achados depois delas (lote). */
+  kind: 'offer' | 'answer' | 'candidates';
   from: string;
   to: string;
   /** Identifica a tentativa de conexão (resposta velha de outra tentativa é ignorada). */
   nonce: string;
+  /** Oferta/resposta (vazio nos caminhos). */
   sdp: string;
+  /** Caminhos atrasados (só no `candidates`). */
+  candidates?: RTCIceCandidateInit[];
 }
 
 /** O que cada jogador anuncia na presença da sala. */
@@ -25,6 +29,9 @@ export interface PresenceInfo {
 
 /** Maior SDP aceito (ofertas com todos os caminhos ficam em ~2–4 KB). */
 const MAX_SDP = 24 * 1024;
+/** Caminhos por lote e tamanho de cada um (uma linha "candidate:" tem ~100–200 caracteres). */
+const MAX_CANDIDATES = 24;
+const MAX_CANDIDATE_CHARS = 512;
 
 export class RoomChannel {
   private channel: RealtimeChannel | null = null;
@@ -101,8 +108,21 @@ export class RoomChannel {
 function parseSignal(raw: unknown): SignalMessage | null {
   if (!raw || typeof raw !== 'object') return null;
   const m = raw as Record<string, unknown>;
-  if (m.kind !== 'offer' && m.kind !== 'answer') return null;
+  if (m.kind !== 'offer' && m.kind !== 'answer' && m.kind !== 'candidates') return null;
   if (typeof m.from !== 'string' || typeof m.to !== 'string' || typeof m.nonce !== 'string' || typeof m.sdp !== 'string') return null;
   if (m.sdp.length > MAX_SDP || m.nonce.length > 64 || m.from.length > 64 || m.to.length > 64) return null;
-  return { kind: m.kind, from: m.from, to: m.to, nonce: m.nonce, sdp: m.sdp };
+  if (m.kind !== 'candidates') return { kind: m.kind, from: m.from, to: m.to, nonce: m.nonce, sdp: m.sdp };
+  if (!Array.isArray(m.candidates) || m.candidates.length === 0 || m.candidates.length > MAX_CANDIDATES) return null;
+  const candidates: RTCIceCandidateInit[] = [];
+  for (const item of m.candidates) {
+    if (!item || typeof item !== 'object') return null;
+    const c = item as Record<string, unknown>;
+    if (typeof c.candidate !== 'string' || c.candidate.length > MAX_CANDIDATE_CHARS) return null;
+    candidates.push({
+      candidate: c.candidate,
+      sdpMid: typeof c.sdpMid === 'string' ? c.sdpMid.slice(0, 16) : null,
+      sdpMLineIndex: typeof c.sdpMLineIndex === 'number' && Number.isInteger(c.sdpMLineIndex) && c.sdpMLineIndex >= 0 && c.sdpMLineIndex < 8 ? c.sdpMLineIndex : null,
+    });
+  }
+  return { kind: 'candidates', from: m.from, to: m.to, nonce: m.nonce, sdp: '', candidates };
 }

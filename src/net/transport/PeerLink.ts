@@ -3,9 +3,11 @@
  * negociação extra): `state` (sem garantia, tipo UDP) e `event` (confiável,
  * em ordem). Ver `protocol.ts`.
  *
- * A oferta e a resposta saem com TODOS os caminhos possíveis dentro (sem
- * "trickle"): uma mensagem de cada lado na sinalização, em vez de dezenas.
- * Custa até ~2 s a mais pra conectar e economiza a cota do Realtime.
+ * "Meio-trickle": a oferta e a resposta saem com os caminhos que já
+ * apareceram em ~1 s (quase sempre todos), e os que chegam depois vão em lotes
+ * (`onLateCandidates`). Mandar tudo numa mensagem só economizava a cota do
+ * Realtime, mas quando juntar os caminhos demora (TURN lento, rede estranha) a
+ * oferta saía sem o caminho do TURN — e quem está no 4G não conectava.
  */
 
 export type Lane = 'state' | 'event';
@@ -20,8 +22,10 @@ export interface NetSim {
   loss: number;
 }
 
-/** Tempo máximo esperando o navegador achar os caminhos (STUN/TURN) antes de mandar o que tem. */
-const GATHER_TIMEOUT_MS = 2500;
+/** Espera pelos caminhos antes de mandar a oferta/resposta (o resto vai depois, em lotes). */
+const GATHER_TIMEOUT_MS = 1200;
+/** Caminhos que aparecem depois são juntados por este tempo antes de ir (menos mensagens). */
+const CANDIDATE_BATCH_MS = 250;
 /** "Desconectado" às vezes volta sozinho (troca de Wi-Fi); depois disso, desiste. */
 const DISCONNECTED_GRACE_MS = 5000;
 /** Fila do canal sem garantia acima disso = rede engasgada: descarta retrato em vez de acumular. */
@@ -40,6 +44,16 @@ export class PeerLink {
   onOpen: (() => void) | null = null;
   onClose: (() => void) | null = null;
   onMessage: ((lane: Lane, data: ArrayBuffer | string) => void) | null = null;
+  /** Caminhos achados depois que a oferta/resposta já saiu (a sessão manda pro outro lado). */
+  onLateCandidates: ((candidates: RTCIceCandidateInit[]) => void) | null = null;
+  /** Identifica a tentativa de conexão (a sinalização descarta mensagem de tentativa velha). */
+  nonce = '';
+  /** A oferta/resposta já saiu: caminho novo agora é "atrasado" e vai em lote. */
+  private described = false;
+  private readonly lateBatch: RTCIceCandidateInit[] = [];
+  private batchTimer = 0;
+  /** Caminhos do outro lado que chegaram antes da descrição dele (aplicados quando ela chegar). */
+  private readonly pendingRemote: RTCIceCandidateInit[] = [];
 
   constructor(
     readonly peerId: string,
@@ -56,6 +70,16 @@ export class PeerLink {
       channel.onclose = () => this.close();
       channel.onmessage = (e: MessageEvent<ArrayBuffer | string>) => this.receive(lane, e.data);
     }
+    this.pc.onicecandidate = (e) => {
+      if (!e.candidate || !this.described || this.closed) return;
+      this.lateBatch.push(e.candidate.toJSON());
+      if (this.batchTimer) return;
+      this.batchTimer = window.setTimeout(() => {
+        this.batchTimer = 0;
+        const batch = this.lateBatch.splice(0);
+        if (batch.length > 0) this.onLateCandidates?.(batch);
+      }, CANDIDATE_BATCH_MS);
+    };
     this.pc.onconnectionstatechange = () => {
       const s = this.pc.connectionState;
       if (s === 'failed' || s === 'closed') this.close();
@@ -82,9 +106,19 @@ export class PeerLink {
     return this.gathered();
   }
 
+  /** Caminhos do outro lado que chegaram depois (ou antes da descrição dele: ficam na fila). */
+  async addRemoteCandidates(candidates: readonly RTCIceCandidateInit[]): Promise<void> {
+    if (!this.pc.remoteDescription) {
+      this.pendingRemote.push(...candidates);
+      return;
+    }
+    for (const candidate of candidates) await this.pc.addIceCandidate(candidate).catch(() => undefined);
+  }
+
   /** Quem recebe: aceita a oferta e devolve a resposta (já com os caminhos). */
   async acceptOffer(sdp: string): Promise<string> {
     await this.pc.setRemoteDescription({ type: 'offer', sdp });
+    await this.flushPending();
     await this.pc.setLocalDescription(await this.pc.createAnswer());
     return this.gathered();
   }
@@ -92,6 +126,12 @@ export class PeerLink {
   async acceptAnswer(sdp: string): Promise<void> {
     if (this.pc.signalingState !== 'have-local-offer') return;
     await this.pc.setRemoteDescription({ type: 'answer', sdp });
+    await this.flushPending();
+  }
+
+  private async flushPending(): Promise<void> {
+    const pending = this.pendingRemote.splice(0);
+    for (const candidate of pending) await this.pc.addIceCandidate(candidate).catch(() => undefined);
   }
 
   /**
@@ -141,6 +181,7 @@ export class PeerLink {
     if (this.closed) return;
     this.closed = true;
     window.clearTimeout(this.disconnectTimer);
+    window.clearTimeout(this.batchTimer);
     try {
       this.state.close();
       this.event.close();
@@ -178,13 +219,17 @@ export class PeerLink {
     }, Math.max(0, at - performance.now()));
   }
 
-  /** Espera juntar os caminhos (ou o tempo acabar) e devolve a descrição com eles dentro. */
+  /**
+   * Espera juntar os caminhos (ou o tempo acabar) e devolve a descrição com os
+   * que já apareceram. Daqui pra frente, caminho novo vai em lote (`onLateCandidates`).
+   */
   private gathered(): Promise<string> {
     const pc = this.pc;
     return new Promise((resolve) => {
       const done = () => {
         pc.removeEventListener('icegatheringstatechange', check);
         window.clearTimeout(timer);
+        this.described = true;
         resolve(pc.localDescription?.sdp ?? '');
       };
       const check = () => {

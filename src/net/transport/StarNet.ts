@@ -66,6 +66,7 @@ export class StarNet {
     if (this.closed) throw new Error('closed');
     const link = this.createLink(hostId, config);
     const nonce = randomNonce();
+    link.nonce = nonce;
     this.offers.set(hostId, nonce);
     const sdp = await link.createOffer();
     await this.channel.send({ kind: 'offer', from: this.selfId, to: hostId, nonce, sdp });
@@ -134,6 +135,11 @@ export class StarNet {
   private createLink(peerId: string, config: IceConfig): PeerLink {
     const link = new PeerLink(peerId, config.servers, this.relayOnly && config.turn, this.sim);
     this.links.set(peerId, link);
+    // Caminhos achados depois da oferta/resposta: vão em lote pro outro lado.
+    link.onLateCandidates = (candidates) => {
+      if (this.links.get(peerId) !== link) return;
+      void this.channel.send({ kind: 'candidates', from: this.selfId, to: peerId, nonce: link.nonce, sdp: '', candidates }).catch(() => undefined);
+    };
     link.onOpen = () => this.onLinkOpen?.(peerId, link);
     link.onClose = () => {
       // Só avisa se ainda é a conexão atual (reconectar troca o link e fecha o velho).
@@ -155,6 +161,7 @@ export class StarNet {
       if (this.closed || this.role !== 'host') return;
       const old = this.links.get(message.from);
       const link = this.createLink(message.from, config);
+      link.nonce = message.nonce;
       old?.close();
       try {
         const sdp = await link.acceptOffer(message.sdp);
@@ -162,6 +169,12 @@ export class StarNet {
       } catch {
         link.close();
       }
+      return;
+    }
+    if (message.kind === 'candidates') {
+      // Caminhos atrasados: só da tentativa atual com aquele jogador.
+      const link = this.links.get(message.from);
+      if (link && link.nonce === message.nonce && message.candidates) await link.addRemoteCandidates(message.candidates);
       return;
     }
     // Resposta: só vale a da tentativa atual.
@@ -179,6 +192,11 @@ function randomNonce(): string {
   const bytes = new Uint8Array(12);
   crypto.getRandomValues(bytes);
   return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/** Testes: `?relay=1` (só em desenvolvimento) força tudo pelo TURN, como quem está no 4G. */
+export function forceRelayFromUrl(): boolean {
+  return import.meta.env.DEV && new URLSearchParams(location.search).get('relay') === '1';
 }
 
 /**
