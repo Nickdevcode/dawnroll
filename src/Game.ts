@@ -104,7 +104,7 @@ const GardenBudget = { playing: 2.5, burying: 8, paused: 10 } as const;
 /** Quadros até descartar o que saiu de cena (o substituto já foi desenhado: nada recompila). */
 const DISPOSE_AFTER_FRAMES = 3;
 /** Sorteios derivados da semente do jardim (grama, cobertura e bichos de cada jardim). */
-const GardenSalt = { grass: 11, cover: 12, critters: 13, find: 14 } as const;
+const GardenSalt = { grass: 11, cover: 12, critters: 13, find: 14, collectibles: 15 } as const;
 /** Achado raro: longe assim do besouro quando nasce (tem que explorar pra achar). */
 const RARE_FIND_MIN_DISTANCE = 25;
 /**
@@ -447,7 +447,7 @@ export class Game {
     boot.step(0.74, 'loader.critters');
     await nextFrame();
 
-    this.collectibles = new Collectibles(this.scenery);
+    this.collectibles = new Collectibles(this.scenery, mixSeed(seed, GardenSalt.collectibles));
     scene.add(this.collectibles.group);
     this.pickables = new Pickables(this.physics, this.scenery);
     this.looseObjects = new LooseObjects(this.physics, this.scenery);
@@ -867,7 +867,7 @@ export class Game {
     const oldCover = this.groundCover.replace(parts.cover);
     const oldCritters = this.effects.swapCritters(parts.critters);
     this.looseObjects.relayout();
-    this.collectibles.relayout(this.beetle.center);
+    this.collectibles.relayout(mixSeed(this.scenery.seed, GardenSalt.collectibles), this.beetle.center);
     this.disposeLater(() => {
       oldGrass.dispose();
       for (const layer of oldCover) layer.dispose();

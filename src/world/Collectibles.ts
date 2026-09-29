@@ -208,7 +208,7 @@ export class Collectibles {
   /** Anel de extras soltos pelos poderes (tamanho fixo: nunca cresce com a sessão). */
   private readonly extras: Array<ExtraDebris | null> = new Array<ExtraDebris | null>(EXTRA_SLOTS).fill(null);
   private extraCursor = 0;
-  private readonly rng: Rng;
+  private rng: Rng;
   private readonly pilePool: InstancePool;
   private readonly flyBodyPool: InstancePool;
   private readonly flyWingPool: InstancePool;
@@ -221,7 +221,8 @@ export class Collectibles {
   /** Chance de um montinho renascer fresquinho (o poder Faro aumenta). */
   freshChance = FRESH_CHANCE;
 
-  constructor(private readonly scenery: Scenery, seed = 2024) {
+  /** `seed` = derivada da semente do jardim: o mesmo jardim começa com os montinhos e a tralha nos mesmos lugares. */
+  constructor(private readonly scenery: Scenery, seed: number) {
     this.rng = createRng(seed);
     this.group.name = 'collectibles';
     this.pilePool = new InstancePool(
@@ -424,8 +425,14 @@ export class Collectibles {
    * Jardim novo (outra rodada, outro sorteio): cada montinho e cada detrito vai
    * para um lugar livre do jardim novo — os lugares antigos podem ter virado
    * pedra, toalha ou cantinho. A tralha extra dos poderes some.
+   *
+   * `seed` vem da semente do jardim novo; `avoid` é de onde manter distância (o
+   * besouro, no solo). Mesma semente e mesmo `avoid` = mesmos lugares em toda
+   * tela (no online todo mundo passa o mesmo ponto, ou nenhum).
    */
-  relayout(player: THREE.Vector3): void {
+  relayout(seed: number, avoid: THREE.Vector3 | null): void {
+    this.rng = createRng(seed);
+    const player = avoid ?? undefined;
     for (const pile of this.piles) this.placePile(pile, this.randomFreeSpot(6, PLAY_RADIUS - 2, 0.6, player, 8));
     for (let i = 0; i < this.debris.length; i++) {
       const item = this.debris[i];

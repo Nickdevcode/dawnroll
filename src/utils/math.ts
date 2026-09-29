@@ -41,6 +41,13 @@ export const createRng = (seed: number) => {
     next,
     range: (min: number, max: number): number => min + (max - min) * next(),
     pick: <T>(items: readonly T[]): T => items[Math.floor(next() * items.length)],
+    /**
+     * Sorteio filho que gasta um número só deste. Serve pra enfeite que varia
+     * com o aparelho (mais pedrinhas no PC que no celular): quantos números ele
+     * consome não embaralha o que vem depois, então o jardim sai igual em todo
+     * aparelho (o online depende disso).
+     */
+    fork: () => createRng((next() * 0x100000000) >>> 0),
   };
 };
 

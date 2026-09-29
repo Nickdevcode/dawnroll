@@ -7,6 +7,7 @@ import { buildBush, buildFlowerPot } from './scenery/backdrop';
 import { Clouds } from './scenery/Clouds';
 import { SceneryLayer, type PickableRecord } from './scenery/SceneryLayer';
 import { buildGarden, type GardenPlan } from './gardenLayout';
+import { gardenChecksum } from './gardenChecksum';
 import type { ZoneKind, ZoneSite } from './zones';
 
 export type { PickableRecord } from './scenery/SceneryLayer';
@@ -136,6 +137,11 @@ export class Scenery {
 
   get seed(): number {
     return this.plan.seed;
+  }
+
+  /** Impressão digital do jardim atual (online: todo mundo na sala tem que ter a mesma). */
+  get checksum(): string {
+    return gardenChecksum(this.garden.pickables, this.plan);
   }
 
   get zones(): readonly ZoneSite[] {

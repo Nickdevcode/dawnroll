@@ -17,6 +17,9 @@ import { fuseParts } from './forms';
 
 const UP = new THREE.Vector3(0, 1, 0);
 const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
+/** Escamas da pinha: todas no computador, menos no celular (enfeite, sem colisão). */
+const PINE_SCALES = 76;
+const PINE_SCALES_LITE = 50;
 
 // --- Maçã ---------------------------------------------------------------------
 
@@ -281,7 +284,10 @@ export function buildPinecone(ctx: SceneryContext, x: number, z: number, yaw: nu
   body.add(part(latheGeometry(coreProfile, 14), '#5b3a22', 'bark'));
 
   // Espiral dourada de escamas: abertas, apontando para a ponta, maiores no terço de baixo.
-  const count = ctx.decor < 1 ? 50 : 76;
+  // Nascem todas em todo aparelho (a pinha assenta no chão pelo contorno delas); o celular
+  // tira algumas só depois de assentar, pra pinha ficar no mesmo lugar em toda tela (online).
+  const count = PINE_SCALES;
+  const scales: THREE.Object3D[] = [];
   const scaleGeo = pineScaleGeometry();
   const out = new THREE.Vector3();
   const dir = new THREE.Vector3();
@@ -305,6 +311,7 @@ export function buildPinecone(ctx: SceneryContext, x: number, z: number, yaw: nu
     const coreR = Math.max(0.12, 0.45 * Math.sin(Math.PI * (0.08 + t * 0.84)));
     scale.position.copy(out).multiplyScalar(coreR * 0.8).setY(y);
     body.add(scale);
+    scales.push(scale);
   }
   // Cabinho quebrado na base.
   const stalk = part(new THREE.CylinderGeometry(0.1, 0.13, 0.4, 6), '#5b3a22', 'bark');
@@ -314,6 +321,13 @@ export function buildPinecone(ctx: SceneryContext, x: number, z: number, yaw: nu
   // Deitada: o eixo fica quase na horizontal, com a ponta um pouco para cima.
   body.rotation.set(Math.PI / 2 - rng.range(0.05, 0.25), rng.range(0, Math.PI * 2), 0, 'YXZ');
   restOnGround(root, 0.15);
+  if (ctx.decor < 1) {
+    // Celular: fica com PINE_SCALES_LITE escamas, espalhadas por igual pela espiral.
+    for (let i = 0; i < count; i++) {
+      const kept = Math.floor(((i + 1) * PINE_SCALES_LITE) / count) > Math.floor((i * PINE_SCALES_LITE) / count);
+      if (!kept) body.remove(scales[i]);
+    }
+  }
   settle(root, x, z, yaw, 1, 0);
 
   body.updateMatrixWorld(true);

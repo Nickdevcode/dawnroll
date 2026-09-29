@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { createRng } from '../../utils/math';
+import { createRng, mixSeed } from '../../utils/math';
 import { terrainHeight } from '../../world/Terrain';
 import type { ZoneSite } from '../../world/zones';
 import { Butterflies, Bees, Dragonflies } from './flyers';
@@ -38,6 +38,11 @@ function initialWorld(): CritterWorld {
 
 /** Teste de desenvolvimento: força um acontecimento raro agora. */
 export type CritterDebug = 'hummingbird' | 'swarm' | 'scatter';
+
+/** Formigueiros por jardim (fixo: eles têm colisão, então não podem variar com o aparelho). */
+const ANT_COLONIES = 3;
+/** Sorteio dos formigueiros, derivado da semente dos bichos (independente do resto da fauna). */
+const ANTHILL_SALT = 0xa17;
 
 /**
  * Vida no jardim: borboletas, abelhas, libélulas, joaninhas e vaquinhas,
@@ -85,7 +90,8 @@ export class Critters {
     const big = count >= 24;
     const ctx = this.ctx;
     const g = this.group;
-    this.ants = new AntColonies(big ? 3 : 2, n(0.6, 6), g);
+    // Formigueiro tem colisão: sempre 3 e no mesmo lugar em todo aparelho (só o número de formigas escala).
+    this.ants = new AntColonies(ANT_COLONIES, n(0.6, 6), g, createRng(mixSeed(seed, ANTHILL_SALT)));
     this.earwigs = new Earwigs(big ? 6 : 4, ctx, g);
     this.centipedes = new Centipedes(big ? 3 : 2, ctx, g);
     this.slugs = new Slugs(n(0.1, 1), ctx, g);

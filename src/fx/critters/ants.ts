@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { clamp, damp, smoothstep } from '../../utils/math';
+import { clamp, damp, smoothstep, type Rng } from '../../utils/math';
 import { clay } from '../../render/clayMaterial';
 import { BURROW, dirtAmount, terrainHeight, PLAY_RADIUS } from '../../world/Terrain';
 import { InstancedPart } from './InstancedPart';
@@ -90,6 +90,8 @@ export class AntColonies implements Species {
     private readonly colonyCount: number,
     private readonly antsPerColony: number,
     private readonly parent: THREE.Group,
+    /** Sorteio só dos formigueiros e das trilhas (ver `build`). */
+    private readonly layoutRng: Rng,
   ) {
     const mats = critterMaterials();
     const total = colonyCount * antsPerColony;
@@ -101,14 +103,23 @@ export class AntColonies implements Species {
     parent.add(this.poseA.mesh, this.poseB.mesh, this.leaves.mesh);
   }
 
-  /** As colônias precisam das poças (para não cavar dentro da bacia): monta no primeiro frame. */
+  /**
+   * As colônias precisam das poças (para não cavar dentro da bacia): monta no primeiro frame.
+   * Os formigueiros (que têm colisão) saem todos antes, de um sorteio só deles
+   * (`layoutRng`, derivado da semente do jardim): ficam no mesmo lugar em todo
+   * aparelho, quantas formigas o aparelho aguentar (o online depende disso).
+   */
   private build(ctx: CritterContext): void {
     this.built = true;
     const hills: THREE.BufferGeometry[] = [];
-    const baseAngle = ctx.rng.next() * Math.PI * 2;
+    const layout: CritterContext = { ...ctx, rng: this.layoutRng };
+    const baseAngle = layout.rng.next() * Math.PI * 2;
+    const placed: Array<{ colony: Colony; index: number }> = [];
     for (let c = 0; c < this.colonyCount; c++) {
-      const colony = (c === 0 ? this.placePicnicColony(ctx) : null) ?? this.placeColony(ctx, baseAngle + (c / this.colonyCount) * Math.PI * 2);
-      if (!colony) continue;
+      const colony = (c === 0 ? this.placePicnicColony(layout) : null) ?? this.placeColony(layout, baseAngle + (c / this.colonyCount) * Math.PI * 2);
+      if (colony) placed.push({ colony, index: c });
+    }
+    for (const { colony, index: c } of placed) {
       const hill = anthill(c + 1);
       hill.translate(colony.nest.x, colony.nest.y - ANTHILL_SINK, colony.nest.z);
       hills.push(hill);

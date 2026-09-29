@@ -23,13 +23,16 @@ export function buildRock(ctx: SceneryContext, x: number, z: number, size: numbe
   const sz = size * rng.range(0.8, 1.2);
   const seed = rng.range(0, 50);
 
-  // Detalhe da malha acompanha o aparelho (no celular a pedra é mais simples).
-  const geometry = displace(new THREE.IcosahedronGeometry(1, ctx.decor < 1 ? 5 : 8), (px, py, pz) =>
+  const shape = (px: number, py: number, pz: number) =>
     noise3(px * 1.3 + seed, py * 1.3, pz * 1.3 - seed) * 0.22 +
     noise3(px * 3.6 + seed, py * 3.6, pz * 3.6) * 0.06 +
-    noise3(px * 9 - seed, py * 9 + seed, pz * 9) * 0.016,
-  );
+    noise3(px * 9 - seed, py * 9 + seed, pz * 9) * 0.016;
+  // Detalhe da malha acompanha o aparelho (no celular a pedra é mais simples); o colisor
+  // sai sempre do mesmo detalhe, pra pedra ser igual pra física em todo aparelho (online).
+  const detailed = ctx.decor >= 1;
+  const geometry = displace(new THREE.IcosahedronGeometry(1, detailed ? 8 : HULL_DETAIL), shape);
   geometry.scale(sx, sy, sz);
+  const hull = detailed ? displace(new THREE.IcosahedronGeometry(1, HULL_DETAIL), shape).scale(sx, sy, sz) : geometry;
 
   const base = new THREE.Color(rng.pick(RockColors));
   const moss = new THREE.Color(rng.pick(MossColors));
@@ -52,9 +55,10 @@ export function buildRock(ctx: SceneryContext, x: number, z: number, size: numbe
   mesh.position.set(x, y, z);
   mesh.rotation.y = rng.next() * Math.PI * 2;
 
-  // Casco convexo a partir dos próprios vértices; a rotação vai no corpo rígido.
+  // Casco convexo a partir dos vértices (do detalhe fixo); a rotação vai no corpo rígido.
   mesh.updateMatrix();
-  const points = new Float32Array(geometry.getAttribute('position').array as ArrayLike<number>);
+  const points = new Float32Array(hull.getAttribute('position').array as ArrayLike<number>);
+  if (hull !== geometry) hull.dispose();
   const desc = RAPIER.ColliderDesc.convexHull(points);
   const colliders = desc ? [ctx.addCollider(desc, mesh.position, mesh.quaternion)] : [];
 
@@ -77,13 +81,20 @@ export function buildRock(ctx: SceneryContext, x: number, z: number, size: numbe
     extent: Math.max(sx, sy, sz) * 2,
   });
 
-  const pebbles = Math.round(rng.range(3, 8) * ctx.decor);
+  // Pedrinhas em volta: quantas depende do aparelho, então saem de um sorteio filho
+  // (senão cada aparelho montaria o resto do jardim diferente).
+  const loose = rng.fork();
+  const pebbles = Math.round(loose.range(3, 8) * ctx.decor);
+  const pebbleCtx = { ...ctx, rng: loose };
   for (let i = 0; i < pebbles; i++) {
-    const a = rng.next() * Math.PI * 2;
-    const d = Math.max(sx, sz) * rng.range(0.95, 1.5);
-    buildPebble(ctx, x + Math.cos(a) * d, z + Math.sin(a) * d, size * rng.range(0.05, 0.14), base);
+    const a = loose.next() * Math.PI * 2;
+    const d = Math.max(sx, sz) * loose.range(0.95, 1.5);
+    buildPebble(pebbleCtx, x + Math.cos(a) * d, z + Math.sin(a) * d, size * loose.range(0.05, 0.14), base);
   }
 }
+
+/** Detalhe da malha de onde sai o colisor da pedra (o do celular; igual em todo aparelho). */
+const HULL_DETAIL = 5;
 
 const pebbleShapes: THREE.BufferGeometry[] = [];
 
