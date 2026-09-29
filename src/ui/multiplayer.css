@@ -13,6 +13,10 @@
   --player-3: #e8729a;
   --player-4: #a98be8;
   --player-5: #45c1b5;
+  /* Times (Okabe-Ito, seguro pra daltônico) e sempre com o ícone junto: Sol, Orvalho, Flor. */
+  --team-0: #e69a1f;
+  --team-1: #3a8ed6;
+  --team-2: #cc5a98;
   --online-good: #3f9a3a;
   --online-ok: #d99a1c;
   --online-bad: #c8472e;
@@ -720,6 +724,756 @@
     animation: none;
   }
   .emote-wheel__item {
+    transition: none;
+  }
+}
+
+/* ==========================================================================
+   Disputa e times: a central (procurar partida), o lobby da sala (modo,
+   tempo, times), a barra do topo (relógio + placar), a contagem, o cartão
+   do resultado e a cor/ícone do time na placa do apelido.
+   ========================================================================== */
+
+/* --- Central: procurar partida / com os amigos ------------------------------- */
+.online__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.online__label--soft {
+  letter-spacing: 0.04em;
+}
+.online__quick {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+.online__quick-btn {
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+  justify-items: start;
+  gap: 4px;
+  padding: var(--space-4);
+  border: 0;
+  border-radius: var(--radius-lg);
+  background: linear-gradient(180deg, #fffdf8 0%, #fff1d6 100%);
+  box-shadow: var(--shadow-clay), var(--inner-highlight);
+  color: var(--color-ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    transform var(--dur-fast) var(--ease-out),
+    box-shadow var(--dur-fast) var(--ease-out);
+}
+.online__quick-btn[data-quick='match'] {
+  background: linear-gradient(180deg, #fff4e0 0%, #ffd9a0 100%);
+}
+.online__quick-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+}
+.online__quick-btn:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: var(--shadow-clay-pressed), var(--inner-highlight);
+}
+.online__quick-btn:focus-visible {
+  outline: 3px solid var(--dawn-sun-deep);
+  outline-offset: 3px;
+}
+.online__quick-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.online__quick-icon {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--dawn-indigo);
+  color: var(--dawn-cream);
+}
+.online__quick-btn[data-quick='match'] .online__quick-icon {
+  background: var(--color-accent-deep);
+}
+.online__quick-icon svg {
+  width: 22px;
+  height: 22px;
+}
+.online__quick-title {
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 900;
+  color: var(--dawn-indigo);
+}
+.online__quick-desc {
+  font-size: 13px;
+  line-height: 1.35;
+  color: var(--color-ink-soft);
+}
+@media (max-width: 380px) {
+  .online__quick {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* --- Lobby: sala aberta, Disputa rolando, modo/tempo/times -------------------- */
+.online__public {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 11px;
+  border-radius: var(--radius-pill);
+  background: var(--dawn-indigo);
+  color: var(--dawn-cream);
+  font-size: 12px;
+  font-weight: 800;
+}
+.online__public svg {
+  width: 15px;
+  height: 15px;
+}
+.online__match-live {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-pill);
+  background: var(--dawn-indigo);
+  color: var(--dawn-cream);
+  font-family: var(--font-display);
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+}
+.online__match-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #ff7a59;
+  box-shadow: 0 0 0 4px rgba(255, 122, 89, 0.25);
+  animation: online-pulse 1.2s ease-in-out infinite;
+}
+.online__settings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  background: #fffdf8;
+  box-shadow: 0 2px 0 rgba(43, 42, 94, 0.08);
+}
+.online__setting {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+}
+.online__setting-name {
+  font-weight: 800;
+  color: var(--color-ink);
+}
+.online__segmented {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  min-width: min(100%, 260px);
+}
+.online__segmented .segmented__option {
+  padding-inline: 10px;
+  white-space: nowrap;
+}
+.online__segmented .segmented__option:disabled {
+  cursor: default;
+}
+.online__segmented .segmented__option:disabled:not([aria-checked='true']) {
+  opacity: 0.55;
+}
+.online__mode-desc,
+.online__note {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--color-ink-soft);
+}
+.online__settings .online__rule {
+  padding: 0;
+  background: none;
+  box-shadow: none;
+}
+
+/* Times: uma coluna por time (cor + ícone + nome). */
+.online__teams {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--space-3);
+}
+.online__team {
+  --team: var(--team-0);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--team) 12%, #fffdf8);
+  box-shadow: inset 0 4px 0 var(--team), 0 2px 0 rgba(43, 42, 94, 0.08);
+}
+.online__team[data-team='1'] {
+  --team: var(--team-1);
+}
+.online__team[data-team='2'] {
+  --team: var(--team-2);
+}
+.online__team.is-mine {
+  box-shadow: inset 0 4px 0 var(--team), 0 0 0 3px color-mix(in srgb, var(--team) 55%, transparent);
+}
+.online__team-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.online__team-icon {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--team);
+  color: #fff;
+}
+.online__team-icon svg {
+  width: 18px;
+  height: 18px;
+}
+.online__team-name {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 900;
+  color: var(--color-ink);
+}
+.online__team-count {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--color-ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+.online__team-join {
+  padding: 4px 12px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--team);
+  color: #fff;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+.online__team-join:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+.online__team-join:disabled {
+  background: rgba(43, 42, 94, 0.12);
+  color: var(--color-ink-soft);
+  cursor: default;
+}
+.online__team-join:focus-visible {
+  outline: 3px solid var(--dawn-sun-deep);
+  outline-offset: 2px;
+}
+.online__team .online__player {
+  min-height: 44px;
+}
+.online__team .online__avatar {
+  width: 32px;
+  height: 32px;
+}
+.online__team .online__avatar svg {
+  width: 25px;
+  height: 25px;
+}
+.online__team-empty {
+  padding: var(--space-2);
+  border: 2px dashed color-mix(in srgb, var(--team) 35%, transparent);
+  border-radius: var(--radius-sm);
+  color: var(--color-ink-soft);
+  font-size: 13px;
+  text-align: center;
+  list-style: none;
+}
+.online__shuffle {
+  align-self: flex-start;
+}
+.online__shuffle svg {
+  width: 18px;
+  height: 18px;
+}
+.online__start svg {
+  width: 20px;
+  height: 20px;
+}
+
+/* --- Placa do apelido com time: a cor do time e o ícone dele --------------------- */
+.nameplate[data-team='0'] { --player: var(--team-0); }
+.nameplate[data-team='1'] { --player: var(--team-1); }
+.nameplate[data-team='2'] { --player: var(--team-2); }
+.nameplate__team {
+  display: grid;
+  place-items: center;
+  width: 17px;
+  height: 17px;
+  margin-left: -4px;
+  border-radius: 50%;
+  background: var(--player);
+  color: #fff;
+}
+.nameplate__team svg {
+  width: 12px;
+  height: 12px;
+}
+
+/* --- Barra do topo: relógio + placar ---------------------------------------------- */
+.match-bar {
+  position: absolute;
+  z-index: 3;
+  top: calc(max(var(--space-4), env(safe-area-inset-top)) + 54px);
+  left: 50%;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: calc(100vw - 2 * var(--space-4));
+  padding: 5px 6px;
+  border-radius: var(--radius-pill);
+  background: rgba(27, 26, 68, 0.66);
+  color: var(--dawn-cream);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 8px 24px rgba(15, 12, 40, 0.22);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  pointer-events: none;
+  white-space: nowrap;
+  transition: background-color var(--dur-slow) var(--ease-out);
+}
+.match-bar[hidden] {
+  display: none;
+}
+.is-touch .match-bar {
+  top: calc(max(var(--space-3), env(safe-area-inset-top)) + 84px);
+}
+.match-bar__icon svg {
+  width: 17px;
+  height: 17px;
+}
+.match-bar__clock {
+  display: none;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px 3px 8px;
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, 0.12);
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+}
+.match-bar.is-running .match-bar__clock {
+  display: inline-flex;
+}
+.match-bar__sides {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.match-bar__sides:empty {
+  display: none;
+}
+.match-side {
+  --side: var(--team-0);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px 3px 4px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--side) 30%, rgba(27, 26, 68, 0.4));
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  box-shadow: inset 0 -2px 0 var(--side);
+}
+.match-side[data-team='1'] { --side: var(--team-1); }
+.match-side[data-team='2'] { --side: var(--team-2); }
+.match-side--player[data-slot='0'] { --side: var(--player-0); }
+.match-side--player[data-slot='1'] { --side: var(--player-1); }
+.match-side--player[data-slot='2'] { --side: var(--player-2); }
+.match-side--player[data-slot='3'] { --side: var(--player-3); }
+.match-side--player[data-slot='4'] { --side: var(--player-4); }
+.match-side--player[data-slot='5'] { --side: var(--player-5); }
+.match-side.is-mine {
+  box-shadow: inset 0 -2px 0 var(--side), 0 0 0 2px rgba(255, 246, 232, 0.75);
+}
+.match-side__icon {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--side);
+  color: #fff;
+}
+.match-side__icon svg {
+  width: 15px;
+  height: 15px;
+}
+.match-side__dot {
+  width: 12px;
+  height: 12px;
+  margin-left: 4px;
+  border-radius: 50%;
+  background: var(--side);
+}
+.match-side__nick {
+  max-width: 8ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 13px;
+  opacity: 0.9;
+}
+.match-bar__sunset {
+  display: none;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px 3px 8px;
+  border-radius: var(--radius-pill);
+  background: linear-gradient(90deg, #ff9d5c 0%, #ff6f61 100%);
+  color: #fff;
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 900;
+}
+.match-bar.is-sunset {
+  background: rgba(96, 36, 52, 0.72);
+}
+.match-bar.is-sunset .match-bar__sunset {
+  display: inline-flex;
+  animation: match-sunset-in var(--dur-slow) var(--ease-spring);
+}
+@keyframes match-sunset-in {
+  from {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+}
+.match-bar__status {
+  display: none;
+  padding: 3px 10px;
+  font-size: 13px;
+  font-weight: 800;
+}
+.match-bar.has-status .match-bar__status {
+  display: inline;
+}
+@media (max-width: 420px) {
+  .match-side__nick {
+    display: none;
+  }
+  .match-bar__clock {
+    font-size: 16px;
+  }
+}
+
+/* --- Contagem (3, 2, 1, Já!) e "Tempo!" -------------------------------------------- */
+.match-count {
+  position: absolute;
+  z-index: 4;
+  left: 50%;
+  top: 38%;
+  transform: translate(-50%, -50%);
+  font-family: var(--font-display);
+  font-size: clamp(72px, 18vw, 150px);
+  font-weight: 900;
+  line-height: 1;
+  color: var(--dawn-cream);
+  -webkit-text-stroke: 3px rgba(43, 42, 94, 0.85);
+  paint-order: stroke fill;
+  text-shadow: 0 6px 0 rgba(43, 42, 94, 0.55), 0 16px 40px rgba(15, 12, 40, 0.35);
+  pointer-events: none;
+  white-space: nowrap;
+}
+.match-count[hidden] {
+  display: none;
+}
+.match-count.is-pop {
+  animation: match-count-pop 0.6s var(--ease-spring);
+}
+.match-count.is-final {
+  color: #ffd27a;
+}
+@keyframes match-count-pop {
+  from {
+    transform: translate(-50%, -50%) scale(1.8);
+    opacity: 0;
+  }
+}
+
+/* --- Cartão do resultado ------------------------------------------------------------ */
+.match-card {
+  --card-from: translate(24px, -50%) scale(0.96);
+  position: absolute;
+  z-index: 5;
+  top: 50%;
+  right: max(var(--space-5), env(safe-area-inset-right));
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: min(360px, calc(100vw - 2 * var(--space-4)));
+  max-height: calc(100% - 2 * var(--space-6));
+  overflow-y: auto;
+  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  background: var(--color-cream);
+  box-shadow: var(--shadow-clay), var(--inner-highlight);
+  color: var(--color-ink);
+  pointer-events: auto;
+  animation: match-card-in var(--dur-slow) var(--ease-out);
+}
+.match-card[hidden] {
+  display: none;
+}
+@keyframes match-card-in {
+  from {
+    transform: var(--card-from);
+    opacity: 0;
+  }
+}
+.match-card__head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+.match-card__head > div {
+  flex: 1;
+  min-width: 0;
+}
+.match-card__icon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: linear-gradient(180deg, #ffe39a 0%, var(--rank-gold-deep) 100%);
+  color: #5a3a12;
+}
+.match-card__icon svg {
+  width: 26px;
+  height: 26px;
+}
+.match-card__kicker {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-ink-soft);
+}
+.match-card__title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 23px;
+  font-weight: 900;
+  line-height: 1.15;
+  color: var(--dawn-indigo);
+}
+.match-card__reward {
+  margin: 4px 0 0;
+  font-weight: 800;
+  color: var(--color-accent-deep);
+}
+.match-card__close {
+  flex-shrink: 0;
+}
+.match-card__rows,
+.match-card__hls {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.match-row {
+  display: grid;
+  grid-template-columns: 34px 26px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 7px var(--space-3) 7px var(--space-2);
+  border-radius: var(--radius-md);
+  background: #fffdf8;
+  box-shadow: 0 2px 0 rgba(43, 42, 94, 0.07);
+}
+.match-row.is-first {
+  background: linear-gradient(90deg, #fff1c9 0%, #fffdf8 100%);
+}
+.match-row.is-mine {
+  box-shadow: 0 2px 0 rgba(43, 42, 94, 0.07), inset 0 0 0 2px color-mix(in srgb, var(--dawn-indigo) 35%, transparent);
+}
+.match-row__place {
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 900;
+  text-align: center;
+  color: var(--color-ink-soft);
+}
+.match-row.is-first .match-row__place {
+  color: var(--rank-gold-deep);
+}
+.match-row__team {
+  --side: var(--team-0);
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--side);
+  color: #fff;
+}
+.match-row__team[data-team='1'] { --side: var(--team-1); }
+.match-row__team[data-team='2'] { --side: var(--team-2); }
+.match-row__team--player[data-slot='0'] { --side: var(--player-0); }
+.match-row__team--player[data-slot='1'] { --side: var(--player-1); }
+.match-row__team--player[data-slot='2'] { --side: var(--player-2); }
+.match-row__team--player[data-slot='3'] { --side: var(--player-3); }
+.match-row__team--player[data-slot='4'] { --side: var(--player-4); }
+.match-row__team--player[data-slot='5'] { --side: var(--player-5); }
+.match-row__team svg {
+  width: 16px;
+  height: 16px;
+}
+.match-row__names {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+  min-width: 0;
+}
+.match-row__nick {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 800;
+}
+.match-row__nick.is-self {
+  color: var(--dawn-indigo);
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+}
+.match-row__points {
+  font-family: var(--font-display);
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  color: var(--dawn-indigo);
+}
+.match-card__sub {
+  margin: var(--space-1) 0 0;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-ink-soft);
+}
+.match-hl {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.match-hl__icon {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: rgba(43, 42, 94, 0.08);
+  color: var(--dawn-indigo);
+}
+.match-hl__icon svg {
+  width: 18px;
+  height: 18px;
+}
+.match-hl__text {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  line-height: 1.2;
+}
+.match-hl__label {
+  font-size: 12px;
+  color: var(--color-ink-soft);
+}
+.match-hl__text strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.match-hl__value {
+  font-family: var(--font-display);
+  font-weight: 900;
+  color: var(--color-accent-deep);
+}
+.match-card__actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+}
+.match-card__note {
+  margin: 0;
+  font-size: 13px;
+  color: var(--color-ink-soft);
+  text-align: center;
+}
+/* Celular (ou janela estreita): o cartão vira gaveta embaixo; o pódio aparece em cima. */
+@media (max-width: 720px) {
+  .match-card {
+    --card-from: translate(50%, 24px);
+    top: auto;
+    right: 50%;
+    bottom: max(var(--space-3), env(safe-area-inset-bottom));
+    transform: translateX(50%);
+    max-height: 52%;
+  }
+}
+
+/* Pódio: a cena é o pódio e o cartão; o HUD da rodada sai de cena. */
+.hud.is-podium .hud__stack,
+.hud.is-podium .hint,
+.hud.is-podium .burrow-marker,
+.hud.is-podium .ability,
+.hud.is-podium .result,
+.hud.is-podium .touch,
+.hud.is-podium .online-touch,
+.hud.is-podium .ping-layer {
+  visibility: hidden;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .online__match-dot,
+  .match-bar.is-sunset .match-bar__sunset,
+  .match-count.is-pop,
+  .match-card {
+    animation: none;
+  }
+  .online__quick-btn,
+  .online__team-join {
     transition: none;
   }
 }

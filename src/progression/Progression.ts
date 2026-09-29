@@ -80,6 +80,9 @@ import {
 } from './seasons';
 import { emptyPass, type PassState } from '../core/save';
 
+/** Disputa online: sem bônus de nível (ver `equalStats`). */
+const NO_BONUS = { push: 0, speed: 0 } as const;
+
 /** O que aconteceu ao comer da despensa. */
 export interface MealResult {
   /** Bolas comidas. */
@@ -285,6 +288,21 @@ export class Progression implements UnlockProgress {
    * estava parada). Os pedidos passam a contar o que tem nela; o resto da
    * rodada (poderes, pedidos já cumpridos) continua.
    */
+  /**
+   * Online, Disputa valendo: todo mundo com a mesma força e velocidade (o
+   * bônus de nível desliga; os poderes da rodada continuam, que esses todo
+   * mundo ganha igual pelo tamanho da bola).
+   */
+  equalStats = false;
+
+  /** Online: ganhou a Disputa. XP de passe a mais e a conquista. */
+  matchWon(passXp: number): void {
+    this.addPassXp(passXp);
+    this.achieve('mpWin');
+    this.persist();
+    this.emit();
+  }
+
   useLedger(ledger: RoundLedger): void {
     if (ledger === this._ledger) return;
     this._ledger = ledger;
@@ -300,7 +318,7 @@ export class Progression implements UnlockProgress {
   }
 
   get bonuses(): { push: number; speed: number } {
-    return levelBonuses(this.info.level);
+    return this.equalStats ? NO_BONUS : levelBonuses(this.info.level);
   }
 
   get pantry(): readonly PantryBall[] {

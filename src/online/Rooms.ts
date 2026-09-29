@@ -3,9 +3,10 @@ import { NET_PROTOCOL } from '../net/protocol';
 import { rpcOnUnload } from './client';
 
 /**
- * As salas no banco (ver a migração `multiplayer_rooms`): criar, entrar pelo
- * código, sair, bater o ponto e assumir a sala quando o dono some. O jogo em
- * si não passa por aqui (é P2P); isto só diz quem está em qual sala.
+ * As salas no banco (ver as migrações `multiplayer_rooms` e
+ * `multiplayer_matchmaking`): criar, entrar pelo código, procurar partida,
+ * sair, bater o ponto, assumir a sala quando o dono some e o estado da Disputa.
+ * O jogo em si não passa por aqui (é P2P); isto só diz quem está em qual sala.
  */
 
 export type RoomMode = 'garden' | 'match';
@@ -17,10 +18,12 @@ export interface RoomInfo {
   mode: RoomMode;
   visibility: 'private' | 'public';
   maxPlayers: number;
+  /** 'playing' = Disputa rolando (o dono avisa o banco; o pareamento lê). */
+  status: 'open' | 'playing';
 }
 
 /** O que pode dar errado ao criar/entrar (cada um vira uma frase na interface). */
-export type RoomError = 'room_not_found' | 'room_full' | 'protocol_mismatch' | 'rate_limited' | 'offline' | 'unknown';
+export type RoomError = 'room_not_found' | 'room_full' | 'protocol_mismatch' | 'match_running' | 'rate_limited' | 'offline' | 'unknown';
 
 export type RoomResult = { ok: true; room: RoomInfo } | { ok: false; error: RoomError };
 
@@ -44,6 +47,21 @@ export async function createRoom(client: SupabaseClient, mode: RoomMode = 'garde
 export async function joinRoom(client: SupabaseClient, code: string): Promise<RoomResult> {
   const { data, error } = await client.rpc('join_room', { p_code: code, p_protocol: NET_PROTOCOL });
   return error ? { ok: false, error: toRoomError(error) } : parseRoom(data);
+}
+
+/**
+ * Procurar partida: uma sala pública do modo (a mais cheia com vaga) ou uma
+ * nova, criada na hora (aí você é o dono e os próximos caem nela).
+ */
+export async function quickMatch(client: SupabaseClient, mode: RoomMode): Promise<RoomResult> {
+  const { data, error } = await client.rpc('quick_match', { p_mode: mode, p_protocol: NET_PROTOCOL });
+  return error ? { ok: false, error: toRoomError(error) } : parseRoom(data);
+}
+
+/** Só o dono: conta pro banco o modo e se a Disputa está rolando (o pareamento e o "entrar no meio" leem isso). */
+export async function setRoomState(client: SupabaseClient, roomId: string, mode: RoomMode, status: 'open' | 'playing'): Promise<boolean> {
+  const { error } = await client.rpc('set_room_state', { p_room: roomId, p_mode: mode, p_status: status });
+  return !error;
 }
 
 export async function leaveRoom(client: SupabaseClient): Promise<void> {
@@ -94,13 +112,14 @@ function parseRoom(data: unknown): RoomResult {
       mode: d.mode === 'match' ? 'match' : 'garden',
       visibility: d.visibility === 'public' ? 'public' : 'private',
       maxPlayers: typeof d.maxPlayers === 'number' ? d.maxPlayers : 6,
+      status: d.status === 'playing' ? 'playing' : 'open',
     },
   };
 }
 
 function toRoomError(error: { message?: string; code?: string }): RoomError {
   const message = error.message ?? '';
-  if (message === 'room_not_found' || message === 'room_full' || message === 'protocol_mismatch' || message === 'rate_limited') return message;
+  if (message === 'room_not_found' || message === 'room_full' || message === 'protocol_mismatch' || message === 'match_running' || message === 'rate_limited') return message;
   if (/fetch|network|Failed to/i.test(message)) return 'offline';
   return 'unknown';
 }

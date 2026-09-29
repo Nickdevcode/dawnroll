@@ -41,6 +41,8 @@ export const SHOWCASE_FRAMES = {
    * prêmios param no ar (os dois cabem no palco).
    */
   chest: { yaw: -10, up: 0.14, distance: 1.3, targetY: 0.62, targetZ: 0.04 },
+  /** Pódio da Disputa: o "besouro" é o chão no meio do pódio; a câmera olha os três degraus de frente, um pouco de cima. */
+  podium: { yaw: 0, up: 3.1, distance: 8.2, targetY: 1.25, targetZ: 0.3 },
 } satisfies Record<string, ShowcaseFrame>;
 
 export type ShowcaseFrameName = keyof typeof SHOWCASE_FRAMES;

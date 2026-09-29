@@ -76,6 +76,8 @@ import type { RoundLedger } from './progression/food';
 import type { InputState } from './core/Input';
 import { DizzyStars } from './fx/DizzyStars';
 import type { DebugBots } from './net/debugBots';
+import { Podium } from './world/Podium';
+import { MATCH_WIN_PASS_XP, standings, startSpot, type MatchView, type NetMatch } from './net/match';
 
 /** Evita "espiral da morte" quando a aba volta do segundo plano. */
 const MAX_FRAME_TIME = 0.1;
@@ -213,6 +215,11 @@ export class Game {
   private wheelGrabHeld = false;
   /** Desenvolvimento (`?bots=5`): besouros de mentira pra medir o custo de uma sala cheia. */
   private debugBots: DebugBots | null = null;
+  /** Disputa: o pódio (só existe no fim da partida) e se a câmera está nele. */
+  private podium: Podium | null = null;
+  private podiumView = false;
+  /** Disputa: último número da contagem que fez "tic" (um por número). */
+  private countdownTick = -1;
   /** Contagem até a toca abrir sozinha na primeira vez (0 = nada agendado). */
   private burrowIntroTimer = 0;
   private freshGlintTimer = 0;
@@ -371,9 +378,11 @@ export class Game {
     this.menu.onSheetChange = (sheet) => {
       const showcase = sheet !== null && SHOWCASE_SHEETS.has(sheet);
       if (showcase && !this.showcase.active) this.showcase.resetSpin();
-      this.showcase.active = showcase;
+      this.showcase.active = showcase || this.podiumView;
       if (sheet === 'wardrobe') this.showcase.setFrame(this.menu.wardrobe.currentTab);
       else if (showcase) this.showcase.setFrame('skins');
+      // Fechou a placa no meio do pódio: a câmera volta pro pódio.
+      else if (this.podiumView) this.showcase.setFrame('podium');
       if (!showcase) this.setLookPreview(null);
       // Abrindo a Feirinha: os baús que o jogador tem já compilam (o primeiro não engasga).
       if (sheet === 'shop') this.warmChests();
@@ -1200,7 +1209,11 @@ export class Game {
       if (this.paused) {
         // Online com o menu aberto: o jogo roda, mas o besouro e a câmera não recebem comando.
         this.clearInput();
-      } else this.cameraRig.applyLook(look.x, look.y, look.zoom);
+      } else {
+        // Disputa: na contagem, no "Tempo!" e no pódio o besouro espera (a câmera continua solta).
+        if (this.net.inputLocked) this.clearInput();
+        this.cameraRig.applyLook(look.x, look.y, look.zoom);
+      }
       // No toque, mirar com o dedão é trabalhoso: a câmera volta sozinha pra trás do besouro.
       if (this.hud.isTouch || this.input.device === 'gamepad') {
         if (look.x !== 0 || look.y !== 0) this.lastLookTime = this.elapsed;
@@ -1246,6 +1259,8 @@ export class Game {
     if (state.abilityPressed) this.tryRider();
 
     // Nível + poderes da rodada → besouro, ímã dos montinhos e alcance do Chifrudo (e o embalo da Ladeira abaixo).
+    // Na Disputa o nível não dá força nem velocidade (todo mundo igual).
+    this.progression.equalStats = this.net.equalStats;
     const ballVel = this.ball.body.linvel();
     const mods = this.progression.modifiers(this.ball.radius, Math.hypot(ballVel.x, ballVel.z));
     // Online: empurrar junto acelera a bola (quem ajuda mira na mesma velocidade do dono).
@@ -1395,8 +1410,10 @@ export class Game {
     const share = online ? this.net.burialShare() : 1;
     const outcome = this.progression.bury(result.diameterCm, { raining: this.weather.rain > 0.3, riding: this.buriedWhileRiding, share, sunCm });
     this.online.recordBurial(result.diameterCm);
+    const points = online ? this.net.director.burialPreview(result.diameterCm, sunCm) : null;
     if (online) this.net.localBury(result.diameterCm, outcome.food.total, sunCm);
     if (online && sunCm > 0) this.progression.achieve('mpSun');
+    if (points) this.hud.notify(t(points.sunset ? 'match.pointsSunset' : 'match.points', { n: Math.round(points.points) }));
     this.buriedWhileRiding = false;
     this.hud.setProgress(this.save);
     this.menu.setProgress(this.save);
@@ -1437,7 +1454,7 @@ export class Game {
    * pedidos). `newGarden`: o jardim acabou de ser trocado (solo); no online o
    * jardim é o mesmo e a sala fica sabendo da bola nova.
    */
-  private newBall(newGarden: boolean): void {
+  private newBall(newGarden: boolean, why: 'buried' | 'crumble' = 'buried'): void {
     this.effects.setAttract(0);
     this.roundPeakRadius = START_RADIUS;
     this.abilityHintTimer = 0;
@@ -1446,12 +1463,14 @@ export class Game {
     this.antFriendTimer = 0;
 
     const position = this.sproutSpot(new THREE.Vector3());
-    this.ball.reset(position);
+    // Online, a principal pode estar guardada (broto esperando, pódio): brota aqui.
+    if (this.ball.isParked) this.ball.unpark(position);
+    else this.ball.reset(position);
     this.ball.endBurial();
     // A bola nova nasceu limpa: as coisas do jardim antigo que estavam grudadas já saíram.
     if (newGarden) this.pickables.reset();
     // Online: pra sala é outra bola (número novo, conteúdo novo).
-    else this.progression.useLedger(this.net.localNewBall());
+    else this.progression.useLedger(this.net.localNewBall(why));
     this.progression.startRound();
     this.collectibles.freshChance = FRESH_CHANCE;
     this.hud.resetRound();
@@ -1505,6 +1524,12 @@ export class Game {
       pushers[1].set(this.chestSpot.x, this.chestSpot.y, this.chestSpot.z, 1.8);
       const mid = this.tmpFocus.copy(camera.position).add(this.chestSpot).multiplyScalar(0.5);
       pushers[2].set(mid.x, this.chestSpot.y, mid.z, 1.6);
+    } else if (this.podiumView && this.podium) {
+      // Pódio da Disputa: o capim deita em volta das rodelas e no caminho da lente.
+      const center = this.podium.anchor.position;
+      pushers[1].set(center.x, center.y, center.z, 6.2);
+      const mid = this.tmpFocus.copy(camera.position).add(center).multiplyScalar(0.5);
+      pushers[2].set(mid.x, center.y, mid.z, 2.6);
     } else {
       pushers[1].set(ballPos.x, ballPos.y - this.ball.radius, ballPos.z, this.ball.isSolid ? this.ball.radius * 1.05 : 0);
       // Provador: o capim em volta da lente deita (senão uma folha tapa o close).
@@ -1526,6 +1551,8 @@ export class Game {
     this.hud.setHint(hint.kind, hint.value, hint.label);
     this.updateBurrowMarker(player);
     this.updateNameplates();
+    this.hud.updateMatch();
+    this.updateMatchTicks();
     this.hud.setMergeAvailable(this.mergeHint !== null && !this.paused);
     this.hud.update(dt);
     this.updateAudio(dt, player);
@@ -1625,14 +1652,16 @@ export class Game {
       }
     } else {
       const sheet = this.menu.showcaseSheet;
-      if (sheet) {
-        const rect = sheet.getBoundingClientRect();
+      // Pódio da Disputa: o cartão do resultado ocupa um canto, como uma placa.
+      const rect = sheet ? sheet.getBoundingClientRect() : this.podiumView ? this.hud.matchCardRect() : null;
+      if (rect) {
         // Placa do lado (computador): livre à esquerda dela. Placa embaixo (celular): livre em cima.
         if (rect.left > w * 0.25) free.width = rect.left;
         else if (rect.top > h * 0.2) free.height = rect.top;
       }
     }
-    const root = this.chest ? this.chestAnchor : this.beetle.model.root;
+    const podium = this.podiumView && !this.menu.showcaseSheet ? this.podium : null;
+    const root = this.chest ? this.chestAnchor : podium ? podium.anchor : this.beetle.model.root;
     return this.showcase.apply(this.graphics.camera, root, dt, this.viewport, free);
   }
 
@@ -1891,6 +1920,9 @@ export class Game {
         void emote;
       },
       ended: (reason) => this.onlineEnded(reason),
+      matchSetup: (seed, spot) => this.matchSetup(seed, spot),
+      matchView: (view, prev) => this.onMatchView(view, prev),
+      matchResult: (match, won) => this.onMatchResult(match, won),
     };
   }
 
@@ -1988,8 +2020,148 @@ export class Game {
   private onlineEnded(reason: CloseReason): void {
     this.onlinePerkTimer = 0;
     this.onlineLayoutSeed = null;
+    this.progression.equalStats = false;
+    this.countdownTick = -1;
+    // Saiu no pódio: o besouro desce e a bola (guardada) volta.
+    if (this.podiumView || this.podium?.visible) this.leavePodium(true);
     if (this.hud.perkPicker.visible) this.hud.perkPicker.pickSelected();
     if (reason !== 'left') this.hud.notify(t(reason === 'full' ? 'online.error.room_full' : 'online.lost'));
+  }
+
+  // --- Disputa ------------------------------------------------------------------------------
+
+  /**
+   * Largada da Disputa (ou entrou no meio dela): o jardim da partida, as suas
+   * bolas zeradas (um broto do lado) e o besouro no lugar dele no círculo do
+   * nascimento, olhando pra fora.
+   */
+  private matchSetup(seed: number, spot: { x: number; z: number; yaw: number }): void {
+    this.leavePodium(false);
+    if (this.hud.perkPicker.visible) this.hud.perkPicker.pickSelected();
+    this.burrow.cancel();
+    this.useOnlineGarden(seed);
+    this.net.balls.clearForMatch();
+    this.beetle.teleport(this.tmpMarker.set(spot.x, terrainHeight(spot.x, spot.z), spot.z), spot.yaw);
+    // A câmera atrás do besouro, olhando pra onde ele olha.
+    this.cameraRig.yaw = spot.yaw + Math.PI;
+    this.newBall(false, 'crumble');
+    if (this.net.director.view === 'playing') this.hud.notify(t('match.lateJoin'));
+  }
+
+  /** A fase da Disputa mudou: som, pódio (a trava do besouro é `net.inputLocked`). */
+  private onMatchView(view: MatchView, prev: MatchView): void {
+    if (prev === 'ended' && view !== 'ended') this.leavePodium(view === 'idle');
+    switch (view) {
+      case 'countdown':
+        this.countdownTick = -1;
+        break;
+      case 'playing':
+        if (prev === 'countdown') {
+          this.audio.abilityReady();
+          this.rumble(0.4, 0.4, 160);
+        }
+        break;
+      case 'overtime':
+        this.audio.perkOffer();
+        this.rumble(0.5, 0.5, 250);
+        break;
+      case 'ended':
+        this.showPodium();
+        break;
+      default:
+        break;
+    }
+  }
+
+  /** Um "tic" por número da contagem (3, 2, 1). */
+  private updateMatchTicks(): void {
+    const director = this.net.director;
+    if (!this.net.active || director.view !== 'countdown') {
+      this.countdownTick = -1;
+      return;
+    }
+    const n = Math.ceil(director.match.startsAt - this.net.time);
+    if (n === this.countdownTick || n < 1 || n > 3) return;
+    this.countdownTick = n;
+    this.audio.notify();
+  }
+
+  /**
+   * Fim da Disputa: cada um põe o próprio besouro no degrau do seu lado (os
+   * outros veem pelos retratos de sempre) e a câmera enquadra o pódio. A bola
+   * não sobe: a principal recomeça guardada e brota quando o jardim voltar a
+   * ser livre.
+   */
+  private showPodium(): void {
+    const match = this.net.director.match;
+    const podium = (this.podium ??= new Podium(this.physics));
+    podium.show(this.graphics.scene);
+    this.burrow.cancel();
+    this.net.balls.clearForMatch();
+    this.progression.useLedger(this.net.localNewBall('crumble'));
+    this.ball.endBurial();
+    this.ball.park();
+    const sides = standings(match);
+    const self = this.net.selfId;
+    let rank = sides.findIndex((s) => s.uids.includes(self));
+    let index = 0;
+    let count = 1;
+    if (rank >= 0 && rank < 3) {
+      index = sides[rank].uids.indexOf(self);
+      count = sides[rank].uids.length;
+    } else {
+      // Do 4º lugar pra baixo (ou quem chegou no pódio): fila da frente.
+      const row = sides.slice(3).flatMap((s) => s.uids);
+      if (!row.includes(self)) row.push(self);
+      rank = 3;
+      index = row.indexOf(self);
+      count = row.length;
+    }
+    const spot = podium.spot(rank, index, count, this.tmpMarker);
+    this.beetle.teleport(spot.position, spot.yaw);
+    this.podiumView = true;
+    this.hud.setPodium(true);
+    this.showcase.obstacles = [];
+    this.showcase.steady = true;
+    if (!this.menu.showcaseSheet) {
+      this.showcase.active = true;
+      this.showcase.resetSpin();
+      this.showcase.setFrame('podium');
+    }
+    this.effects.celebrate(podium.top(0, this.tmpFocus), 1);
+    this.audio.achievement();
+  }
+
+  /**
+   * O pódio acabou: some e a câmera volta pro besouro. `release` = o jardim
+   * voltou a ser livre: o besouro desce pro círculo do nascimento e a bola brota.
+   */
+  private leavePodium(release: boolean): void {
+    const was = this.podiumView || !!this.podium?.visible;
+    this.podiumView = false;
+    this.podium?.hide();
+    this.hud.setPodium(false);
+    if (!was) return;
+    if (!this.chest && !this.menu.showcaseSheet) {
+      this.showcase.active = false;
+      this.showcase.steady = false;
+      this.showcase.setFrame('skins');
+    }
+    if (!release) return;
+    const spot = startSpot(this.net.active ? Math.max(0, this.net.players.findIndex((p) => p.isSelf)) : 0, Math.max(1, this.net.players.length));
+    this.beetle.teleport(this.tmpMarker.set(spot.x, terrainHeight(spot.x, spot.z), spot.z), spot.yaw);
+    this.cameraRig.yaw = spot.yaw + Math.PI;
+    if (this.net.active) this.newBall(false, 'crumble');
+    else if (this.ball.isParked) this.ball.unpark(this.sproutSpot(this.tmpBall));
+  }
+
+  /** Resultado da Disputa: quem ganhou leva XP de passe e a conquista. */
+  private onMatchResult(_match: NetMatch, won: boolean): void {
+    if (!won) return;
+    this.progression.matchWon(MATCH_WIN_PASS_XP);
+    this.hud.setProgress(this.save);
+    this.menu.setProgress(this.save);
+    this.audio.levelUp();
   }
 
   /** Online: cartas de poder por cima do jogo (direcional do controle, e escolha sozinha no fim do tempo). */

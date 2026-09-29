@@ -578,7 +578,7 @@ export class Menu {
           </ul>
           <h3 class="sheet__heading" data-t="help.online"></h3>
           <ul class="help-list">
-            <li data-t="help.online1"></li><li data-t="help.online2"></li><li data-t="help.online3"></li>
+            <li data-t="help.online1"></li><li data-t="help.online2"></li><li data-t="help.online3"></li><li data-t="help.online4"></li>
           </ul>
           <h3 class="sheet__heading" data-t="help.controls"></h3>
           ${controls}

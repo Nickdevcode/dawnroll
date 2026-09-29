@@ -1,5 +1,7 @@
 import { isCatalogId, type CatalogId } from '../progression/catalog';
 import { isHue, type Hue } from '../progression/colors';
+import { MAX_BOARD, isMatchMinutes, type MatchEntry, type MatchMinutes, type NetMatch } from './match';
+import { isTeamSize, type TeamSize } from './teams';
 
 /**
  * Protocolo do online: o que os besouros de uma sala dizem uns pros outros.
@@ -21,7 +23,7 @@ import { isHue, type Hue } from '../progression/colors';
  */
 
 /** Sobe quando o formato muda de um jeito que página velha não entende (a sala recusa quem difere). */
-export const NET_PROTOCOL = 2;
+export const NET_PROTOCOL = 3;
 
 /** Jogadores por sala (o banco confere o mesmo teto). */
 export const MAX_PLAYERS = 6;
@@ -277,13 +279,26 @@ export interface NetWeather {
   puddleFill: number;
 }
 
+export type RoomModeId = 'garden' | 'match';
+
 /** Regras da sala (o dono escolhe na placa da sala). */
 export interface NetRules {
-  /** Roubar bola solta, trombada e engolir bola alheia valem. */
+  /** Roubar bola solta, trombada e engolir bola alheia valem (na Disputa, sempre). */
   steal: boolean;
+  /** Jardim livre ou Disputa (com tempo e placar). */
+  mode: RoomModeId;
+  /** 1 = cada um por si, 2 = duplas, 3 = trios. */
+  teamSize: TeamSize;
+  /** Duração da Disputa. */
+  minutes: MatchMinutes;
 }
 
-export const DEFAULT_RULES: NetRules = { steal: true };
+export const DEFAULT_RULES: NetRules = { steal: true, mode: 'garden', teamSize: 1, minutes: 5 };
+
+/** As regras que valem agora: na Disputa o roubo é sempre ligado. */
+export function effectiveRules(rules: NetRules): NetRules {
+  return rules.mode === 'match' && !rules.steal ? { ...rules, steal: true } : rules;
+}
 
 /** Tudo do mundo compartilhado que quem chega precisa pra ver o mesmo jardim. */
 export interface NetWorld {
@@ -297,6 +312,10 @@ export interface NetWorld {
   debris: number[];
   weather: NetWeather | null;
   rules: NetRules;
+  /** Times (uid → time); vazio = cada um por si. */
+  teams: Array<[string, number]>;
+  /** A Disputa (ou o intervalo entre uma e outra). */
+  match: NetMatch;
 }
 
 /** Por que uma bola saiu do jogo (o dono avisa). */
@@ -350,6 +369,10 @@ export type NetEvent =
   | { t: 'swallowed'; b: number; into: number; by: string }
   | { t: 'merged'; b: number; into: number; by: string }
   | { t: 'rules'; rules: NetRules }
+  | { t: 'teams'; m: Array<[string, number]> }
+  | { t: 'match'; m: NetMatch }
+  // Times: pedir pra trocar (o dono confere a vaga e anuncia `teams`).
+  | { t: 'team'; team: number; from?: string }
   // Social.
   | { t: 'emote'; e: number; x?: number; z?: number; from?: string }
   | { t: 'look'; look: NetLook; from?: string };
@@ -408,8 +431,64 @@ function isWeather(v: unknown): v is NetWeather {
 }
 
 function isRules(v: unknown): v is NetRules {
-  return !!v && typeof v === 'object' && isBool((v as NetRules).steal);
+  if (!v || typeof v !== 'object') return false;
+  const r = v as Record<string, unknown>;
+  return isBool(r.steal) && (r.mode === 'garden' || r.mode === 'match') && isTeamSize(r.teamSize) && isMatchMinutes(r.minutes);
 }
+
+const TEAM_MAX = 2;
+
+function isTeamList(v: unknown): v is Array<[string, number]> {
+  return Array.isArray(v) && v.length <= MAX_PLAYERS && v.every((p) => Array.isArray(p) && p.length === 2 && isUid(p[0]) && isInt(p[1], 0, TEAM_MAX));
+}
+
+function isMatchEntry(v: unknown): v is MatchEntry {
+  if (!v || typeof v !== 'object') return false;
+  const e = v as Record<string, unknown>;
+  return (
+    isUid(e.uid) &&
+    isStr(e.nick, 40) &&
+    isInt(e.slot, 0, MAX_PLAYERS - 1) &&
+    isInt(e.team, -1, TEAM_MAX) &&
+    isNum(e.points, 0, 1e6) &&
+    isNum(e.best, 0, 40) &&
+    isInt(e.steals, 0, 1e4) &&
+    isInt(e.gifts, 0, 1e4)
+  );
+}
+
+function isMatch(v: unknown): v is NetMatch {
+  if (!v || typeof v !== 'object') return false;
+  const m = v as Record<string, unknown>;
+  return (
+    (m.phase === 'idle' || m.phase === 'countdown' || m.phase === 'playing' || m.phase === 'ended') &&
+    isInt(m.round, 0, 1e6) &&
+    isInt(m.seed, 0, 0xffffffff) &&
+    isNum(m.startsAt, 0, 1e9) &&
+    isNum(m.endsAt, 0, 1e9) &&
+    isNum(m.until, 0, 1e9) &&
+    isTeamSize(m.teamSize) &&
+    Array.isArray(m.board) &&
+    m.board.length <= MAX_BOARD &&
+    m.board.every(isMatchEntry)
+  );
+}
+
+/** Só os campos conhecidos (um cliente modificado não enfia lixo no estado de todo mundo). */
+function cleanMatch(m: NetMatch): NetMatch {
+  return {
+    phase: m.phase,
+    round: m.round,
+    seed: m.seed,
+    startsAt: m.startsAt,
+    endsAt: m.endsAt,
+    until: m.until,
+    teamSize: m.teamSize,
+    board: m.board.map((e) => ({ uid: e.uid, nick: e.nick, slot: e.slot, team: e.team, points: e.points, best: e.best, steals: e.steals, gifts: e.gifts })),
+  };
+}
+
+const cleanRules = (r: NetRules): NetRules => ({ steal: r.steal, mode: r.mode, teamSize: r.teamSize, minutes: r.minutes });
 
 function isWorld(v: unknown): v is NetWorld {
   if (!v || typeof v !== 'object') return false;
@@ -423,7 +502,9 @@ function isWorld(v: unknown): v is NetWorld {
     w.piles.every((p) => !!p && isInt((p as NetPile).seed, 0, 0xffffffff) && isBool((p as NetPile).fresh) && isBool((p as NetPile).gone)) &&
     isIntList(w.debris, 0xffffffff, 1024) &&
     (w.weather === null || isWeather(w.weather)) &&
-    isRules(w.rules)
+    isRules(w.rules) &&
+    isTeamList(w.teams) &&
+    isMatch(w.match)
   );
 }
 
@@ -455,7 +536,7 @@ export function parseEvent(text: string): NetEvent | null {
       return isInt(e.v, 1, 1000) && isUid(e.uid) && isStr(e.nick, 40) && isLook(e.look) ? { t: 'hello', v: e.v, uid: e.uid, nick: e.nick, look: e.look } : null;
     case 'welcome':
       return isInt(e.slot, 0, MAX_PLAYERS - 1) && isNum(e.hostTime, 0, 1e9) && Array.isArray(e.members) && e.members.length <= MAX_PLAYERS && e.members.every(isMember) && isWorld(e.world)
-        ? { t: 'welcome', slot: e.slot, hostTime: e.hostTime, members: e.members, world: e.world }
+        ? { t: 'welcome', slot: e.slot, hostTime: e.hostTime, members: e.members, world: { ...e.world, rules: cleanRules(e.world.rules), match: cleanMatch(e.world.match) } }
         : null;
     case 'join':
       return isMember(e.member) ? { t: 'join', member: e.member } : null;
@@ -522,7 +603,13 @@ export function parseEvent(text: string): NetEvent | null {
     case 'merged':
       return isBallId(e.b) && isBallId(e.into) && isUid(e.by) ? { t: e.t, b: e.b, into: e.into, by: e.by } : null;
     case 'rules':
-      return isRules(e.rules) ? { t: 'rules', rules: { steal: e.rules.steal } } : null;
+      return isRules(e.rules) ? { t: 'rules', rules: cleanRules(e.rules) } : null;
+    case 'teams':
+      return isTeamList(e.m) ? { t: 'teams', m: e.m } : null;
+    case 'match':
+      return isMatch(e.m) ? { t: 'match', m: cleanMatch(e.m) } : null;
+    case 'team':
+      return isInt(e.team, 0, TEAM_MAX) ? { t: 'team', team: e.team, from } : null;
     case 'emote':
       if (!isInt(e.e, 0, EMOTE_COUNT - 1)) return null;
       if (e.x === undefined && e.z === undefined) return { t: 'emote', e: e.e, from };
@@ -554,6 +641,7 @@ export const CLIENT_EVENTS: ReadonlySet<NetEventType> = new Set<NetEventType>([
   'merge',
   'emote',
   'look',
+  'team',
 ]);
 
 /** Eventos de jogador que o dono repassa pros outros (carimbando `from`). Os pedidos (roubar, engolir...) ele decide e anuncia. */

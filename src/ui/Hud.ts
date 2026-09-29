@@ -233,6 +233,21 @@ export class Hud {
     this.onlineHud?.setMergeAvailable(available);
   }
 
+  /** Pódio da Disputa: o HUD da rodada (bola, pedidos, dicas, controles) sai de cena; ficam o cartão e os botões do topo. */
+  setPodium(on: boolean): void {
+    this.hud.classList.toggle('is-podium', on);
+  }
+
+  /** Disputa: relógio, contagem e pôr do sol (a cada quadro). */
+  updateMatch(): void {
+    this.onlineHud?.match.update();
+  }
+
+  /** Cartão do resultado da Disputa na tela (pra câmera do pódio centralizar no resto). */
+  matchCardRect(): DOMRect | null {
+    return this.onlineHud?.match.cardRect() ?? null;
+  }
+
   /** Placas de apelido dos besouros remotos neste quadro. */
   setNameplates(sources: readonly NameplateSource[], camera: THREE.Camera): void {
     this.onlineHud?.setNameplates(sources, camera);

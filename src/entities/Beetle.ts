@@ -271,9 +271,11 @@ export class Beetle {
     return speed > 1 ? new THREE.Vector3(this.velocity.x / speed, 0, this.velocity.z / speed) : null;
   }
 
-  teleport(feet: THREE.Vector3): void {
+  /** Põe o besouro num ponto (os pés), parado; `yaw` = pra onde ele fica olhando (senão, o de antes). */
+  teleport(feet: THREE.Vector3, yaw?: number): void {
     this.riding = false;
     this.hop = null;
+    if (yaw !== undefined) this.yaw = this.prevYaw = yaw;
     this.position.copy(feet).add(tmpA.set(0, COLLIDER_RADIUS + 0.05, 0));
     this.prevPosition.copy(this.position);
     this.velocity.set(0, 0, 0);

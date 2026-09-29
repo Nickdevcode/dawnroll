@@ -9,12 +9,15 @@ import type { Pickables } from '../world/Pickables';
 import type { Scenery } from '../world/Scenery';
 import type { Weather } from '../world/Weather';
 import { BallSync, type BallGame } from './BallSync';
+import { MatchDirector } from './MatchDirector';
+import type { MatchView, NetMatch } from './match';
 import { NetSession, type CloseReason, type SessionStatus } from './NetSession';
 import { PoseBuffer, beetleOps, type RemoteBeetlePose } from './snapshotBuffer';
 import {
   DEFAULT_RULES,
   EMOTE_HERE,
   SNAPSHOT_HZ,
+  effectiveRules,
   encodeSnapshot,
   type BallPose,
   type NetEvent,
@@ -23,9 +26,10 @@ import {
   type NetRules,
   type NetWorld,
   type PlayerSnapshot,
+  type RoomModeId,
 } from './protocol';
 import { DIZZY_SECONDS, TACKLE_COOLDOWN, TACKLE_LOOSE_SECONDS, TACKLE_MIN_SPEED, TACKLE_REACH, judgeTackle, relation, type BeetleFacts } from './rules';
-import { createRoom, joinRoom, type RoomError, type RoomInfo } from '../online/Rooms';
+import { createRoom, joinRoom, quickMatch, setRoomState, type RoomError, type RoomInfo } from '../online/Rooms';
 
 /**
  * O online dentro do jogo: liga a sessão de rede (`NetSession`) ao jardim.
@@ -70,6 +74,12 @@ export interface OnlineBridge extends BallGame {
   emote(uid: string, emote: number, at: THREE.Vector3 | null): void;
   /** A sessão acabou (saiu, caiu): o jogo volta pro solo. */
   ended(reason: CloseReason): void;
+  /** Disputa nova (contagem ou entrou no meio): jardim da semente, bolas zeradas, besouro na largada. */
+  matchSetup(seed: number, spot: { x: number; z: number; yaw: number }): void;
+  /** A fase da Disputa mudou (contagem, valendo, tempo esgotado, pódio, livre). */
+  matchView(view: MatchView, prev: MatchView): void;
+  /** Resultado da Disputa (uma vez por partida). */
+  matchResult(match: NetMatch, won: boolean): void;
 }
 
 /** Um jogador remoto na cena. */
@@ -87,6 +97,8 @@ export interface OnlinePlayer {
   look: NetLook;
   isHost: boolean;
   isSelf: boolean;
+  /** Time (−1 = cada um por si). */
+  team: number;
 }
 
 /** Placa de apelido: onde desenhar cada um (atualizado a cada quadro). */
@@ -101,6 +113,8 @@ export interface NameplateSource {
   emote: number;
   /** Tonto (levou trombada). */
   dizzy: boolean;
+  /** Time (−1 = cada um por si): a placa ganha a cor e o ícone dele. */
+  team: number;
 }
 
 /** Marcador "Aqui!" no chão: de quem (a vaga dá a cor) e até quando. */
@@ -124,6 +138,8 @@ const EMOTE_SECONDS = 3;
 const PING_SECONDS = 6;
 /** Uma reação a cada tanto (a roda não vira metralhadora). */
 const EMOTE_COOLDOWN = 1.2;
+/** A Disputa anda no relógio mesmo com a aba escondida (o dono vira as fases). */
+const MATCH_TICK_MS = 250;
 /**
  * Besouro remoto mais longe que isso da câmera não projeta sombra: são ~70
  * peças (patas, antenas, acessórios), e cada uma é mais um desenho no passe de
@@ -139,6 +155,11 @@ export class OnlinePlay {
   private readonly listeners = new Set<() => void>();
   private readonly regrowAt = new Map<number, number>();
   readonly balls: BallSync;
+  /** Times e Disputa (o dono conduz; todo mundo reage às fases). */
+  readonly director: MatchDirector;
+  /** A sala no banco (código, visibilidade, modo de quando foi criada). */
+  private room: RoomInfo | null = null;
+  private matchTimer = 0;
   private readonly snapshot: PlayerSnapshot = {
     slot: 0,
     time: 0,
@@ -184,12 +205,44 @@ export class OnlinePlay {
         return (play.session ?? play.opening)?.isHost ?? false;
       },
       now: () => this.now(),
-      rules: () => this._rules,
+      rules: () => effectiveRules(this._rules),
+      teams: () => play.director.teams,
       send: (event) => this.send(event),
       request: (event) => this.request(event),
       nick: (uid) => this.nick(uid),
       beetleAt: (uid, out) => this.beetleAt(uid, out),
     });
+    this.director = new MatchDirector(
+      {
+        get selfId() {
+          return play.selfUid;
+        },
+        get isHost() {
+          return (play.session ?? play.opening)?.isHost ?? false;
+        },
+        get isPublic() {
+          return play.room?.visibility === 'public';
+        },
+        now: () => this.now(),
+        send: (event) => this.send(event),
+        members: () => (this.session ?? this.opening)?.memberList ?? [],
+        rules: () => this._rules,
+        setRules: (rules) => this.setRules(rules),
+        roomState: (mode, status) => this.saveRoomState(mode, status),
+      },
+      {
+        matchSetup: (seed, spot) => {
+          this.regrowAt.clear();
+          bridge.matchSetup(seed, spot);
+        },
+        matchView: (view, prev) => {
+          bridge.matchView(view, prev);
+          this.changed();
+        },
+        matchResult: (match, won) => bridge.matchResult(match, won),
+        matchChanged: () => this.changed(),
+      },
+    );
   }
 
   // --- Estado pra interface ------------------------------------------------------------
@@ -218,14 +271,43 @@ export class OnlinePlay {
     return this.selfUid;
   }
 
+  /** Relógio da sala (segundos): o mesmo pra todo mundo. */
+  get time(): number {
+    return this.now();
+  }
+
+  /** As regras escolhidas pelo dono (a placa mostra; o roubo da Disputa é sempre ligado, ver `effectiveRules`). */
   get rules(): Readonly<NetRules> {
     return this._rules;
+  }
+
+  /** Sala pública (procurar partida). */
+  get isPublic(): boolean {
+    return this.room?.visibility === 'public';
+  }
+
+  /** O besouro está travado pela Disputa (contagem, tempo esgotado, pódio). */
+  get inputLocked(): boolean {
+    return this.active && this.director.inputLocked;
+  }
+
+  /** Disputa valendo (ou na contagem): atributos iguais pra todo mundo. */
+  get equalStats(): boolean {
+    return this.active && this._rules.mode === 'match' && this.director.running;
   }
 
   get players(): OnlinePlayer[] {
     const session = this.session;
     if (!session) return [];
-    return session.memberList.map((m) => ({ uid: m.uid, slot: m.slot, nick: m.nick, look: m.look, isHost: m.uid === session.host, isSelf: m.uid === session.selfId }));
+    return session.memberList.map((m) => ({
+      uid: m.uid,
+      slot: m.slot,
+      nick: m.nick,
+      look: m.look,
+      isHost: m.uid === session.host,
+      isSelf: m.uid === session.selfId,
+      team: this.teamOf(m.uid),
+    }));
   }
 
   /** Segundos até poder dar outra trombada (0 = pronta). */
@@ -251,6 +333,17 @@ export class OnlinePlay {
     return this.open(player, result.room);
   }
 
+  /** Procurar partida: cai numa sala pública do modo (ou cria uma, e os próximos caem nela). */
+  async quickMatch(mode: RoomModeId): Promise<OnlineOutcome> {
+    const player = this.player();
+    if (!player) return { ok: false, error: 'account' };
+    if (this.session) await this.leave();
+    const result = await quickMatch(player.client, mode).catch(() => null);
+    if (!result) return { ok: false, error: 'offline' };
+    if (!result.ok) return { ok: false, error: result.error };
+    return this.open(player, result.room);
+  }
+
   /** Entra numa sala pelo código. */
   async join(code: string): Promise<OnlineOutcome> {
     const player = this.player();
@@ -269,20 +362,53 @@ export class OnlinePlay {
   }
 
   /**
-   * Dono da sala: liga/desliga o roubo (bola solta, trombada, engolir). Todo
-   * mundo guarda as regras: se o dono cair, quem assume continua com elas.
+   * Dono da sala: muda as regras (roubo, modo, tamanho do time, tempo da
+   * Disputa); `change` é só o que muda. Todo mundo guarda as regras: se o dono
+   * cair, quem assume continua com elas.
    */
-  setRules(rules: NetRules): void {
+  setRules(change: Partial<NetRules>): void {
     if (!this.session?.isHost) return;
-    this._rules = { ...rules };
+    const prev = this._rules;
+    this._rules = { ...prev, ...change };
     this.send({ t: 'rules', rules: this._rules });
+    this.director.rulesChanged(prev, this._rules);
     this.changed();
+  }
+
+  /** Dono: começa a Disputa (precisa de 2 ou mais na sala). */
+  startMatch(): boolean {
+    return this.director.start();
+  }
+
+  /** Pedir pra ir pro time `team`. */
+  chooseTeam(team: number): void {
+    if (this.active) this.director.chooseTeam(team);
+  }
+
+  /** Dono: embaralha os times. */
+  shuffleTeams(): void {
+    this.director.shuffle();
+  }
+
+  /** Só o dono: o banco fica sabendo do modo e da Disputa (sem esperar; se falhar, a próxima mudança acerta). */
+  private saveRoomState(mode: RoomModeId, status: 'open' | 'playing'): void {
+    const player = this.player();
+    const room = this.room;
+    if (!player || !room || !(this.session ?? this.opening)?.isHost) return;
+    void setRoomState(player.client, room.id, mode, status).catch(() => undefined);
   }
 
   private async open(player: { client: SupabaseClient; userId: string }, room: RoomInfo): Promise<OnlineOutcome> {
     this.everOnline = false;
     this.selfUid = player.userId;
-    this._rules = { ...DEFAULT_RULES };
+    this.room = room;
+    // Quem cria a sala começa no modo dela (procurar Disputa = sala de Disputa); quem entra recebe as regras do dono.
+    this._rules = { ...DEFAULT_RULES, mode: room.mode };
+    this.director.reset();
+    window.clearInterval(this.matchTimer);
+    this.matchTimer = window.setInterval(() => {
+      if (this.session) this.director.update();
+    }, MATCH_TICK_MS);
     this.setStatus('connecting');
     try {
       this.session = await NetSession.open(player.client, player.userId, room, {
@@ -305,6 +431,7 @@ export class OnlinePlay {
     } catch (error) {
       this.opening = null;
       this.session = null;
+      this.room = null;
       this.teardown();
       this.setStatus('off');
       return { ok: false, error: error instanceof Error && error.message === 'signal' ? 'signal' : 'connect' };
@@ -354,6 +481,7 @@ export class OnlinePlay {
     this.balls.render(alpha, dt);
     const session = this.session;
     if (!session) return;
+    this.director.update();
     const now = session.clock.now();
     for (const [uid, emote] of this.emotes) if (now > emote.until) this.emotes.delete(uid);
     for (let i = this.pings.length - 1; i >= 0; i--) if (now > this.pings[i].until) this.pings.splice(i, 1);
@@ -389,13 +517,14 @@ export class OnlinePlay {
         isHost: uid === session.host,
         emote: this.emotes.get(uid)?.e ?? -1,
         dizzy: remote.buffer.latest?.pose.beetle.dizzy ?? false,
+        team: this.teamOf(uid),
       });
     }
     // O seu balão também aparece (em cima do seu besouro, sem placa de nome).
     const mine = this.emotes.get(session.selfId);
     if (mine) {
       const p = this.bridge.beetle.renderPosition(1, tmpPos);
-      out.push({ uid: session.selfId, slot: session.slot, nick: '', position: new THREE.Vector3(p.x, p.y + 1.4, p.z), isHost: false, emote: mine.e, dizzy: false });
+      out.push({ uid: session.selfId, slot: session.slot, nick: '', position: new THREE.Vector3(p.x, p.y + 1.4, p.z), isHost: false, emote: mine.e, dizzy: false, team: this.teamOf(session.selfId) });
     }
     return out;
   }
@@ -434,7 +563,9 @@ export class OnlinePlay {
    */
   localBury(cm: number, food: number, sunCm: number): void {
     const { all } = this.balls.burialShares();
-    this.send({ t: 'bury', b: this.balls.mainId || 1, cm: Math.round(cm * 10) / 10, food: Math.round(food), sun: Math.round(sunCm * 10) / 10, s: all });
+    const event = { t: 'bury', b: this.balls.mainId || 1, cm: Math.round(cm * 10) / 10, food: Math.round(food), sun: Math.round(sunCm * 10) / 10, s: all } as const;
+    this.send(event);
+    if (this.session?.isHost) this.director.noteBurial(this.selfUid, event.cm, event.sun, event.s);
   }
 
   /** A minha parte na bola principal (0..1), pra o enterro dividir a comida. */
@@ -442,9 +573,9 @@ export class OnlinePlay {
     return this.balls.burialShares().mine;
   }
 
-  /** A bola principal renasceu pequena depois do enterro: pra sala é outra bola. Devolve o conteúdo novo. */
-  localNewBall(): RoundLedger {
-    return this.balls.renewMain();
+  /** A bola principal renasceu pequena depois do enterro (ou na largada da Disputa): pra sala é outra bola. Devolve o conteúdo novo. */
+  localNewBall(why: 'buried' | 'crumble' = 'buried'): RoundLedger {
+    return this.balls.renewMain(why);
   }
 
   /** O visual mudou (guarda-roupa): os outros veem a roupa nova. */
@@ -505,6 +636,7 @@ export class OnlinePlay {
     // A bola que você estava fazendo vira a sua bola na sala (e o conteúdo dela vai pra todos).
     this.balls.start(this.bridge.mainLedger());
     this.balls.resendInfo();
+    this.director.welcome(world);
     this.changed();
   }
 
@@ -512,6 +644,7 @@ export class OnlinePlay {
     if (member.uid === this.selfUid) return;
     this.ensureRemote(member);
     this.balls.resendInfo();
+    this.director.memberJoined(member);
     this.bridge.notify(member.nick, 'join');
     // O dono conta as regras da sala pra quem chegou (o "welcome" já leva, mas quem já estava na sala pode ter perdido).
     this.changed();
@@ -521,6 +654,7 @@ export class OnlinePlay {
     const remote = this.remotes.get(uid);
     if (remote) this.bridge.notify(remote.member.nick, 'leave');
     this.removeRemote(uid);
+    this.director.memberLeft(uid);
     this.changed();
   }
 
@@ -538,6 +672,7 @@ export class OnlinePlay {
 
   private receiveEvent(event: NetEvent, from: string): void {
     const b = this.bridge;
+    if (this.director.onEvent(event, from)) return;
     switch (event.t) {
       case 'absorb':
         b.pickables.absorbRemote(event.id, this.balls.proxyBall(event.b));
@@ -583,6 +718,7 @@ export class OnlinePlay {
         const remote = this.remotes.get(from);
         const share = event.s.find(([uid]) => uid === this.selfUid)?.[1] ?? 0;
         if (remote) b.remoteBurial(event.cm, remote.member.nick, share, event.food * share);
+        if (this.session?.isHost && this.plausibleBurial(from, event.b, event.cm)) this.director.noteBurial(from, event.cm, event.sun, event.s);
         return;
       }
       case 'look': {
@@ -631,6 +767,7 @@ export class OnlinePlay {
     if (!decision) return;
     this.send(decision);
     this.receiveEvent(decision, this.selfUid);
+    this.director.noteDecision(decision);
   }
 
   /** Manda um pedido pro dono da sala; sendo o dono, decide na hora. */
@@ -644,6 +781,7 @@ export class OnlinePlay {
   private roleChanged(isHost: boolean): void {
     this.applyAuthority(isHost);
     if (isHost) {
+      this.director.becameHost();
       this.bridge.collectibles.claimAuthority();
       // Assumiu a sala no meio: o que já estava arrancado rebrota a partir de agora.
       const now = this.now();
@@ -659,6 +797,7 @@ export class OnlinePlay {
     this.setStatus(status);
     if (status !== 'closed') return;
     this.session = null;
+    this.room = null;
     this.teardown();
     // Nunca chegou a entrar: quem avisa é a placa (com o motivo), não o "a sala caiu".
     if (this.everOnline) this.bridge.ended(reason ?? 'lost');
@@ -673,7 +812,7 @@ export class OnlinePlay {
    */
   private detectTackle(now: number): void {
     const beetle = this.bridge.beetle;
-    if (now < this.tackleReadyAt || !this._rules.steal || beetle.pushing || beetle.riding || beetle.dizzy) return;
+    if (now < this.tackleReadyAt || !effectiveRules(this._rules).steal || beetle.pushing || beetle.riding || beetle.dizzy || this.inputLocked) return;
     const v = beetle.currentVelocity;
     const speed = Math.hypot(v.x, v.z);
     if (speed < TACKLE_MIN_SPEED) return;
@@ -681,7 +820,7 @@ export class OnlinePlay {
     const selfId = this.selfUid;
     for (const remote of this.remotes.values()) {
       const latest = remote.buffer.latest?.pose.beetle;
-      if (!remote.placed || !latest || latest.dizzy || relation(selfId, remote.member.uid) !== 'rival') continue;
+      if (!remote.placed || !latest || latest.dizzy || relation(selfId, remote.member.uid, this.director.teams) !== 'rival') continue;
       if (latest.pushBlend < 0.5 && !latest.riding) continue;
       const p = remote.beetle.position;
       const dx = p.x - me.x;
@@ -700,7 +839,7 @@ export class OnlinePlay {
     const now = this.now();
     const by = this.beetleFacts(from, now);
     const victim = this.beetleFacts(target, now);
-    if (judgeTackle(by, victim, from, target, now, this._rules) !== 'ok') return null;
+    if (judgeTackle(by, victim, from, target, now, effectiveRules(this._rules), this.director.teams) !== 'ok') return null;
     this.tackleLog.set(from, now);
     this.dizzyUntil.set(target, now + DIZZY_SECONDS);
     return { t: 'tackled', by: from, target, b: this.pushedBallOf(target) };
@@ -793,6 +932,21 @@ export class OnlinePlay {
     this._rules = { ...world.rules };
   }
 
+  /**
+   * Dono da sala, antes de pontuar um enterro dos outros: a bola é mesmo de
+   * quem mandou e não é maior do que ele via (folga pro retrato atrasado).
+   * Bola que ele nem conhece (acabou de reconectar) passa: na dúvida, conta.
+   */
+  private plausibleBurial(from: string, ball: number, cm: number): boolean {
+    const rec = this.balls.records.get(ball);
+    return !rec || (rec.owner === from && cm <= rec.ball.diameterCm + 4);
+  }
+
+  /** Time de um jogador (−1 = cada um por si). */
+  teamOf(uid: string): number {
+    return this._rules.teamSize > 1 ? (this.director.teams.get(uid) ?? -1) : -1;
+  }
+
   private worldState(): NetWorld {
     const b = this.bridge;
     const { piles, debris } = b.collectibles.worldState();
@@ -804,12 +958,14 @@ export class OnlinePlay {
       debris,
       weather: b.weather.snapshot(),
       rules: { ...this._rules },
+      ...this.director.worldPart(),
     };
   }
 
+  /** Jardim livre: o que foi arrancado rebrota. Na Disputa o jardim é fixo (o que foi, foi). */
   private scheduleRegrow(id: number): void {
     const session = this.session;
-    if (session?.isHost) this.regrowAt.set(id, session.clock.now() + REGROW_SECONDS);
+    if (session?.isHost && this._rules.mode === 'garden') this.regrowAt.set(id, session.clock.now() + REGROW_SECONDS);
   }
 
   private promote(count: number): void {
@@ -846,6 +1002,9 @@ export class OnlinePlay {
   }
 
   private teardown(): void {
+    window.clearInterval(this.matchTimer);
+    this.matchTimer = 0;
+    this.director.reset();
     for (const uid of [...this.remotes.keys()]) this.removeRemote(uid);
     this.balls.stop();
     this.regrowAt.clear();

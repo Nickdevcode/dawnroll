@@ -16,9 +16,10 @@ import type { NetRules } from './protocol';
  *  - Proteções: broto novo fica 5 s imune; bola afundando na toca não se
  *    rouba; quem perde a bola ganha um broto em 3 s.
  *
- * Sem times ainda (Fase 3), todo mundo é rival pra roubar/engolir/trombar, e
- * qualquer um pode ajudar (empurrar junto, doar): ajudar é sempre escolha de
- * quem ajuda.
+ * Times (`teams.ts`): parceiro não rouba, não engole e não tromba o outro, e
+ * fundir com parceiro põe a bola MENOR dentro da maior (quem apertar). Cada um
+ * por si, todo mundo é rival. No Jardim livre qualquer um pode ajudar um rival
+ * (empurrar junto, doar); na Disputa, ajudar é só com o parceiro.
  */
 
 /** Sem ninguém empurrar por isso, a bola fica solta. */
@@ -59,7 +60,7 @@ export const HOST_REACH_SLACK = 2.2;
 
 export type Relation = 'self' | 'team' | 'rival';
 
-/** Como dois jogadores se relacionam. Sem times (Fase 2), todo outro é rival. */
+/** Como dois jogadores se relacionam. Sem times (cada um por si), todo outro é rival. */
 export function relation(a: string, b: string, teams?: ReadonlyMap<string, number>): Relation {
   if (a === b) return 'self';
   const ta = teams?.get(a);
@@ -69,6 +70,11 @@ export function relation(a: string, b: string, teams?: ReadonlyMap<string, numbe
 /** Dá pra tomar a bola de outro (bola solta ou depois de trombada)? */
 export function canTakeFrom(rel: Relation, rules: NetRules): boolean {
   return rel === 'team' || (rel === 'rival' && rules.steal);
+}
+
+/** Dá pra ajudar a bola de outro (empurrar junto, doar a sua)? Rival só no Jardim livre. */
+export function canHelp(rel: Relation, rules: Pick<NetRules, 'mode'>): boolean {
+  return rel !== 'rival' || rules.mode === 'garden';
 }
 
 /** O que o dono da sala (ou você) sabe de uma bola pra decidir. */
@@ -118,13 +124,34 @@ export function judgeSwallow(ball: BallFacts | undefined, prey: BallFacts | unde
   return 'ok';
 }
 
-/** Doar a bola `ball` (de quem pede) pra dentro da bola `target`. */
-export function judgeMerge(ball: BallFacts | undefined, target: BallFacts | undefined, asker: string, centerDistance: number): Verdict {
+/**
+ * Fundir a bola `ball` (de quem pede) com a bola `target` de outro jogador.
+ * Com rival é doar (a sua entra na dele), e na Disputa não vale.
+ */
+export function judgeMerge(
+  ball: BallFacts | undefined,
+  target: BallFacts | undefined,
+  asker: string,
+  centerDistance: number,
+  teams?: ReadonlyMap<string, number>,
+  rules: Pick<NetRules, 'mode'> = { mode: 'garden' },
+): Verdict {
   if (!ball || !target) return 'gone';
   if (ball.owner !== asker || target.owner === asker) return 'mine';
+  if (!canHelp(relation(asker, target.owner, teams), rules)) return 'rules';
   if (ball.burying || target.burying) return 'burying';
   if (centerDistance > ball.radius + target.radius + MERGE_REACH + HOST_REACH_SLACK) return 'far';
   return 'ok';
+}
+
+/**
+ * Pra onde vai a fusão: com parceiro, a MENOR entra na maior (tanto faz quem
+ * apertou: quem está com a bola grande continua empurrando); com rival (Jardim
+ * livre), a sua entra na dele (é doar). Devolve [a que some, a que recebe].
+ */
+export function mergeDirection<T extends { owner: string; radius: number }>(ball: T, target: T, asker: string, teams?: ReadonlyMap<string, number>): [T, T] {
+  if (relation(asker, target.owner, teams) === 'team' && ball.radius > target.radius) return [target, ball];
+  return [ball, target];
 }
 
 /** O que o dono da sala sabe de um besouro pra conferir uma trombada. */

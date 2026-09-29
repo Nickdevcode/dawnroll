@@ -85,6 +85,16 @@ export class Burrow {
     return this.phase !== 'idle';
   }
 
+  /**
+   * Online (largada ou fim da Disputa): o enterro em curso para no meio, sem
+   * contar. Quem chama zera a bola (ela sai da pose do enterro).
+   */
+  cancel(): void {
+    if (this.phase === 'idle') return;
+    this.phase = 'idle';
+    this.timer = 0;
+  }
+
   /** Passo fixo (ANTES do passo de física: durante o enterro a toca conduz a bola). */
   fixedUpdate(dt: number, ball: DungBall): void {
     if (this.phase === 'idle') {

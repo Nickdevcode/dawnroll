@@ -73,6 +73,7 @@ export type AchievementId =
   | 'mpTeamPush'
   | 'mpGift'
   | 'mpSun'
+  | 'mpWin'
   // Secretas
   | 'melted'
   | 'purist'
@@ -149,6 +150,7 @@ export const ACHIEVEMENTS: readonly AchievementDef[] = [
   { id: 'mpTeamPush', group: 'online', reward: 40 },
   { id: 'mpGift', group: 'online', reward: 40 },
   { id: 'mpSun', group: 'online', reward: 60 },
+  { id: 'mpWin', group: 'online', reward: 80 },
   { id: 'melted', group: 'secret', reward: 30 },
   { id: 'purist', group: 'secret', reward: 40 },
   { id: 'onTop', group: 'secret', reward: 30 },

@@ -7,6 +7,8 @@ import { escapeHtml } from './html';
 import { Icons } from './icons';
 import { EMOTE_ICONS, EmoteButtonIcon, MergeIcon } from './emoteIcons';
 import { EmoteWheel } from './EmoteWheel';
+import { MatchHud } from './MatchHud';
+import { TEAM_ICONS } from './matchIcons';
 import { placeMarker, type ScreenMargins } from './screenMarker';
 
 /** Placa de apelido some de longe (vira poluição) e perto demais (tapa o besouro). */
@@ -32,6 +34,8 @@ export class OnlineHud {
   private readonly pingLayer: HTMLElement;
   private readonly pingEls: HTMLElement[] = [];
   readonly wheel: EmoteWheel;
+  /** Disputa: relógio, placar, contagem e o cartão do resultado. */
+  readonly match: MatchHud;
   private readonly touchBar: HTMLElement | null = null;
   private readonly mergeButton: HTMLButtonElement | null = null;
   private mergeAvailable = false;
@@ -71,6 +75,7 @@ export class OnlineHud {
     this.wheel = new EmoteWheel(parent, isTouch);
     this.wheel.onSend = (index) => this.net.sendEmote(index);
     parent.append(this.pingLayer, this.layer, this.chip);
+    this.match = new MatchHud(parent, net);
 
     if (isTouch) {
       // Toque: reagir (abre a roda) e fundir (aparece só encostando noutra bola; segurar).
@@ -173,16 +178,19 @@ export class OnlineHud {
         plate.hidden = true;
         continue;
       }
-      const key = `${source.slot}|${source.nick}|${source.isHost}|${source.emote}|${source.dizzy}`;
+      const key = `${source.slot}|${source.nick}|${source.isHost}|${source.emote}|${source.dizzy}|${source.team}`;
       if (this.shown.get(plate) !== key) {
         this.shown.set(plate, key);
         plate.dataset.slot = String(source.slot);
+        // Com time, a placa fica na cor do time e ganha o ícone dele (a cor nunca vem sozinha).
+        if (source.team >= 0) plate.dataset.team = String(source.team);
+        else delete plate.dataset.team;
         plate.classList.toggle('is-self', !source.nick);
         const bubble = talking
           ? `<span class="nameplate__bubble">${EMOTE_ICONS[source.emote] ?? ''}<span>${escapeHtml(t(`emote.${source.emote}` as MessageKey))}</span></span>`
           : '';
         const name = source.nick
-          ? `<span class="nameplate__tag">${source.isHost ? `<span class="nameplate__crown">${Icons.crown}</span>` : ''}<span class="nameplate__nick">${escapeHtml(source.nick)}</span></span>`
+          ? `<span class="nameplate__tag">${source.team >= 0 ? `<span class="nameplate__team">${TEAM_ICONS[source.team] ?? ''}</span>` : ''}${source.isHost ? `<span class="nameplate__crown">${Icons.crown}</span>` : ''}<span class="nameplate__nick">${escapeHtml(source.nick)}</span></span>`
           : '';
         plate.innerHTML = bubble + name;
       }

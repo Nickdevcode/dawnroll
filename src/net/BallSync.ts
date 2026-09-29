@@ -5,7 +5,7 @@ import { GRAB_REACH, type Beetle } from '../entities/Beetle';
 import { RoundLedger } from '../progression/food';
 import { TEAM_PUSH_SECONDS, type AchievementId } from '../progression/achievements';
 import { PoseBuffer, ballOps } from './snapshotBuffer';
-import { MAX_SNAPSHOT_BALLS, SNAPSHOT_HZ, type BallPose, type NetEvent, type NetRules, type PlayerSnapshot } from './protocol';
+import { MAX_SNAPSHOT_BALLS, SNAPSHOT_HZ, type BallPose, type GoneReason, type NetEvent, type NetRules, type PlayerSnapshot } from './protocol';
 import {
   ABANDON_SECONDS,
   ASSIST_STALE_SECONDS,
@@ -23,8 +23,10 @@ import {
   judgeClaim,
   judgeMerge,
   judgeSwallow,
+  mergeDirection,
   newBallId,
   relation,
+  canHelp,
   canTakeFrom,
   settleShares,
   shareFractions,
@@ -76,7 +78,10 @@ export interface BallRoom {
   readonly isHost: boolean;
   /** Relógio da sala. */
   now(): number;
+  /** As regras que valem agora (na Disputa o roubo é sempre ligado). */
   rules(): NetRules;
+  /** Times (uid → time); vazio = cada um por si. */
+  teams(): ReadonlyMap<string, number>;
   send(event: NetEvent): void;
   /** Pedido ao dono da sala (sendo o dono, decide na hora). */
   request(event: NetEvent): void;
@@ -264,18 +269,33 @@ export class BallSync {
   }
 
   /**
-   * Enterrou a bola principal e ela vai renascer pequena (a mesma bola, zerada):
-   * pra sala ela é outra bola (número novo, conteúdo novo). Devolve o conteúdo novo.
+   * Enterrou a bola principal (ou a Disputa largou) e ela vai renascer pequena
+   * (a mesma bola, zerada): pra sala ela é outra bola (número novo, conteúdo
+   * novo). Devolve o conteúdo novo.
    */
-  renewMain(): RoundLedger {
+  renewMain(why: GoneReason = 'buried'): RoundLedger {
     const ball = this.game.ball;
     const old = this.byBall.get(ball);
     if (old) {
       this.forget(old);
       this.tombstone(old.id);
-      this.room.send({ t: 'gone', b: old.id, why: 'buried' });
+      this.room.send({ t: 'gone', b: old.id, why });
     }
     return this.registerLocal(ball, new RoundLedger()).ledger;
+  }
+
+  /**
+   * Largada da Disputa (e pódio): as suas bolas largadas esfarelam, o broto que
+   * ia nascer não nasce mais (a bola principal recomeça do zero, ver `renewMain`)
+   * e ninguém fica segurando "fundir" ou ajudando alguém.
+   */
+  clearForMatch(): void {
+    this.sprout = null;
+    this.mergeHold = 0;
+    this.teamPush = 0;
+    const main = this.game.ball;
+    for (const rec of [...this.records.values()]) if (rec.local && rec.ball !== main) this.crumble(rec, false);
+    this.game.beetle.attachBall(main);
   }
 
   /** A sala acabou: some com os fantasmas e as suas bolas largadas; a principal fica (volta pro solo). */
@@ -387,7 +407,8 @@ export class BallSync {
     const assist = snapshot.assist;
     if (assist.ball !== 0) {
       const rec = this.records.get(assist.ball);
-      if (rec?.local) {
+      // Rival na Disputa não "ajuda" (seria cabo de guerra com a sua bola).
+      if (rec?.local && canHelp(relation(this.room.selfId, owner, this.room.teams()), this.room.rules())) {
         // Força de mentira (cliente modificado) não passa do que um besouro faz.
         const k = Math.min(1, 40 / Math.max(1e-6, Math.hypot(assist.ax, assist.az)));
         rec.assists.set(owner, { ax: assist.ax * k, az: assist.az * k, at: arrival });
@@ -425,7 +446,7 @@ export class BallSync {
       // Uma engole a outra (a sua a dele, ou a dele a sua): perto, as duas se atravessam, pra uma rolar
       // por cima da outra (o dono da sala confirma). Sem isso a grande só empurraria a pequena pra longe.
       let ghost = false;
-      if (swallowing && rec.placed && !rec.burying && relation(this.room.selfId, rec.owner) === 'rival') {
+      if (swallowing && rec.placed && !rec.burying && relation(this.room.selfId, rec.owner, this.room.teams()) === 'rival') {
         const r = ball.radius;
         const eats = r <= main.radius * SWALLOW_RATIO && !rec.immune && !rec.gift;
         const eaten = main.radius <= r * SWALLOW_RATIO && !mainImmune;
@@ -503,10 +524,17 @@ export class BallSync {
    */
   pickGrabTarget(): DungBall | null {
     const beetle = this.game.beetle;
+    const now = this.room.now();
+    const rules = this.room.rules();
     let best: DungBall | null = null;
     let bestGap = GRAB_REACH;
     for (const rec of this.records.values()) {
       if (!rec.local && !rec.placed) continue;
+      // Bola de rival na Disputa: só agarra se der pra pegar (solta); empurrar junto com rival, não.
+      if (!rec.local) {
+        const rel = relation(this.room.selfId, rec.owner, this.room.teams());
+        if (!canHelp(rel, rules) && !(canTakeFrom(rel, rules) && isLoose(rec, now) && !rec.immune && !rec.burying)) continue;
+      }
       const gap = beetle.grabGap(rec.ball);
       // A principal ganha no empate (é a de sempre).
       if (gap < bestGap || (gap === bestGap && rec.ball === this.game.ball)) {
@@ -527,7 +555,7 @@ export class BallSync {
     const rules = this.room.rules();
     for (const rec of this.records.values()) {
       if (rec.local || !rec.placed || rec.burying || rec.immune) continue;
-      if (!canTakeFrom(relation(this.room.selfId, rec.owner), rules) || !isLoose(rec, now)) continue;
+      if (!canTakeFrom(relation(this.room.selfId, rec.owner, this.room.teams()), rules) || !isLoose(rec, now)) continue;
       if (beetle.grabGap(rec.ball) < reach) return rec;
     }
     return null;
@@ -546,10 +574,12 @@ export class BallSync {
     const main = this.game.ball;
     if (!main.isSolid || !this.byBall.has(main)) return null;
     const c = main.position(tmpPos2);
+    const rules = this.room.rules();
     let best: BallRecord | null = null;
     let bestGap = MERGE_REACH;
     for (const rec of this.records.values()) {
       if (rec.ball === main || !rec.ball.isSolid || (!rec.local && (!rec.placed || rec.burying))) continue;
+      if (!rec.local && !canHelp(relation(this.room.selfId, rec.owner, this.room.teams()), rules)) continue;
       const gap = rec.ball.position(tmpPos).distanceTo(c) - main.radius - rec.ball.radius;
       if (gap < bestGap) {
         bestGap = gap;
@@ -603,7 +633,7 @@ export class BallSync {
         if (!rec || this.tombstones.has(event.b)) return null;
         const at = this.room.beetleAt(from, tmpPos2);
         const gap = at ? this.centerOf(rec, tmpPos).distanceTo(at) - this.facts(rec, now).radius : Infinity;
-        if (judgeClaim(this.facts(rec, now), from, now, rules, gap) !== 'ok') return null;
+        if (judgeClaim(this.facts(rec, now), from, now, rules, gap, this.room.teams()) !== 'ok') return null;
         const why = rec.looseUntil > now ? 'tackle' : 'grab';
         return { t: 'own', b: rec.id, to: from, prev: rec.owner, why };
       }
@@ -612,7 +642,7 @@ export class BallSync {
         const prey = this.records.get(event.target);
         if (!ball || !prey || this.tombstones.has(event.b) || this.tombstones.has(event.target)) return null;
         const distance = this.centerOf(ball, tmpPos).distanceTo(this.centerOf(prey, tmpPos2));
-        if (judgeSwallow(this.facts(ball, now), this.facts(prey, now), from, rules, distance) !== 'ok') return null;
+        if (judgeSwallow(this.facts(ball, now), this.facts(prey, now), from, rules, distance, this.room.teams()) !== 'ok') return null;
         return { t: 'swallowed', b: prey.id, into: ball.id, by: from };
       }
       case 'merge': {
@@ -620,8 +650,11 @@ export class BallSync {
         const target = this.records.get(event.target);
         if (!ball || !target || this.tombstones.has(event.b) || this.tombstones.has(event.target)) return null;
         const distance = this.centerOf(ball, tmpPos).distanceTo(this.centerOf(target, tmpPos2));
-        if (judgeMerge(this.facts(ball, now), this.facts(target, now), from, distance) !== 'ok') return null;
-        return { t: 'merged', b: ball.id, into: target.id, by: from };
+        const teams = this.room.teams();
+        if (judgeMerge(this.facts(ball, now), this.facts(target, now), from, distance, teams, rules) !== 'ok') return null;
+        // Com parceiro, a menor entra na maior (o raio é o mais novo que chegou).
+        const [prey, into] = mergeDirection({ rec: ball, owner: ball.owner, radius: this.facts(ball, now).radius }, { rec: target, owner: target.owner, radius: this.facts(target, now).radius }, from, teams);
+        return { t: 'merged', b: prey.rec.id, into: into.rec.id, by: from };
       }
       default:
         return null;
@@ -726,11 +759,11 @@ export class BallSync {
     rec.sentVersion = -1;
     rec.idleSince = 0;
     // De rival, é roubo: a bola inteira passa a ser sua. De parceiro de time, cada um continua com a sua parte.
-    if (relation(this.room.selfId, prev) === 'rival') takeShares(rec.shares, this.room.selfId, ball.totalVolume);
+    if (relation(this.room.selfId, prev, this.room.teams()) === 'rival') takeShares(rec.shares, this.room.selfId, ball.totalVolume);
     else settleShares(rec.shares, prev, ball.totalVolume);
     this.game.setMainBall(ball, rec.ledger);
     this.game.happened('took', this.room.nick(prev), ball.position(tmpPos));
-    if (relation(this.room.selfId, prev) === 'rival') this.game.achieve('mpSteal');
+    if (relation(this.room.selfId, prev, this.room.teams()) === 'rival') this.game.achieve('mpSteal');
   }
 
   /** A sua bola foi pra outro: vira fantasma dele. Era a principal? Broto novo daqui a pouco. */
@@ -773,10 +806,11 @@ export class BallSync {
         this.game.happened('swallowed', this.room.nick(preyOwner), at);
         this.game.achieve('mpSwallow');
       } else if (preyOwner === self) this.game.happened('eaten', this.room.nick(by), at);
-    } else if (by === self) {
+    } else if (preyOwner === self) {
+      // A sua bola entrou na de outro (você doou, ou o parceiro puxou a sua menor pra dele).
       this.game.happened('gave', into ? this.room.nick(into.owner) : '', at);
       this.game.achieve('mpGift');
-    } else if (into?.owner === self) this.game.happened('got', this.room.nick(by), at);
+    } else if (into?.owner === self) this.game.happened('got', this.room.nick(preyOwner), at);
   }
 
   /**
@@ -907,12 +941,12 @@ export class BallSync {
     }
   }
 
-  private crumble(rec: BallRecord): void {
+  private crumble(rec: BallRecord, notify = true): void {
     this.forget(rec);
     this.tombstone(rec.id);
     this.room.send({ t: 'gone', b: rec.id, why: 'crumble' });
     this.game.crumbled(rec.ball.root.position, rec.ball.radius);
-    this.game.happened('crumbled', '', null);
+    if (notify) this.game.happened('crumbled', '', null);
     this.releaseIfHeld(rec.ball);
     this.dispose(rec.ball);
   }
@@ -929,7 +963,7 @@ export class BallSync {
       const ownerPushing = now - rec.lastPushAt < 0.4;
       this.teamPush = ownerPushing ? this.teamPush + FIXED_DT : 0;
       const facts = this.facts(rec, now);
-      if (now >= this.claimAt && isLoose(facts, now) && !facts.immune && !facts.burying && canTakeFrom(relation(this.room.selfId, rec.owner), this.room.rules())) {
+      if (now >= this.claimAt && isLoose(facts, now) && !facts.immune && !facts.burying && canTakeFrom(relation(this.room.selfId, rec.owner, this.room.teams()), this.room.rules())) {
         this.claimAt = now + CLAIM_RETRY;
         this.room.request({ t: 'claim', b: rec.id });
       }
@@ -945,7 +979,7 @@ export class BallSync {
     const c = main.position(tmpPos2);
     for (const rec of this.records.values()) {
       if (rec.local || !rec.placed || rec.immune || rec.burying || rec.gift || now < rec.retryAt) continue;
-      if (relation(this.room.selfId, rec.owner) !== 'rival' || rec.ball.radius > main.radius * SWALLOW_RATIO) continue;
+      if (relation(this.room.selfId, rec.owner, this.room.teams()) !== 'rival' || rec.ball.radius > main.radius * SWALLOW_RATIO) continue;
       // "Rolou por cima": o centro da rival já está bem dentro da sua bola. Vale a pose mais nova
       // da rede (a mesma que o dono da sala confere): o desenho interpolado de uma bola que o dono
       // teleportou ("trazer a bola") passa por dentro das outras no caminho, e isso não é engolir.

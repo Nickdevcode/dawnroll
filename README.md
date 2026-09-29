@@ -214,6 +214,7 @@ Conta é **opcional**: sem ela o jogo continua igualzinho, salvando no aparelho.
 
 | | |
 |---|---|
+| 🔎 **Procurar partida** | Um toque em **Jardim livre** ou **Disputa** e você cai **na hora** numa sala aberta com outros besouros (a mais cheia que ainda tem vaga). Não tem ninguém? Abre uma e quem procurar depois cai nela. Sala aberta passa tudo pelo TURN: ninguém vê o IP de ninguém |
 | 🚪 **Criar sala** | O jardim em que você está vira o da sala e aparece um **código de 5 letras** (sem as que confundem, tipo 0/O e 1/I/L), grande, pra ditar pro amigo do lado. Tem **Copiar código** e **Mandar convite** (no celular abre o WhatsApp e cia.) |
 | 🔑 **Entrar com código** | Digita o código (ou cola o link inteiro) e pronto. O link `dawnroll.vercel.app/?sala=CÓDIGO` já abre o jogo entrando na sala |
 | 🪲 **Na sala** | Até **6 besouros**, cada um com o seu casco e acessórios, e o **apelido em cima** (na cor da vaga, e com coroa no dono da sala). Um chip no alto mostra a sala, quantos estão nela e o ping |
@@ -236,9 +237,26 @@ Conta é **opcional**: sem ela o jogo continua igualzinho, salvando no aparelho.
 | 💬 **Reações** | Uma roda com 8 frases (Bora!, Me ajuda!, Rouba!, Valeu!, Haha, Ops, GG e **Aqui!**, que marca o chão pra todo mundo). Sem chat livre, de propósito | **G** (e 1–8 ou mouse) / ↓ no controle / balão no toque |
 | 🚦 **Roubo liga/desliga** | O dono da sala escolhe na placa da sala. Desligado, só dá pra ajudar (empurrar junto e doar) | Chave "Roubo de bola" |
 
-Tem **6 conquistas online** (Mão leve, Bocão, Trombada certeira, Força-tarefa, Mão aberta e Sol de sobra), num grupo próprio nas conquistas da toca.
+#### ⚔️ Disputa: times, relógio e pódio
 
-> 🚧 Vem aí (em fases): a **Disputa** em times (com pódio), procurar partida, amigos com convite e turmas. Sem times ainda, todo mundo é rival pra roubar/engolir/trombar, e qualquer um pode ajudar (empurrar junto e doar). O plano está nas notas do projeto.
+Na placa da sala o dono escolhe o **modo** (Jardim livre ou Disputa), o **tempo** (3, 5 ou 8 min) e os **times**: cada um por si, **duplas** (até 2v2v2) ou **trios** (3v3). Cada time tem **cor e ícone** (☀ Sol, 💧 Orvalho, ✿ Flor; a cor nunca vem sozinha, pra daltônico enxergar), e a placa do apelido em cima do besouro ganha os dois.
+
+| | |
+|---|---|
+| 👥 **Times** | Quem chega cai no time com menos gente (4 em duplas = 2v2, não 2+1+1). Cada um troca de time com **Entrar** na coluna do time; o dono pode **Embaralhar**. Times também valem no Jardim livre |
+| 🤝 **Parceiro** | Parceiro **não rouba, não engole e não tromba** o outro. **Fundir** com parceiro põe a **bola menor dentro da maior**, tanto faz quem apertou (quem está com a grande continua empurrando), e cada um guarda a sua parte |
+| ⏱️ **Contagem** | "Começar disputa" → **3, 2, 1, Já!**: jardim novo (o mesmo pra todo mundo), bola de todo mundo zerada e os besouros lado a lado no nascimento (parceiros juntos). Até o "Já!" ninguém anda |
+| ⚖️ **Justo** | Na Disputa o **nível não dá força nem velocidade** (todo mundo igual) e o **roubo vale sempre**. Rival não ajuda rival: nada de empurrar junto ou doar pro outro time |
+| 🧮 **Placar** | Cada bola enterrada vale **os cm dela + o Sol excedente**, dividido pela **parte de cada um** na bola (fundiu com o parceiro, os dois pontuam). O time soma. A barra no alto mostra o relógio e os pontos de cada time |
+| 🌅 **Pôr do sol** | No **último minuto os pontos valem em dobro** (a barra fica laranja): dá pra virar no fim |
+| 🏆 **Pódio** | Acabou o tempo, "Tempo!", e quem estava afundando a bola na toca ainda conta. Aí os besouros sobem num **pódio de rodelas de tronco** no nascimento (1º no meio, 2º e 3º dos lados), a câmera enquadra e aparece o **cartão do resultado** com o placar e os **destaques** (maior bola, mais roubos, mais fusões). Quem ganha leva **+150 XP no passe** e a conquista **Campeão do jardim** |
+| 🔁 **Jogar de novo** | O dono aperta no cartão (ou na placa) e já sai outra contagem. Sala aberta de Disputa **começa sozinha** com 2 ou mais besouros (20 s de aquecimento) e recomeça sozinha depois do pódio; com 4 ou 6 vira duplas |
+| 🚪 **Entrar no meio** | Dá pra entrar numa Disputa rolando nos **2 primeiros minutos** (depois disso o código avisa pra esperar acabar). Quem chega ganha time e linha no placar |
+| 🔌 **Dono caiu?** | A partida continua: quem assume a sala segue o relógio e o placar de onde estavam |
+
+Tem **7 conquistas online** (Mão leve, Bocão, Trombada certeira, Força-tarefa, Mão aberta, Sol de sobra e Campeão do jardim), num grupo próprio nas conquistas da toca.
+
+> 🚧 Vem aí (em fases): amigos com convite e presença, e turmas (clãs). O plano está nas notas do projeto.
 
 ---
 
@@ -294,7 +312,7 @@ Projeto **Dawnroll** no Supabase (`msmauxysewzacyotifcr`, Canadá). O schema int
 | `profiles` | Apelido, se foi escolhido, casco (pro ranking) e `hidden` (moderação) | Todo mundo lê (menos os escondidos); **ninguém escreve direto** — o apelido só troca pelo `set_nickname` (com o filtro) |
 | `saves` | O save inteiro do jogo (JSON) + revisão | Só o dono |
 | `player_stats` | Os números do ranking (enterradas, semana, cm, figurinhas) | Todo mundo lê; **ninguém escreve direto** — só as funções abaixo |
-| `rooms` | Salas online: código, dono, modo, versão do protocolo e o "batimento" do dono | Só quem está na sala lê; escrever só pelas funções |
+| `rooms` | Salas online: código, dono, modo, visibilidade (aberta ou de amigos), versão do protocolo, o "batimento" do dono e se a Disputa está rolando (e desde quando) | Só quem está na sala lê; escrever só pelas funções |
 | `room_members` | Quem está em cada sala (um jogador por sala) e quando bateu o ponto | Só quem está na sala lê |
 | `net_reports` | Como cada conexão online fechou (direta, via TURN ou falhou): o número que diz se vale ter servidor próprio | Ninguém lê pela API; grava pela função |
 
@@ -308,6 +326,8 @@ Projeto **Dawnroll** no Supabase (`msmauxysewzacyotifcr`, Canadá). O schema int
 | `delete_account` | Apaga a conta (e tudo dela, em cascata) |
 | `create_room` / `join_room` / `leave_room` | Online: cria a sala (código criptográfico, até 12 por hora), entra pelo código (até 40 tentativas a cada 10 min: chutar código não compensa) e sai |
 | `room_heartbeat` / `claim_host` | O ponto de cada um (o dono renova a sala) e assumir a sala quando o dono some (6 s sem ponto) |
+| `quick_match` | Procurar partida: a sala **aberta** do modo mais cheia que tem vaga, está viva (dono bateu o ponto há menos de 20 s) e não está no meio de uma Disputa que já passou de 2 min (`for update skip locked`: dois procurando ao mesmo tempo não brigam); sem nenhuma, cria uma aberta (até 30 procuras a cada 10 min) |
+| `set_room_state` | Só o dono: conta o modo e se a Disputa está rolando (o `join_room` recusa `match_running` depois de 2 min de partida) |
 | `report_connection` | Telemetria de conexão (até 60 por hora) |
 
 **🌐 O online por dentro:** o jogo em si **não passa pelo servidor**. Os besouros de uma sala conversam direto pelo navegador (WebRTC), com o dono da sala no centro repassando pros outros. O Supabase só faz o "aperto de mão" (canal **privado** do Realtime `room:<id>`, que só membro da sala abre: RLS em `realtime.messages`; o acesso público ao Realtime está desligado) e guarda quem está em qual sala. Pra quem está numa rede que não deixa conectar direto (4G, CGNAT), a função **`turn-credentials`** (Edge Function) entrega uma credencial temporária do TURN do Cloudflare (1 TB/mês grátis), só pra quem está logado (a chave fica nos segredos da função, `CF_TURN_KEY_ID` e `CF_TURN_API_TOKEN`; sem eles, a função devolve só STUN). Sala pública força tudo pelo TURN (ninguém vê o IP de ninguém). Uma faxina (`pg_cron`, de 5 em 5 min) apaga sala morta, vaga esquecida e registro velho.
@@ -465,14 +485,17 @@ src/
 │   ├── NetSession.ts       # a sala viva: dono, vagas, repasse, relógio, ponto, troca de dono, reconexão
 │   ├── OnlinePlay.ts       # o online dentro do jogo: besouros remotos, mundo compartilhado, clima, rebrota, trombada, reações
 │   ├── BallSync.ts         # as bolas da sala: dono de cada uma, fantasmas, conteúdo espelhado, pegar/engolir/fundir, broto
-│   ├── rules.ts            # regras da bagunça (puras): bola solta, trombada, engolir, fundir, parte de cada um
+│   ├── rules.ts            # regras da bagunça (puras): bola solta, trombada, engolir, fundir (parceiro: menor na maior), parte de cada um
+│   ├── teams.ts            # times (puros): distribuir, trocar, embaralhar, quantos times abrir
+│   ├── match.ts            # a Disputa (pura): fases, relógio, pôr do sol, pontos, placar, quem ganhou, destaques, largada
+│   ├── MatchDirector.ts    # times e Disputa na sala viva: o dono conduz as fases e soma os pontos; todo mundo reage
 │   ├── snapshotBuffer.ts   # desenha os outros um pouquinho no passado, interpolado (liso com rede ruim)
 │   ├── debugBots.ts        # só em desenvolvimento (?bots=5): sala cheia de mentira pra medir desempenho
 │   ├── clock.ts            # relógio da sala (ping/pong tipo NTP)
 │   └── transport/          # WebRTC (PeerLink, StarNet), sinalização pelo Realtime, STUN/TURN, rede de mentirinha
 ├── online/                 # conta, save na nuvem e ranking (Supabase)
 │   ├── Online.ts           # fachada: sessão, perfil/apelido, entrar/sair/excluir, ranking (com cache curtinho)
-│   ├── Rooms.ts            # salas no banco: criar, entrar pelo código, sair, ponto, assumir
+│   ├── Rooms.ts            # salas no banco: criar, entrar pelo código, procurar partida, sair, ponto, assumir, estado da Disputa
 │   ├── CloudSave.ts        # sobe o save com trava de revisão; junta com a nuvem ao entrar e em conflito
 │   ├── BurialQueue.ts      # fila de enterros a caminho do ranking (sobrevive a fechar o jogo e ficar offline)
 │   ├── saveMerge.ts        # junta dois saves sem perder progresso (maior contador, união das listas)
@@ -485,7 +508,9 @@ src/
     ├── Hud.ts              # HUD em jogo, dicas, marcador da toca, resultado, toque
     ├── RoundPanel.ts       # nível, pedidos (recolhíveis) e poderes da rodada no HUD
     ├── PerkPicker.ts       # as cartas de "escolha um poder" (no online: por cima do jogo, sem congelar)
-    ├── OnlineSheet.ts      # placa "Jogar online": criar sala, entrar com código, a sala (código, quem está)
+    ├── OnlineSheet.ts      # placa "Jogar online": procurar partida, criar sala, entrar com código; o lobby (modo, tempo, times)
+    ├── MatchHud.ts         # Disputa no HUD: relógio + placar, pôr do sol, contagem 3-2-1-Já!, cartão do resultado
+    ├── matchIcons.ts       # ícones dos times (sol, gota, flor) e da Disputa
     ├── OnlineHud.ts        # chip da sala, placas de apelido com balão de reação, "Aqui!" no chão, botões do toque
     ├── EmoteWheel.ts       # roda de reações (8 frases com ícone: teclas 1–8, mouse, analógico, toque)
     ├── BurrowSheet.ts      # placa da toca: despensa, catálogo (com curiosidades), poderes e conquistas
@@ -626,6 +651,10 @@ Ferramentas de medição (descartáveis, em `shots/lead/`, fora do git): `bench.
 - **O que tem dentro viaja com a bola:** cada bola tem o próprio "livro" (o que engoliu, as cores, e a parte de cada jogador em volume). O dono manda o livro quando ele muda (no máximo 2×/s), e todo mundo guarda um espelho: quem rouba já tem o conteúdo na hora. A parte de cada um não conta item por item: o volume que ninguém "assinou" é de quem está com a bola; doar soma as partes, roubar passa tudo pra quem levou.
 - **Engolir sem a bola grande empurrar a pequena:** do lado de quem vai ser engolido, a bola grande (fantasma) empurraria a pequena pra longe, e a pose dela nunca ficaria "por baixo". Então, perto, as duas **se atravessam** (só entre bolas: o besouro e a câmera continuam batendo) e o pedido usa a pose mais nova da rede, não a desenhada (o desenho de uma bola que o dono teleportou com "trazer a bola" passava por dentro das outras e parecia engolida). Segurando "fundir", a sua bola não pode ser engolida (senão a gigante do amigo engolia a doação antes de ela acontecer).
 - **Sol excedente conta como outra bola:** medido em "quantos cm a bola teria passado dos 30", juntar uma bola de 10 cm numa de 30 rendia 1 de comida (a raiz cúbica achata tudo). Agora o excedente vale o diâmetro de uma bola com aquele volume: juntar a de 10 cm rende o mesmo que enterrá-la, e um pouco mais.
+- **A Disputa no relógio da sala:** o dono não manda "começou" nem "acabou" no susto: ele manda o estado da partida (fase, início, fim, placar) e cada um lê o relógio da sala, que é o mesmo pra todos. A contagem, o "Já!" e o "Tempo!" acontecem juntos em todo aparelho, sem esperar a rede; se o dono cair, quem assume continua do mesmo estado. As fases andam num intervalo de 250 ms além do quadro (aba escondida do dono não para a partida).
+- **Pódio sem servidor:** cada jogador põe o **próprio** besouro no degrau do time dele (o pódio é igual em todo aparelho, montado no nascimento, que o jardim sempre deixa livre), e os outros veem pelo retrato de sempre. As bolas saem de cena (o número muda e fica guardada), senão os fantasmas ficariam soltos no jardim.
+- **Partida zera a bola de todo mundo:** na largada cada um esfarela as bolas largadas e renasce a principal (número novo), num jardim novo; o enterro que estava afundando na toca é cancelado (senão ele pontuaria na partida nova).
+- **Times que fazem sentido:** o primeiro jeito de distribuir (sempre o time com menos gente) espalhava 4 jogadores em duplas como 2+1+1. Agora abre só os times que precisa (4 em duplas = 2v2; 3 em trios = 2v1; sempre pelo menos 2 times).
 - **O "welcome" do dono chega antes de a sessão abrir:** o dono da sala se dá as boas-vindas dentro do `NetSession.open`, antes de ele devolver a sessão. Por isso a sessão avisa que existe logo no começo (`onOpen`): relógio da sala e o próprio id já valem ali (antes, a bola do dono nascia sem dono e o broto de quem entra podia nascer com a hora errada).
 - **Online sem atrasar o jogo:** o `supabase-js` é importado sob demanda depois do jardim abrir (pedaço separado do bundle). O navegador continua sendo a cópia de trabalho do save; a nuvem recebe o JSON inteiro alguns segundos depois (espera 3 s, no máximo 15 s mudando sem parar) e ao trocar de aba/fechar.
 - **Sobe quando o jogo grava, não quando o save muda:** o jogo mexe nos contadores de movimento a cada passo sem gravar; comparar o save vivo antes/depois do upload fazia a nuvem receber o save a cada 3 s com a bola rolando. Agora um contador de gravações decide se ficou coisa por subir.
