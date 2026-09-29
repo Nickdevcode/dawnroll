@@ -106,7 +106,7 @@ Um besouro rola-bosta de massinha num jardim em miniatura. Você rola uma bola d
 
 ### 👗 Guarda-roupa: cascos e acessórios
 
-Um botão novo no menu (com bolinha contando o que chegou). O besouro vira o centro da tela num **provador**: a câmera vai pra frente dele e enquadra a parte do corpo da aba (cabeça pros chapéus, rosto pros óculos, costas pra capa...), balança devagar pros lados, desvia sozinha da bola e de pedra no caminho, e **dá pra girar arrastando**. O capim em volta da lente deita, pra nada tapar o close. No celular em pé a placa vira uma gaveta embaixo e o besouro fica em cima.
+Um botão novo no menu (com bolinha contando o que chegou; no guarda-roupa, o selo **Novo** some assim que você clica no visual). O besouro vira o centro da tela num **provador**: a câmera vai pra frente dele e enquadra a parte do corpo da aba (cabeça pros chapéus, rosto pros óculos, costas pra capa...), balança devagar pros lados, desvia sozinha da bola e de pedra no caminho, e **dá pra girar arrastando**. O capim em volta da lente deita, pra nada tapar o close. No celular em pé a placa vira uma gaveta embaixo e o besouro fica em cima.
 
 | | |
 |---|---|
@@ -221,7 +221,7 @@ Conta é **opcional**: sem ela o jogo continua igualzinho, salvando no aparelho.
 | 🪲 **Na sala** | Até **6 besouros**, cada um com o seu casco e acessórios, e o **apelido em cima** (na cor da vaga, e com coroa no dono da sala). Um chip no alto mostra a sala, quantos estão nela e o ping |
 | 🌿 **Jardim livre** | Cada um rola a sua bola e enterra na toca quando quiser (conta XP, passe, conquistas e ranking igualzinho ao solo). O jardim **não recomeça** a cada enterro: quem enterrou ganha uma bola nova e o que foi arrancado **rebrota** sozinho depois de uns minutos |
 | 🌍 **Um mundo só** | O que a bola de um engole (flor, pedra, montinho, tralha, bola de tênis) some pra todo mundo e aparece grudado na bola dele. A chuva é a mesma pra sala inteira (o poder Cheiro de chuva chama chuva pra todo mundo!) |
-| ⏸️ **Sem pausa** | A sala não para por ninguém: o menu abre por cima do jogo rodando, e as cartas de poder aparecem sem congelar (teclas 1/2/3, toque, ou ←/→ e ↓ no direcional; se ninguém escolher, pega sozinho em 12 s). Baús abrem fora da sala |
+| ⏸️ **Sem pausa** | A sala não para por ninguém: o menu abre por cima do jogo rodando, e as cartas de poder aparecem sem congelar (teclas 1/2/3, toque, ou ←/→ e ↓ no direcional; se ninguém escolher, pega sozinho em 12 s). Bola que passa de vários marcos de uma vez (roubo, fusão, tronco) ganha **uma escolha de cada vez**, sem perder nenhuma; cartas abertas quando a bola é enterrada somem junto com a rodada. Baús abrem fora da sala |
 | 🔌 **Caiu?** | Se o dono da sala sai (ou cai), **outro assume** e todo mundo reconecta nele em poucos segundos, sem travar o jogo de ninguém. Se a sua internet piscar, você volta pro seu lugar |
 
 #### 🤹 A bagunça boa (as interações)

@@ -2190,6 +2190,21 @@ p.look-detail__find {
   box-shadow: 0 2px 0 var(--dawn-sun-deep);
   animation: pop-in var(--dur-med) var(--ease-out);
 }
+/* Redesenho por clique: os selos que continuam não pulam de novo. */
+.look-tile__new.is-settled {
+  animation: none;
+}
+/* Clicou no visual novo: o selo encolhe e some. */
+.look-tile__new.is-leaving {
+  animation: new-badge-out var(--dur-fast) ease-in forwards;
+  pointer-events: none;
+}
+@keyframes new-badge-out {
+  to {
+    transform: scale(0.4);
+    opacity: 0;
+  }
+}
 
 /* Ícones vivos (cascos animados e acessórios que se mexem) */
 .look-anim-twinkle {

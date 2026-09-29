@@ -1567,6 +1567,13 @@ export class Game {
    * jardim é o mesmo e a sala fica sabendo da bola nova.
    */
   private newBall(newGarden: boolean, why: 'buried' | 'crumble' = 'buried'): void {
+    // Online as cartas não congelam o jogo, então podem estar abertas quando a rodada acaba
+    // (enterrou, a Disputa começou): eram da rodada velha e somem sem dar o poder
+    // (senão o poder passava pra bola nova, e a Chuva ou o Faro disparavam pra sala à toa).
+    if (this.net.active && this.hud.perkPicker.visible) {
+      this.hud.perkPicker.hide();
+      this.onlinePerkTimer = 0;
+    }
     this.effects.setAttract(0);
     this.roundPeakRadius = START_RADIUS;
     this.abilityHintTimer = 0;
@@ -1887,7 +1894,9 @@ export class Game {
     if (!this.burrow.isBusy) {
       const cm = this.ball.diameterCm;
       this.announceRequests(this.progression.noteBallSize(cm));
-      const offer = this.progression.checkPerkMilestone(cm);
+      // Online o jogo não congela nas cartas: com elas abertas, o próximo marco espera a vez.
+      // Senão a bola que pula vários marcos de uma vez (roubo, fusão, tronco) troca as cartas sem dar o poder.
+      const offer = this.hud.perkPicker.visible ? null : this.progression.checkPerkMilestone(cm);
       if (offer) this.offerPerks(offer, cm);
     }
     if (this.burrowIntroTimer > 0 && !this.choosing) {
@@ -2147,7 +2156,6 @@ export class Game {
    */
   private matchSetup(seed: number, spot: { x: number; z: number; yaw: number }): void {
     this.leavePodium(false);
-    if (this.hud.perkPicker.visible) this.hud.perkPicker.pickSelected();
     this.burrow.cancel();
     this.useOnlineGarden(seed);
     this.net.balls.clearForMatch();

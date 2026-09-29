@@ -42,8 +42,8 @@ const samePick = (a: Pick | undefined, b: Pick) => a !== undefined && (a === 'no
  * frente no provador, à esquerda da placa); clicar num trancado PROVA — o
  * besouro veste enquanto a placa está aberta, e o cartão mostra como liberar.
  *
- * O selo "Novo" some quando o jogador sai da aba (ou fecha) depois de ver o
- * visual: dá tempo de achar o que chegou.
+ * O selo "Novo" some na hora em que o jogador clica no visual. Os que ele só
+ * viu somem quando sai da aba (ou fecha): dá tempo de achar o que chegou.
  */
 export class WardrobeSheet {
   readonly element: HTMLElement;
@@ -65,6 +65,11 @@ export class WardrobeSheet {
   private preview: Look | null = null;
   /** Visuais novos mostrados nesta visita à aba (viram "vistos" ao sair dela). */
   private readonly shownNew = new Set<LookKey>();
+  /** Selo "Novo" que acabou de ser clicado: ainda aparece encolhendo até sumir. */
+  private leavingNew: LookKey | null = null;
+  private leavingTimer = 0;
+  /** Os selos só pulam na tela quando a aba abre (cada clique redesenha a grade, e eles pulariam de novo). */
+  private popNew = true;
   private readonly confirm = new PurchaseConfirm(() => this.refresh());
 
   constructor(private readonly progression: Progression) {
@@ -120,6 +125,8 @@ export class WardrobeSheet {
     // A primeira aba com novidade abre direto (quem ganhou um chapéu quer ver o chapéu).
     const first = TAB_ORDER.find((tab) => looksOf(tab).some((look) => this.progression.isLookNew(look))) ?? 'skins';
     this.tab = first;
+    this.clearLeaving();
+    this.popNew = true;
     this.select(first);
     this.render();
   }
@@ -129,6 +136,7 @@ export class WardrobeSheet {
     this.confirm.reset();
     this.setPreview(null);
     this.flushSeen();
+    this.clearLeaving();
   }
 
   get currentTab(): WardrobeTab {
@@ -147,6 +155,8 @@ export class WardrobeSheet {
     }
     this.flushSeen();
     this.tab = name;
+    this.clearLeaving();
+    this.popNew = true;
     this.confirm.reset();
     this.setPreview(null);
     // Voltando pra aba, o cartão mostra o que está vestido.
@@ -167,6 +177,7 @@ export class WardrobeSheet {
 
   /** Clique num quadradinho: veste (liberado), prova (trancado) ou tira (o "nada"). */
   private pick(tab: WardrobeTab, value: string): void {
+    this.popNew = false;
     this.confirm.reset();
     if (value === 'none') {
       if (isAccessorySlot(tab)) this.progression.setAccessory(tab, null);
@@ -178,6 +189,7 @@ export class WardrobeSheet {
     }
     if (!isLookKey(value)) return;
     const look = lookFromKey(value);
+    this.markSeenNow(look);
     this.picks.set(tab, look);
     if (this.progression.isLookUnlocked(look)) {
       this.setPreview(null);
@@ -192,6 +204,7 @@ export class WardrobeSheet {
 
   /** Botões do cartão de cima ("Tirar", "Comprar", "Ver passe", "Ver baús"). */
   private act(tab: WardrobeTab, action: string): void {
+    this.popNew = false;
     if (action === 'remove' && isAccessorySlot(tab)) {
       this.progression.setAccessory(tab, null);
       this.picks.set(tab, 'none');
@@ -234,6 +247,25 @@ export class WardrobeSheet {
     const looks = [...this.shownNew].map(lookFromKey);
     this.shownNew.clear();
     this.progression.markLooksSeen(looks);
+  }
+
+  /** Clicou num visual novo: ele vira "visto" já (o selo sai encolhendo, sem esperar sair da aba). */
+  private markSeenNow(look: Look): void {
+    if (!this.progression.isLookNew(look)) return;
+    const key = lookKey(look);
+    this.shownNew.delete(key);
+    this.clearLeaving();
+    this.leavingNew = key;
+    // Os redesenhos do mesmo clique (vestir, marcar visto) mantêm o selo saindo; o seguinte já vem sem ele.
+    this.leavingTimer = window.setTimeout(() => {
+      if (this.leavingNew === key) this.leavingNew = null;
+    }, 400);
+    this.progression.markLooksSeen([look]);
+  }
+
+  private clearLeaving(): void {
+    window.clearTimeout(this.leavingTimer);
+    this.leavingNew = null;
   }
 
   /** Depois de redesenhar, o foco volta pro mesmo quadradinho (teclado e controle não se perdem). */
@@ -311,12 +343,15 @@ export class WardrobeSheet {
       .filter(Boolean)
       .join(' ');
     const state = worn ? Icons.check : unlocked ? '' : GameIcons.lock;
+    // Selo "Novo": pula quando a aba abre, fica parado nos redesenhos e sai encolhendo quando é clicado.
+    const leaving = !fresh && this.leavingNew === lookKey(look);
+    const badge = fresh || leaving ? `look-tile__new${leaving ? ' is-leaving' : this.popNew ? '' : ' is-settled'}` : '';
     return /* html */ `
       <li class="look-grid__cell">
         <button class="${classes}" type="button" data-pick="${lookKey(look)}" aria-pressed="${worn}" aria-label="${escapeHtml(label)}">
           <span class="look-tile__art" aria-hidden="true">${lookIcon(look)}</span>
           <span class="look-tile__name" aria-hidden="true">${escapeHtml(name)}</span>
-          ${fresh ? `<span class="look-tile__new" aria-hidden="true">${escapeHtml(t('wardrobe.new'))}</span>` : ''}
+          ${badge ? `<span class="${badge}" aria-hidden="true">${escapeHtml(t('wardrobe.new'))}</span>` : ''}
           ${state ? `<span class="look-tile__state" aria-hidden="true">${state}</span>` : ''}
         </button>
       </li>`;
