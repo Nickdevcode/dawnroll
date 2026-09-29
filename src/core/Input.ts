@@ -20,6 +20,10 @@ export interface InputState {
   resetPressed: boolean;
   /** Poder de apertar (Equilibrista): mesmo esquema "pegajoso" do pulo. */
   abilityPressed: boolean;
+  /** Online: segurando o botão de fundir (doar a sua bola pra outro, juntar as suas). */
+  merge: boolean;
+  /** Online: abrir a roda de reações (pegajoso como o pulo). */
+  emotePressed: boolean;
 }
 
 const MOVE_KEYS: Record<string, [number, number]> = {
@@ -49,6 +53,8 @@ export class Input {
     jumpPressed: false,
     resetPressed: false,
     abilityPressed: false,
+    merge: false,
+    emotePressed: false,
   };
 
   /** Delta de câmera acumulado desde o último `consumeLook` (pixels). */
@@ -68,11 +74,13 @@ export class Input {
   private jumpQueued = false;
   private resetQueued = false;
   private abilityQueued = false;
+  private emoteQueued = false;
 
   // Toque
   private touchMove = { x: 0, y: 0 };
   private touchGrab = false;
   private touchRun = false;
+  private touchMerge = false;
 
   constructor(private readonly target: HTMLElement) {
     window.addEventListener('keydown', this.onKeyDown);
@@ -130,20 +138,24 @@ export class Input {
     s.moveY = y;
     s.run = this.keys.has('ShiftLeft') || this.keys.has('ShiftRight') || this.touchRun || pad.run;
     s.grab = this.mouseGrab || this.keys.has('KeyE') || this.touchGrab || pad.grab;
+    s.merge = this.keys.has('KeyF') || this.touchMerge || pad.mergeHeld;
     this.lookX += pad.lookX;
     this.lookY += pad.lookY;
     this.zoomDelta += pad.zoom;
     if (pad.jumpPressed) this.jumpQueued = true;
     if (pad.recallPressed) this.resetQueued = true;
     if (pad.abilityPressed) this.abilityQueued = true;
+    if (pad.emotePressed) this.emoteQueued = true;
     this.pausePressed = pad.startPressed;
     // "Pegajoso" até um passo de física consumir: em telas de 144 Hz há frames sem passo fixo.
     s.jumpPressed = s.jumpPressed || this.jumpQueued;
     s.resetPressed = s.resetPressed || this.resetQueued;
     s.abilityPressed = s.abilityPressed || this.abilityQueued;
+    s.emotePressed = s.emotePressed || this.emoteQueued;
     this.jumpQueued = false;
     this.resetQueued = false;
     this.abilityQueued = false;
+    this.emoteQueued = false;
   }
 
   consumeLook(): { x: number; y: number; zoom: number } {
@@ -180,6 +192,12 @@ export class Input {
   queueAbility(): void {
     this.abilityQueued = true;
   }
+  setTouchMerge(active: boolean): void {
+    this.touchMerge = active;
+  }
+  queueEmote(): void {
+    this.emoteQueued = true;
+  }
 
   private onKeyDown = (e: KeyboardEvent): void => {
     // Digitando num campo (e-mail, senha, apelido): WASD e espaço são letras, não o besouro.
@@ -192,6 +210,7 @@ export class Input {
     }
     if (e.code === 'KeyR') this.resetQueued = true;
     if (e.code === 'KeyQ') this.abilityQueued = true;
+    if (e.code === 'KeyG') this.emoteQueued = true;
     if (e.code in MOVE_KEYS || e.code === 'Space') e.preventDefault();
     this.keys.add(e.code);
   };

@@ -222,7 +222,23 @@ Conta é **opcional**: sem ela o jogo continua igualzinho, salvando no aparelho.
 | ⏸️ **Sem pausa** | A sala não para por ninguém: o menu abre por cima do jogo rodando, e as cartas de poder aparecem sem congelar (teclas 1/2/3, toque, ou ←/→ e ↓ no direcional; se ninguém escolher, pega sozinho em 12 s). Baús abrem fora da sala |
 | 🔌 **Caiu?** | Se o dono da sala sai (ou cai), **outro assume** e todo mundo reconecta nele em poucos segundos, sem travar o jogo de ninguém. Se a sua internet piscar, você volta pro seu lugar |
 
-> 🚧 Vem aí (em fases): roubar e fundir bolas, empurrar junto com o parceiro, a **Disputa** em times (com pódio), procurar partida, amigos com convite e turmas. O plano está nas notas do projeto.
+#### 🤹 A bagunça boa (as interações)
+
+| | O que é | Como |
+|---|---|---|
+| 🫳 **Bola solta** | Bola que o dono não empurra há **1,5 s** é de quem agarrar primeiro. A sua bola antiga fica largada no jardim (dá pra voltar e pegar) | Agarrar (E / clique / RT / mão no toque) |
+| 💥 **Trombada** | Correndo, bata em quem está empurrando: ele **solta a bola e fica 1 s tonto** (estrelinhas!), e a bola fica solta pra você. Recarga de **6 s** | Correr pra cima (Shift / LT / botão de correr) |
+| 🟤 **Engolir** | A sua bola rola por cima da bola de um rival que tenha **até 70%** do tamanho dela e engole, estilo Katamari (tudo que tinha dentro vem junto) | Rolar por cima |
+| 🤝 **Empurrar junto** | Agarre a bola que outro está empurrando: **a força soma** e a bola anda até ~35% mais rápido por ajudante. Se o dono largar, ela vira sua | Agarrar a bola dele |
+| 🔗 **Fundir (doar)** | Encoste a sua bola noutra e **segure 0,7 s**: a sua entra na dele. Quando ele enterrar, **a comida é dividida pela parte de cada um** (a sua vem pra sua despensa). Encostando duas bolas suas, junta as duas | **F** / ← no controle / botão das duas bolas no toque |
+| ☀️ **Sol excedente** | Bola nos 30 cm não cresce mais: o que entra **acumula sol** (ela brilha mais forte) e vira **comida extra** no enterro, contada como se fosse outra bola | Juntar bola gigante |
+| 🛡️ **Proteções** | **Broto novo fica 5 s imune** (brilhinho em volta); bola afundando na toca não se rouba; perdeu a bola, **ganha um broto em 3 s**; segurando "fundir", ninguém engole a sua | — |
+| 💬 **Reações** | Uma roda com 8 frases (Bora!, Me ajuda!, Rouba!, Valeu!, Haha, Ops, GG e **Aqui!**, que marca o chão pra todo mundo). Sem chat livre, de propósito | **G** (e 1–8 ou mouse) / ↓ no controle / balão no toque |
+| 🚦 **Roubo liga/desliga** | O dono da sala escolhe na placa da sala. Desligado, só dá pra ajudar (empurrar junto e doar) | Chave "Roubo de bola" |
+
+Tem **6 conquistas online** (Mão leve, Bocão, Trombada certeira, Força-tarefa, Mão aberta e Sol de sobra), num grupo próprio nas conquistas da toca.
+
+> 🚧 Vem aí (em fases): a **Disputa** em times (com pódio), procurar partida, amigos com convite e turmas. Sem times ainda, todo mundo é rival pra roubar/engolir/trombar, e qualquer um pode ajudar (empurrar junto e doar). O plano está nas notas do projeto.
 
 ---
 
@@ -445,10 +461,13 @@ src/
 │   ├── dsp.ts / loops.ts   # ruídos, reverb, onda do pad; peças dos sons contínuos
 │   └── voices/             # receitas de som (foley, natureza, instrumentos, interface, baú e moedas)
 ├── net/                    # online: salas de até 6, P2P (WebRTC) com o dono da sala no centro
-│   ├── protocol.ts         # o que viaja: retrato binário de 58 bytes (20/s) e eventos validados
+│   ├── protocol.ts         # o que viaja: retrato binário (besouro + até 4 bolas, 20/s), pedidos e decisões validados
 │   ├── NetSession.ts       # a sala viva: dono, vagas, repasse, relógio, ponto, troca de dono, reconexão
-│   ├── OnlinePlay.ts       # o online dentro do jogo: besouros/bolas remotos, mundo compartilhado, clima, rebrota
+│   ├── OnlinePlay.ts       # o online dentro do jogo: besouros remotos, mundo compartilhado, clima, rebrota, trombada, reações
+│   ├── BallSync.ts         # as bolas da sala: dono de cada uma, fantasmas, conteúdo espelhado, pegar/engolir/fundir, broto
+│   ├── rules.ts            # regras da bagunça (puras): bola solta, trombada, engolir, fundir, parte de cada um
 │   ├── snapshotBuffer.ts   # desenha os outros um pouquinho no passado, interpolado (liso com rede ruim)
+│   ├── debugBots.ts        # só em desenvolvimento (?bots=5): sala cheia de mentira pra medir desempenho
 │   ├── clock.ts            # relógio da sala (ping/pong tipo NTP)
 │   └── transport/          # WebRTC (PeerLink, StarNet), sinalização pelo Realtime, STUN/TURN, rede de mentirinha
 ├── online/                 # conta, save na nuvem e ranking (Supabase)
@@ -467,7 +486,8 @@ src/
     ├── RoundPanel.ts       # nível, pedidos (recolhíveis) e poderes da rodada no HUD
     ├── PerkPicker.ts       # as cartas de "escolha um poder" (no online: por cima do jogo, sem congelar)
     ├── OnlineSheet.ts      # placa "Jogar online": criar sala, entrar com código, a sala (código, quem está)
-    ├── OnlineHud.ts        # chip da sala no HUD e as placas de apelido em cima dos besouros
+    ├── OnlineHud.ts        # chip da sala, placas de apelido com balão de reação, "Aqui!" no chão, botões do toque
+    ├── EmoteWheel.ts       # roda de reações (8 frases com ícone: teclas 1–8, mouse, analógico, toque)
     ├── BurrowSheet.ts      # placa da toca: despensa, catálogo (com curiosidades), poderes e conquistas
     ├── WardrobeSheet.ts    # placa do guarda-roupa: abas por lugar, vestir, provar, comprar, selo "Novo"
     ├── ShopSheet.ts        # Feirinha: baús (abrir e comprar), cascos e acessórios à venda, provar e comprar
@@ -595,12 +615,17 @@ Ferramentas de medição (descartáveis, em `shots/lead/`, fora do git): `bench.
 - **Baú no próprio jardim:** a cerimônia acontece na cena do jogo (pega a luz, o contorno, o bloom e o desfoque), com a câmera do provador rodeando o baú em vez do besouro (e o besouro como obstáculo da lente). O baú cai entre o besouro e a câmera, num lugar livre de pedra e da bola. Os brilhos são aditivos e ficam **atrás** do prêmio (vistos da câmera): na frente, lavavam o visual que sai.
 - **Provador grudando no besouro (corrigido):** a lente evita a bola com uma folga generosa; com o besouro colado nela, o próprio alvo ficava dentro da folga e toda direção dava "sem espaço", então a câmera grudava no casco. Agora, com o alvo dentro da folga, só a bola de verdade bloqueia.
 - **Tampa oca some de costas:** a tampa do baú é meio cilindro oco; aberta, ela mostra o lado de dentro, que o *backface culling* não desenha. Ganhou um fundo sólido.
-- **Online de graça, e sem atraso no controle:** cada jogador simula o próprio besouro e a própria bola exatamente como no solo (física local, zero atraso), e manda um retrato de 58 bytes 20 vezes por segundo. Os outros aparecem como corpos cinemáticos "fantasmas" (o seu besouro esbarra neles, a sua bola quica neles), desenhados ~100 ms no passado e interpolados. O dono da sala é o árbitro do mundo compartilhado (onde montinho e tralha renascem, o que rebrota, o clima). Custo de servidor: zero (P2P + STUN; TURN grátis até 1 TB/mês). Plano B, se um dia precisar: um Durable Object do Cloudflare no lugar do dono, atrás da mesma interface de transporte.
+- **Online de graça, e sem atraso no controle:** cada jogador simula o próprio besouro e a própria bola exatamente como no solo (física local, zero atraso), e manda um retrato de ~70 bytes (o besouro e as bolas dele) 20 vezes por segundo. Os outros aparecem como corpos cinemáticos "fantasmas" (o seu besouro esbarra neles, a sua bola quica neles), desenhados ~100 ms no passado e interpolados. O dono da sala é o árbitro do mundo compartilhado (onde montinho e tralha renascem, o que rebrota, o clima). Custo de servidor: zero (P2P + STUN; TURN grátis até 1 TB/mês). Plano B, se um dia precisar: um Durable Object do Cloudflare no lugar do dono, atrás da mesma interface de transporte.
 - **Montinho e tralha com semente por vaga:** pra todo mundo ver o mesmo chão, cada montinho e cada detrito sai da própria semente (a do jardim, e depois a que o dono da sala sorteou ao renascer). A sala só troca "vaga 12, semente X"; cada aparelho monta igual. No online, renascer não desvia do besouro (senão cada tela desviaria de um besouro diferente).
 - **A folga da interpolação anda devagar:** medir o tremor da rede e ajustar a folga na hora fazia o instante desenhado voltar no tempo (a bola dos outros engasgava com rede ruim). Suavizada, com rede simulada de 150 ms, ±40 ms e 5% de perda: zero saltos e zero engasgos.
 - **Meio-trickle na conexão:** a oferta e a resposta do WebRTC saem com os caminhos que aparecem em ~1 s, e os que chegam depois vão em lotes de 250 ms pelo canal da sala. A primeira versão mandava tudo numa mensagem só (economia de cota), mas quando juntar os caminhos demora a oferta saía **sem o caminho do TURN** — e quem está no 4G não conectava. Testado com tudo forçado pelo TURN (`?relay=1` em desenvolvimento): 3 jogadores conectam e jogam liso.
 - **Troca de dono rápida:** quem assume anuncia no canal da sala e os outros vão direto nele; ninguém fica batendo no dono que sumiu. Dono que fecha a aba avisa ("bye") e sai do banco na hora (e só fecha as conexões depois de sair do banco, senão o "bye" se perdia no caminho do TURN); se ele cai de verdade, ~6 s. O prazo de silêncio (8 s) cobre a travada de compilar shader num aparelho fraco (senão o dono "caía" ao apertar Jogar).
-- **Cada bola com o seu material:** o brilho de sol (30 cm) mexia no material compartilhado; com várias bolas, uma no teto acenderia todas.
+- **Cada bola com o seu material:** o brilho de sol (30 cm) mexia no material compartilhado; com várias bolas, uma no teto acenderia todas. A malha da bola, essa sim, é uma só pra todas (nascer bola nova no online não monta 16 mil vértices de novo), e o programa de shader é o mesmo (nada recompila).
+- **Cada bola tem número e dono:** quem simula a bola é o dono dela; pros outros ela é fantasma. Roubar não cria bola nova: a **mesma** bola troca de papel (`DungBall.setProxy`), com a tralha grudada e tudo, e continua da pose mais nova da rede (não da desenhada, que está ~100 ms atrasada). Pegar, engolir e fundir são **pedidos** ao dono da sala, que confere as regras (`net/rules.ts`) com o retrato mais novo de cada um e anuncia a decisão; dois pedidos ao mesmo tempo pela mesma bola: vale o primeiro.
+- **O que tem dentro viaja com a bola:** cada bola tem o próprio "livro" (o que engoliu, as cores, e a parte de cada jogador em volume). O dono manda o livro quando ele muda (no máximo 2×/s), e todo mundo guarda um espelho: quem rouba já tem o conteúdo na hora. A parte de cada um não conta item por item: o volume que ninguém "assinou" é de quem está com a bola; doar soma as partes, roubar passa tudo pra quem levou.
+- **Engolir sem a bola grande empurrar a pequena:** do lado de quem vai ser engolido, a bola grande (fantasma) empurraria a pequena pra longe, e a pose dela nunca ficaria "por baixo". Então, perto, as duas **se atravessam** (só entre bolas: o besouro e a câmera continuam batendo) e o pedido usa a pose mais nova da rede, não a desenhada (o desenho de uma bola que o dono teleportou com "trazer a bola" passava por dentro das outras e parecia engolida). Segurando "fundir", a sua bola não pode ser engolida (senão a gigante do amigo engolia a doação antes de ela acontecer).
+- **Sol excedente conta como outra bola:** medido em "quantos cm a bola teria passado dos 30", juntar uma bola de 10 cm numa de 30 rendia 1 de comida (a raiz cúbica achata tudo). Agora o excedente vale o diâmetro de uma bola com aquele volume: juntar a de 10 cm rende o mesmo que enterrá-la, e um pouco mais.
+- **O "welcome" do dono chega antes de a sessão abrir:** o dono da sala se dá as boas-vindas dentro do `NetSession.open`, antes de ele devolver a sessão. Por isso a sessão avisa que existe logo no começo (`onOpen`): relógio da sala e o próprio id já valem ali (antes, a bola do dono nascia sem dono e o broto de quem entra podia nascer com a hora errada).
 - **Online sem atrasar o jogo:** o `supabase-js` é importado sob demanda depois do jardim abrir (pedaço separado do bundle). O navegador continua sendo a cópia de trabalho do save; a nuvem recebe o JSON inteiro alguns segundos depois (espera 3 s, no máximo 15 s mudando sem parar) e ao trocar de aba/fechar.
 - **Sobe quando o jogo grava, não quando o save muda:** o jogo mexe nos contadores de movimento a cada passo sem gravar; comparar o save vivo antes/depois do upload fazia a nuvem receber o save a cada 3 s com a bola rolando. Agora um contador de gravações decide se ficou coisa por subir.
 - **Sair não apaga o que não subiu:** o "Sair" espera o login em andamento, sobe o que falta e só zera o aparelho depois de a nuvem confirmar e o logout dar certo.

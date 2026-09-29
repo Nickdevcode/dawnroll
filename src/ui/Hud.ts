@@ -14,6 +14,7 @@ import { PerkPicker } from './PerkPicker';
 import { RoundPanel, type RoundView } from './RoundPanel';
 import { placeMarker, type ProjectedPoint, type ScreenMargins } from './screenMarker';
 import { OnlineHud } from './OnlineHud';
+import type { EmoteWheel } from './EmoteWheel';
 import type { NameplateSource, OnlinePlay } from '../net/OnlinePlay';
 import type * as THREE from 'three';
 
@@ -29,7 +30,23 @@ const MILESTONES: ReadonlyArray<[number, MessageKey]> = [
   [30, 'milestone.8'],
 ];
 
-export type HintKind = 'none' | 'grab' | 'pushing' | 'tooSmall' | 'burrowTooSmall' | 'dissolving' | 'ability' | 'abilityFar' | 'riding';
+export type HintKind =
+  | 'none'
+  | 'grab'
+  | 'pushing'
+  | 'tooSmall'
+  | 'burrowTooSmall'
+  | 'dissolving'
+  | 'ability'
+  | 'abilityFar'
+  | 'riding'
+  // Online: tonto da trombada, broto chegando, fundir (doar / juntar as suas), empurrando junto, bola solta pra pegar.
+  | 'dizzy'
+  | 'sprout'
+  | 'merge'
+  | 'mergeOwn'
+  | 'coPush'
+  | 'steal';
 
 /** Estado do botão do poder de apertar (Equilibrista). */
 export interface AbilityView {
@@ -114,7 +131,7 @@ export class Hud {
   private muted = false;
   private lastSave: SaveData | null = null;
   private lastResult: RoundResult | null = null;
-  private hintState: { kind: HintKind; value: number } = { kind: 'none', value: 0 };
+  private hintState: { kind: HintKind; value: number; label: string } = { kind: 'none', value: 0, label: '' };
   /** Último dispositivo usado e estilo do controle (as dicas falam a língua dele). */
   private device: InputDevice = isTouchDevice ? 'touch' : 'keyboard';
   private padStyle: PadStyle = 'xbox';
@@ -201,9 +218,19 @@ export class Hud {
     this.refreshTexts();
   }
 
-  /** O online ficou pronto: chip da sala e placas de apelido entram no HUD. */
+  /** O online ficou pronto: chip da sala, placas de apelido, roda de reações e (no toque) os botões do online entram no HUD. */
   attachOnlinePlay(net: OnlinePlay): void {
-    this.onlineHud = new OnlineHud(this.hud, net);
+    this.onlineHud = new OnlineHud(this.hud, net, this.input, this.isTouch);
+  }
+
+  /** Roda de reações do online (null antes do online ficar pronto). */
+  get emoteWheel(): EmoteWheel | null {
+    return this.onlineHud?.wheel ?? null;
+  }
+
+  /** Online: dá pra fundir agora (o botão de fundir aparece no toque). */
+  setMergeAvailable(available: boolean): void {
+    this.onlineHud?.setMergeAvailable(available);
   }
 
   /** Placas de apelido dos besouros remotos neste quadro. */
@@ -276,9 +303,9 @@ export class Hud {
     this.liveRegion.textContent = `${t('result.live', { cm: formatCm(result.diameterCm) })}${result.record ? ` ${t('result.record')}` : ''}`;
   }
 
-  setHint(kind: HintKind, value = 0): void {
-    this.hintState = { kind, value };
-    const key = `${kind}|${value.toFixed(1)}`;
+  setHint(kind: HintKind, value = 0, label = ''): void {
+    this.hintState = { kind, value, label };
+    const key = `${kind}|${value.toFixed(1)}|${label}`;
     if (key === this.currentHint) return;
     this.currentHint = key;
     let html = '';
@@ -312,6 +339,27 @@ export class Hud {
       case 'riding':
         html = escapeHtml(t('hint.riding'));
         break;
+      case 'dizzy':
+        html = escapeHtml(t('hint.dizzy'));
+        break;
+      case 'sprout':
+        html = escapeHtml(t('hint.sprout', { n: value }));
+        break;
+      case 'coPush':
+        html = escapeHtml(t('hint.coPush', { name: label }));
+        break;
+      case 'steal':
+        html = this.withGrabKey(t('hint.steal', { name: label, key: '{key}' }));
+        break;
+      case 'merge':
+      case 'mergeOwn': {
+        const text = kind === 'merge' ? t('hint.merge', { name: label, key: '{key}' }) : t('hint.mergeOwn', { key: '{key}' });
+        const cap = this.device === 'gamepad' ? '<span class="keycap padcap">←</span>' : this.device === 'touch' ? '' : '<span class="keycap">F</span>';
+        html = escapeHtml(this.device === 'touch' ? text.replace(' {key}', '').replace('{key}', '') : text).replace('{key}', cap);
+        // Segurando: a barrinha enche até fundir.
+        if (value > 0) html += `<span class="hint-progress" style="--p:${Math.min(1, value).toFixed(3)}"></span>`;
+        break;
+      }
       case 'none':
         break;
     }
@@ -330,7 +378,7 @@ export class Hud {
     this.device = device;
     this.padStyle = padStyle;
     this.currentHint = '';
-    this.setHint(this.hintState.kind, this.hintState.value);
+    this.setHint(this.hintState.kind, this.hintState.value, this.hintState.label);
     this.refreshAbilityKey();
     this.perkPicker.setDevice(device, padStyle);
   }
@@ -488,13 +536,20 @@ export class Hud {
     if (this.lastSave) this.setProgress(this.lastSave);
     if (this.lastResult) this.fillResult(this.lastResult);
     this.setPantryCount(this.pantryCount);
-    this.setHint(this.hintState.kind, this.hintState.value);
+    this.setHint(this.hintState.kind, this.hintState.value, this.hintState.label);
     if (this.markerState) this.setBurrowMarker(this.markerState);
   }
 
   /** Área útil dos marcadores: fora do topo (cartões) e, no toque, fora dos polegares. */
   private markerMargins(): ScreenMargins {
     return this.isTouch ? { top: 150, bottom: 190, side: 70 } : { top: 120, bottom: 70, side: 56 };
+  }
+
+  /** Texto com `{key}` trocado pela tecla/botão de agarrar do dispositivo em uso (no toque, sem tecla). */
+  private withGrabKey(text: string): string {
+    if (this.device === 'touch') return escapeHtml(text.replace(' {key}', '').replace('{key}', ''));
+    const cap = this.device === 'gamepad' ? this.padCap() : '<span class="keycap">E</span>';
+    return escapeHtml(text).replace('{key}', cap);
   }
 
   /** Botão de segurar a bola (RT / R2) como "tecla" na dica. */
@@ -518,8 +573,11 @@ export class Hud {
   private resultLines(outcome: BurialOutcome): Array<[string, string]> {
     const lines: Array<[string, string]> = [];
     const meal = outcome.meal;
-    if (outcome.stored) lines.push([GameIcons.food, escapeHtml(t('result.food', { n: outcome.food.total }))]);
+    if (outcome.stored) lines.push([GameIcons.food, escapeHtml(t('result.food', { n: outcome.keptFood }))]);
     else if (meal) lines.push([GameIcons.food, escapeHtml(t('result.ate', { xp: meal.xp }))]);
+    // Online: Sol excedente (o que passou dos 30 cm) e a bola dividida com quem doou.
+    if (outcome.food.sun > 0) lines.push([GameIcons.star, escapeHtml(t('result.sun', { n: outcome.food.sun }))]);
+    if (outcome.keptFood < outcome.food.total) lines.push([GameIcons.food, escapeHtml(t('result.share', { n: outcome.food.total - outcome.keptFood }))]);
     if (meal && meal.levelAfter > meal.levelBefore) lines.push([GameIcons.star, `<strong>${escapeHtml(t('burrow.levelUp', { n: meal.levelAfter }))}</strong>`]);
     if (meal && meal.looks.length > 0) lines.push([GameIcons.sparkle, escapeHtml(looksNotice(meal.looks))]);
     if (outcome.goldenDone) lines.push([GameIcons.star, `<strong>${escapeHtml(t('result.golden'))}</strong>`]);

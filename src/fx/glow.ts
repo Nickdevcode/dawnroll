@@ -27,6 +27,31 @@ export function glowTexture(): THREE.CanvasTexture {
   return sharedGlow;
 }
 
+let sharedCorona: THREE.CanvasTexture | null = null;
+
+/**
+ * Coroa de sol: forte até ~45% do raio (onde fica a borda da coisa que brilha,
+ * que tapa o miolo) e sumindo até a beira. Pro halo do Sol excedente.
+ */
+export function coronaTexture(): THREE.CanvasTexture {
+  if (sharedCorona) return sharedCorona;
+  const size = 128;
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext('2d')!;
+  const g = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+  g.addColorStop(0, 'rgba(255,255,255,0.9)');
+  g.addColorStop(0.42, 'rgba(255,255,255,0.9)');
+  g.addColorStop(0.52, 'rgba(255,255,255,0.5)');
+  g.addColorStop(0.75, 'rgba(255,255,255,0.14)');
+  g.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, size, size);
+  sharedCorona = new THREE.CanvasTexture(canvas);
+  sharedCorona.colorSpace = THREE.SRGBColorSpace;
+  return sharedCorona;
+}
+
 /** Anel fininho que pulsa pra fora devagar, com um brilho mole no meio (plano no chão). */
 export function pulseRingMaterial(color: THREE.Color): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({

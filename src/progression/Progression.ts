@@ -172,6 +172,8 @@ export interface WelcomeGift {
 /** O que aconteceu ao enterrar uma bola. */
 export interface BurialOutcome {
   food: FoodBreakdown;
+  /** A comida que ficou com você (a bola toda, ou a sua parte dela no online). */
+  keptFood: number;
   requestsDone: number;
   /** Algum pedido dourado (do Sol) foi cumprido nesta bola. */
   goldenDone: boolean;
@@ -193,6 +195,20 @@ export interface BurialContext {
   raining: boolean;
   /** O besouro estava em cima da bola (Equilibrista) quando ela caiu na toca. */
   riding: boolean;
+  /**
+   * Online: a parte da bola que é sua (0..1). Quem doou bola pra ela leva o
+   * resto da comida (ver `receiveShare`). Sem isso, a bola é toda sua.
+   */
+  share?: number;
+  /** Online: Sol excedente da bola, em cm além dos 30 (vira comida extra). */
+  sunCm?: number;
+}
+
+/** A parte de uma bola que você ajudou a fazer e outro enterrou (online). */
+export interface ShareOutcome {
+  food: number;
+  stored: boolean;
+  meal: MealResult | null;
 }
 
 /** Poder escolhido na rodada, com o nível atual dele (★★ = 2). */
@@ -220,7 +236,8 @@ export interface CollectResult {
  * os multiplicadores do passo; a interface lê o estado e chama `eat`/`setSkin`/`setAccessory`/`buyLook`/`openChest`...
  */
 export class Progression implements UnlockProgress {
-  readonly ledger = new RoundLedger();
+  /** O que a bola da rodada engoliu (no online, a bola que você está fazendo agora: ver `useLedger`). */
+  private _ledger = new RoundLedger();
   /** Poderes escolhidos nesta rodada, na ordem em que vieram (o ★★ atualiza o nível no lugar). */
   readonly roundPerks: RoundPerk[] = [];
   /** Equilibrista: relógio do uso e da recarga. */
@@ -258,6 +275,21 @@ export class Progression implements UnlockProgress {
   }
 
   // --- leitura -----------------------------------------------------------------
+
+  get ledger(): RoundLedger {
+    return this._ledger;
+  }
+
+  /**
+   * Online: a sua bola agora é outra (roubou, ganhou broto, trocou pela que
+   * estava parada). Os pedidos passam a contar o que tem nela; o resto da
+   * rodada (poderes, pedidos já cumpridos) continua.
+   */
+  useLedger(ledger: RoundLedger): void {
+    if (ledger === this._ledger) return;
+    this._ledger = ledger;
+    this.emit();
+  }
 
   get level(): number {
     return this.info.level;
@@ -644,7 +676,9 @@ export class Progression implements UnlockProgress {
     resolveChallenges(this.requests, { wet: this.roundWet, raining: context.raining });
     const done = this.requests.filter((r) => r.done);
     const reward = done.reduce((sum, request) => sum + request.reward, 0);
-    const food = foodFor(diameterCm, this.ledger, reward);
+    const food = foodFor(diameterCm, this.ledger, reward, context.sunCm ?? 0);
+    // Online: com bola doada dentro, a comida é dividida pela parte de cada um (a sua fica aqui).
+    const keptFood = Math.round(food.total * Math.max(0, Math.min(1, context.share ?? 1)));
     const discovered: CatalogId[] = [];
     for (const [id, n] of this.ledger.entries()) {
       if (n <= 0) continue;
@@ -657,10 +691,10 @@ export class Progression implements UnlockProgress {
     let stored = true;
     let meal: MealResult | null = null;
     if (this.save.pantry.length < PANTRY_CAPACITY) {
-      this.save.pantry.push({ cm: Math.round(diameterCm * 10) / 10, food: food.total });
+      this.save.pantry.push({ cm: Math.round(diameterCm * 10) / 10, food: keptFood });
     } else {
       stored = false;
-      meal = this.feed([food.total]);
+      meal = this.feed([keptFood]);
     }
     this.save.stats.requestsDone = Math.min(1e7, this.save.stats.requestsDone + done.length);
     const goldenDone = done.some((r) => r.golden);
@@ -680,7 +714,7 @@ export class Progression implements UnlockProgress {
       passDef && passEarned ? { season: passDef.id, ...passEarned, tierBefore, tierAfter: this.passView(passDef).tier } : null;
     this.persist();
     this.emit();
-    return { food, requestsDone: done.length, goldenDone, discovered, stored, meal, introduceBurrow, pass };
+    return { food, keptFood, requestsDone: done.length, goldenDone, discovered, stored, meal, introduceBurrow, pass };
   }
 
   /**
@@ -700,6 +734,26 @@ export class Progression implements UnlockProgress {
     this.persist();
     this.emit();
     return meal;
+  }
+
+  /**
+   * Online: outro jogador enterrou uma bola que tinha a sua bola doada dentro.
+   * A sua parte da comida vem pra despensa (ou é comida na hora, se ela estiver
+   * cheia). Não conta como enterro seu (nem recorde, nem ranking).
+   */
+  receiveShare(diameterCm: number, food: number): ShareOutcome | null {
+    const amount = Math.round(Math.max(0, Math.min(food, 5000)));
+    if (amount <= 0) return null;
+    let stored = true;
+    let meal: MealResult | null = null;
+    if (this.save.pantry.length < PANTRY_CAPACITY) this.save.pantry.push({ cm: Math.round(Math.max(0, Math.min(diameterCm, 30)) * 10) / 10, food: amount });
+    else {
+      stored = false;
+      meal = this.feed([amount]);
+    }
+    this.persist();
+    this.emit();
+    return { food: amount, stored, meal };
   }
 
   /** Troca o casco (só os liberados). */

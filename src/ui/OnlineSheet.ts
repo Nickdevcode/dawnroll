@@ -115,6 +115,11 @@ export class OnlineSheet {
     else if (target.matches('[data-copy]')) void this.copyCode();
     else if (target.matches('[data-share]')) void this.share();
     else if (target.matches('[data-play-room]')) this.onPlay?.();
+    else if (target.matches('[data-rule-steal]') && this.net?.isHost) {
+      this.net.setRules({ ...this.net.rules, steal: !this.net.rules.steal });
+      // A placa foi redesenhada: o foco volta pra chave.
+      this.body.querySelector<HTMLButtonElement>('[data-rule-steal]')?.focus({ preventScroll: true });
+    }
     else if (target.matches('[data-leave]')) void this.leave();
   }
 
@@ -231,6 +236,19 @@ export class OnlineSheet {
       <p class="online__error" data-error role="alert">${this.error ? escapeHtml(t(this.error)) : ''}</p>`;
   }
 
+  /** Regras da sala: o dono liga/desliga o roubo; os outros veem como está. */
+  private rulesBlock(net: OnlinePlay): string {
+    const steal = net.rules.steal;
+    return /* html */ `
+      <div class="online__rule">
+        <div class="online__rule-text">
+          <span class="online__rule-title" id="online-rule-steal">${escapeHtml(t('online.rules.steal'))}</span>
+          <span class="online__rule-desc" id="online-rule-steal-desc">${escapeHtml(t(steal ? 'online.rules.stealOn' : 'online.rules.stealOff'))}${net.isHost ? '' : ` · ${escapeHtml(t('online.rules.hostOnly'))}`}</span>
+        </div>
+        <button class="switch" type="button" role="switch" aria-checked="${steal}" aria-labelledby="online-rule-steal" aria-describedby="online-rule-steal-desc" data-rule-steal ${net.isHost ? '' : 'disabled'}><span class="switch__knob" aria-hidden="true"></span></button>
+      </div>`;
+  }
+
   private renderRoom(net: OnlinePlay, selfId: string): void {
     const code = net.code ?? '';
     const status = net.status;
@@ -265,6 +283,7 @@ export class OnlineSheet {
         </div>
         <p class="online__hint">${escapeHtml(t('online.inviteHint'))}</p>
       </div>
+      ${this.rulesBlock(net)}
       <div class="online__players-head">
         <h3 class="online__label">${escapeHtml(t('online.players'))} <span class="online__count">${escapeHtml(t('online.playerCount', { n: players.length, max: MAX_PLAYERS }))}</span></h3>
         ${ping}

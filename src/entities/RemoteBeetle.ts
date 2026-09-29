@@ -2,9 +2,10 @@ import * as THREE from 'three';
 import { RAPIER, Groups, interactionGroups, type Physics } from '../core/Physics';
 import { terrainNormal } from '../world/Terrain';
 import { BeetleModel } from './BeetleModel';
+import { DizzyStars } from '../fx/DizzyStars';
 import { accessory, isAccessoryId, type Outfit } from '../progression/accessories';
 import { isSkinId, skin, DEFAULT_SKIN } from '../progression/skins';
-import type { NetLook, PlayerSnapshot } from '../net/protocol';
+import type { BeetlePose, NetLook } from '../net/protocol';
 import { angleDelta, damp } from '../utils/math';
 
 /** Mesmo tamanho do colisor do besouro local (o seu esbarra no dele). */
@@ -13,15 +14,21 @@ const UP = new THREE.Vector3(0, 1, 0);
 const tmpNormal = new THREE.Vector3();
 const tmpAlign = new THREE.Quaternion();
 const tmpTurn = new THREE.Quaternion();
+const tmpHead = new THREE.Vector3();
 
 /**
  * O besouro de outro jogador: o mesmo modelo (casco, acessórios, patas,
- * piscada), animado pela pose que chega da rede (ver `SnapshotBuffer`), e um
- * colisor cinemático no lugar dele — o seu besouro esbarra nele e a sua bola
- * quica nele, como em qualquer coisa do jardim.
+ * piscada), animado pela pose que chega da rede (ver `PoseBuffer`), e um
+ * colisor cinemático no lugar dele: o seu besouro esbarra nele (e a câmera
+ * desvia). A sua bola passa por ele (senão ele a arremessaria).
  */
 export class RemoteBeetle {
   readonly model = new BeetleModel();
+  /** Estrelinhas de tonto (trombada): o online põe na cena junto do modelo. */
+  readonly stars = new DizzyStars();
+  private dizzy = false;
+  /** Projeta sombra agora (longe da câmera não: cada peça do besouro é mais um desenho no passe de sombra). */
+  private shadows = true;
   private readonly body: RAPIER.RigidBody;
   private readonly prev = new THREE.Vector3();
   private readonly curr = new THREE.Vector3();
@@ -35,7 +42,9 @@ export class RemoteBeetle {
   constructor(private readonly physics: Physics) {
     this.body = physics.world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(0, -50, 0));
     physics.world.createCollider(
-      RAPIER.ColliderDesc.ball(COLLIDER_RADIUS).setFriction(0.6).setCollisionGroups(interactionGroups(Groups.WORLD, 0xffff)),
+      // Só o seu besouro (e a câmera) batem nele. A sua bola não: corpo cinemático empurra com
+      // massa infinita, e um besouro encostando arremessava até a bola de 30 cm (e tirava da mão do dono).
+      RAPIER.ColliderDesc.ball(COLLIDER_RADIUS).setFriction(0.6).setCollisionGroups(interactionGroups(Groups.WORLD, 0xffff & ~Groups.BALL)),
       this.body,
     );
     this.model.root.name = 'remote-beetle';
@@ -54,10 +63,31 @@ export class RemoteBeetle {
       if (id && isAccessoryId(id) && accessory(id).slot === slot) outfit[slot] = id;
     }
     this.model.setOutfit(outfit);
+    // Acessório novo nasce projetando sombra: segue o estado atual.
+    if (!this.shadows) this.applyShadows();
+  }
+
+  /**
+   * Liga/desliga a sombra do besouro (o online desliga dos que estão longe da
+   * câmera). Guarda o que cada peça fazia, pra devolver igual ao ligar de novo.
+   */
+  setShadows(on: boolean): void {
+    if (on === this.shadows) return;
+    this.shadows = on;
+    this.applyShadows();
+  }
+
+  private applyShadows(): void {
+    this.model.root.traverse((object) => {
+      const mesh = object as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      if (mesh.userData.castShadowDefault === undefined) mesh.userData.castShadowDefault = mesh.castShadow;
+      mesh.castShadow = this.shadows && mesh.userData.castShadowDefault === true;
+    });
   }
 
   /** Passo fixo: vai pra pose interpolada (os pés, como no retrato) e guarda o resto pra animação. */
-  drive(beetle: PlayerSnapshot['beetle'], ballSpeed: number, ballRadius: number): void {
+  drive(beetle: BeetlePose, ballSpeed: number, ballRadius: number): void {
     this.prev.copy(this.curr);
     this.prevYaw = this.currYaw;
     this.curr.set(beetle.x, beetle.y, beetle.z);
@@ -76,6 +106,7 @@ export class RemoteBeetle {
     p.pushSpeed = ballSpeed / Math.max(ballRadius, 0.3);
     p.verticalSpeed = beetle.vy;
     p.strain = beetle.strain;
+    this.dizzy = beetle.dizzy;
   }
 
   /** Visual interpolado entre passos (mesmo esquema do besouro local). */
@@ -91,6 +122,7 @@ export class RemoteBeetle {
     this.groundUp.normalize();
     root.quaternion.copy(tmpAlign.setFromUnitVectors(UP, this.groundUp)).multiply(tmpTurn.setFromAxisAngle(UP, yaw));
     this.model.update(dt, this.pose);
+    this.stars.update(dt, this.model.getHeadPosition(tmpHead), this.dizzy);
   }
 
   /** Posição dos pés agora (placa do apelido, som). */
@@ -101,5 +133,6 @@ export class RemoteBeetle {
   dispose(): void {
     this.physics.world.removeRigidBody(this.body);
     this.model.root.removeFromParent();
+    this.stars.dispose();
   }
 }

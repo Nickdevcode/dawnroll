@@ -82,6 +82,9 @@ export class GamepadInput {
   startPressed = false;
   /** Poder de apertar (clicar o analógico direito ou direcional pra cima). */
   abilityPressed = false;
+  /** Online: direcional ← segurado (fundir a bola) e ↓ apertado (roda de reações). */
+  mergeHeld = false;
+  emotePressed = false;
   /** Algo foi mexido no controle neste quadro (o jogo passa a mostrar dicas de controle). */
   active = false;
   /** Ações de menu deste quadro (bordas, com repetição ao segurar a direção). */
@@ -111,9 +114,9 @@ export class GamepadInput {
   poll(dt: number): void {
     this.menuActions.length = 0;
     this.dpadPressed.left = this.dpadPressed.right = this.dpadPressed.down = false;
-    this.jumpPressed = this.recallPressed = this.startPressed = this.abilityPressed = false;
+    this.jumpPressed = this.recallPressed = this.startPressed = this.abilityPressed = this.emotePressed = false;
     this.moveX = this.moveY = this.lookX = this.lookY = this.zoom = this.menuScroll = 0;
-    this.grab = this.run = this.active = false;
+    this.grab = this.run = this.active = this.mergeHeld = false;
 
     const pad = this.pad();
     if (!pad) return;
@@ -139,6 +142,8 @@ export class GamepadInput {
     this.dpadPressed.left = edge(Button.Left);
     this.dpadPressed.right = edge(Button.Right);
     this.dpadPressed.down = edge(Button.Down);
+    this.mergeHeld = down(Button.Left);
+    this.emotePressed = this.dpadPressed.down;
 
     // Menu: A escolhe, B volta, LB/RB trocam de aba; direções com repetição ao segurar.
     if (edge(Button.A)) this.menuActions.push('confirm');

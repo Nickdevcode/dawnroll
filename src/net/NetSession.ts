@@ -5,7 +5,6 @@ import {
   MAX_PLAYERS,
   NET_PROTOCOL,
   RELAYED_EVENTS,
-  SNAPSHOT_BYTES,
   decodeSnapshot,
   parseEvent,
   stampSnapshotSlot,
@@ -39,6 +38,11 @@ export type SessionStatus = 'connecting' | 'online' | 'reconnecting' | 'closed';
 export type CloseReason = 'left' | 'lost' | 'signal' | 'connect' | 'full';
 
 export interface SessionHandlers {
+  /**
+   * A sessão existe (antes de conectar): quem usa já pode ler o relógio da
+   * sala e a vaga no "welcome", que chega antes de `open` terminar.
+   */
+  onOpen?(session: NetSession): void;
   /** O que eu anuncio pros outros (apelido e visual). */
   profile(): { nick: string; look: NetLook };
   /** O mundo compartilhado agora (o dono manda pra quem chega). */
@@ -104,6 +108,8 @@ export class NetSession {
   private reported = false;
   /** Dono novo anunciado pelo canal da sala (atalho da recuperação). */
   private hostHint: string | null = null;
+  /** Saindo de propósito: a conexão que cai nesse meio tempo (o dono respondeu ao "tchau") não é queda. */
+  private leaving = false;
 
   private constructor(
     private readonly client: SupabaseClient,
@@ -117,6 +123,7 @@ export class NetSession {
   /** Abre a sala já criada/entrada no banco: sinalização, conexão com o dono (ou vira o dono). */
   static async open(client: SupabaseClient, selfId: string, room: RoomInfo, handlers: SessionHandlers): Promise<NetSession> {
     const session = new NetSession(client, selfId, room, handlers);
+    handlers.onOpen?.(session);
     await session.begin();
     return session;
   }
@@ -199,6 +206,7 @@ export class NetSession {
    */
   async leave(): Promise<void> {
     if (this.isClosed()) return;
+    this.leaving = true;
     this.say({ t: 'bye' });
     try {
       await Promise.race([leaveRoom(this.client), sleep(1500)]);
@@ -318,6 +326,7 @@ export class NetSession {
    */
   private async recover(lostHost: string): Promise<void> {
     if (this.recovering || this.isClosed()) return;
+    if (import.meta.env.DEV) console.warn(`[net] dono sumiu, recuperando (${(performance.now() / 1000).toFixed(2)} s)`);
     this.recovering = true;
     this.hostHint = null;
     this.setStatus('reconnecting');
@@ -335,13 +344,14 @@ export class NetSession {
         if (!hb.member) {
           const again = await joinRoom(this.client, this.room.code).catch(() => null);
           if (!again?.ok) {
-            this.shutdown(again && !again.ok && again.error === 'room_full' ? 'full' : 'lost');
+            this.shutdown(again && !again.ok && again.error === 'room_full' ? 'full' : 'lost', `recuperação: não é mais membro e reentrar deu ${again ? again.error : 'sem rede'}`);
             return;
           }
           this.room = again.room;
           continue;
         }
         let host = hb.hostId;
+        if (import.meta.env.DEV) console.warn(`[net] recuperação ${attempt}: banco diz dono=${host === this.selfId ? 'eu' : host === lostHost ? 'o que sumiu' : 'outro'} (${(performance.now() / 1000).toFixed(2)} s)`);
         // Ordem de chegada: o primeiro da fila tenta assumir já; os outros esperam a vez dele.
         const queue = this.memberList.filter((m) => m.uid !== lostHost).map((m) => m.uid);
         const myTurn = queue.indexOf(this.selfId) <= Math.floor(attempt / 3);
@@ -354,7 +364,7 @@ export class NetSession {
         // morrido, outro já teria assumido); até lá, bater nele só gastaria a espera do "answer".
         if (host && (host !== lostHost || attempt >= RECOVERY_SAME_HOST_FROM) && (await this.connectToHost(host))) return;
       }
-      if (this._status !== 'online' && !this.isClosed()) this.shutdown('lost');
+      if (this._status !== 'online' && !this.isClosed()) this.shutdown('lost', 'recuperação: acabaram as tentativas');
     } finally {
       this.recovering = false;
     }
@@ -367,7 +377,7 @@ export class NetSession {
   }
 
   private linkClosed(peer: string): void {
-    if (this.isClosed()) return;
+    if (this.isClosed() || this.leaving) return;
     if (this._isHost) {
       this.budgets.delete(peer);
       if (this.members.delete(peer)) {
@@ -394,7 +404,7 @@ export class NetSession {
     if (!hb.member) {
       // A vaga expirou (aba dormindo muito tempo): entra de novo pelo código.
       const again = await joinRoom(this.client, this.room.code).catch(() => null);
-      if (!again?.ok) this.shutdown('lost');
+      if (!again?.ok) this.shutdown('lost', `ponto: vaga expirou e reentrar deu ${again ? again.error : 'sem rede'}`);
       return;
     }
     if (!hb.hostId || hb.hostId === this.hostId) return;
@@ -448,7 +458,7 @@ export class NetSession {
       if (budget.state < 1) return;
       budget.state -= 1;
       const member = this.members.get(peer);
-      if (!member || typeof data === 'string' || data.byteLength !== SNAPSHOT_BYTES) return;
+      if (!member || typeof data === 'string' || data.byteLength < 2) return;
       stampSnapshotSlot(data, member.slot);
       const snapshot = decodeSnapshot(data);
       if (!snapshot) return this.strike(peer, budget);
@@ -578,8 +588,13 @@ export class NetSession {
     this.handlers.onStatus(status, reason);
   }
 
-  private shutdown(reason: CloseReason): void {
+  private shutdown(reason: CloseReason, detail = ''): void {
     if (this.isClosed()) return;
+    // Em desenvolvimento, o motivo aparece no console (os testes de várias abas leem de lá).
+    if (import.meta.env.DEV) {
+      const where = new Error().stack?.split('\n').slice(2, 7).join(' <- ') ?? '';
+      console.warn(`[net] sessão fechou: ${reason}${detail ? ` (${detail})` : ''} ${where}`);
+    }
     window.clearInterval(this.tickTimer);
     window.clearInterval(this.beatTimer);
     window.removeEventListener('pagehide', this.onPageHide);

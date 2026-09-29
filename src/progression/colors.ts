@@ -6,6 +6,13 @@
 
 export type Hue = 'red' | 'orange' | 'yellow' | 'green' | 'blue' | 'purple' | 'pink' | 'white' | 'brown' | 'gray';
 
+const HUES: ReadonlySet<string> = new Set<Hue>(['red', 'orange', 'yellow', 'green', 'blue', 'purple', 'pink', 'white', 'brown', 'gray']);
+
+/** É uma família de cor conhecida? (o que chega da rede é conferido) */
+export function isHue(value: unknown): value is Hue {
+  return typeof value === 'string' && HUES.has(value);
+}
+
 /** Famílias que contam pra arco-íris e pros pedidos (marrom e cinza são "cor de chão"). */
 export const RAINBOW_HUES: readonly Hue[] = ['red', 'orange', 'yellow', 'green', 'blue', 'purple', 'pink', 'white'];
 

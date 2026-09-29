@@ -108,6 +108,9 @@ function paintShell(geometry: THREE.BufferGeometry, grooveAt?: (p: THREE.Vector3
 
 const tmpMatrix = new THREE.Matrix4();
 const tmpVertex = new THREE.Vector3();
+/** Tarso: cada segmento vem 0,055 à frente do anterior, dobrado 0,18 rad pro chão; a garra sai da ponta do último. */
+const TARSUS_LINK = new THREE.Matrix4().makeTranslation(0.055, 0, 0).multiply(new THREE.Matrix4().makeRotationZ(-0.18));
+const CLAW_OFFSET = new THREE.Matrix4().makeTranslation(0.055, 0, 0);
 
 export class BeetleModel {
   readonly root = new THREE.Group();
@@ -517,25 +520,24 @@ export class BeetleModel {
         spur.rotation.z = -0.9;
         knee.add(spur);
 
-        // Tarso: três segmentinhos dobrando para o chão + duas garras.
+        // Tarso: três segmentinhos dobrando para o chão + duas garras. Só o tarso inteiro
+        // se mexe: os segmentos entram direto nele, cada um já na pose da cadeia (a fusão
+        // junta tudo num desenho só; em cadeia de grupos eram 3 desenhos por pata).
         const tarsus = new THREE.Group();
         tarsus.position.x = tibiaLen + 0.015;
         tarsus.rotation.z = -0.55;
         knee.add(tarsus);
-        let parent: THREE.Object3D = tarsus;
+        const chain = new THREE.Matrix4();
         for (let i = 0; i < 3; i++) {
-          const seg = new THREE.Group();
-          seg.position.x = i === 0 ? 0 : 0.055;
-          seg.rotation.z = i === 0 ? 0 : -0.18;
-          seg.add(new THREE.Mesh(tarsusGeo, legMat));
-          parent.add(seg);
-          parent = seg;
+          if (i > 0) chain.multiply(TARSUS_LINK);
+          const seg = new THREE.Mesh(tarsusGeo, legMat);
+          chain.decompose(seg.position, seg.quaternion, seg.scale);
+          tarsus.add(seg);
         }
         for (const claw of [1, -1]) {
           const c = new THREE.Mesh(clawGeo, legMat);
-          c.position.x = 0.055;
-          c.rotation.y = claw * 0.35;
-          parent.add(c);
+          chain.clone().multiply(CLAW_OFFSET).multiply(new THREE.Matrix4().makeRotationY(claw * 0.35)).decompose(c.position, c.quaternion, c.scale);
+          tarsus.add(c);
         }
 
         this.body.add(mount);

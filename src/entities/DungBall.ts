@@ -6,6 +6,7 @@ import { claySphere, displace, paintVertices, solidColor, taperedTube } from '..
 import { clamp, damp, createRng, smoothstep } from '../utils/math';
 import { noise3 } from '../utils/noise';
 import { quality } from '../core/device';
+import { coronaTexture, markAsLight } from '../fx/glow';
 
 export const START_RADIUS = 0.5;
 /** Teto da bola: 30 cm (o marco "Sol nascente"). Só dá pra chegar varrendo quase o jardim todo. */
@@ -18,6 +19,13 @@ const DENSITY = 1.6;
 const ATTACH_SECONDS = 0.28;
 /** Tempo da bola nova "brotando" numa rodada nova. */
 const SPAWN_POP_SECONDS = 0.45;
+/**
+ * Sol excedente (online): a bola no teto guarda até isso de volume a mais
+ * (em múltiplos do volume da bola de 30 cm). Passou disso, não acumula mais.
+ */
+const EXCESS_CAP = 3;
+/** Onde fica uma bola fora de jogo (broto esperando pra nascer, fantasma guardado). */
+const PARK = new THREE.Vector3(0, -80, 0);
 
 const DUNG_COLORS = ['#6e4426', '#83542f', '#5b3820', '#9a6a3c', '#6f6a33'].map((c) => new THREE.Color(c));
 
@@ -94,8 +102,29 @@ export class DungBall {
   private spawnPop = 1;
   /** A toca assumiu a bola (física congelada, sem colisão). */
   private burying = false;
+  /** Fora de jogo (broto esperando, fantasma guardado): invisível, sem colisão, longe do jardim. */
+  private parked = false;
+  /**
+   * Fantasma que pode engolir a sua bola (ou ser engolido por ela): as suas
+   * bolas passam por ele, pra uma rolar por cima da outra (online). O besouro
+   * e a câmera continuam batendo nele.
+   */
+  private ghost = false;
   /** Relógio do brilho de sol (pulsa devagar). */
   private glowTime = 0;
+  /** Sol excedente: volume que passou do teto (só com `overflow`). */
+  private _excess = 0;
+  /** Brilho extra vindo da rede (fantasma): 0..1. */
+  private excessGlow = 0;
+  /** Halo do Sol excedente (nasce na primeira vez que a bola passa do teto; no solo nunca). */
+  private halo: THREE.Sprite | null = null;
+
+  /**
+   * Online: passando do teto de 30 cm, o volume a mais vira "Sol excedente"
+   * (a bola não cresce, brilha mais e rende XP no enterro). No solo fica
+   * desligado: o teto é só um teto.
+   */
+  overflow = false;
 
   /** Freio extra do terreno (água, lama) — o jogo atualiza a cada passo fixo. */
   extraDrag = 0;
@@ -111,17 +140,18 @@ export class DungBall {
   /**
    * Bola de outro jogador (online): corpo cinemático que segue a pose da rede
    * (`drive`), sólida pra sua bola e seu besouro esbarrarem nela. O visual é o
-   * mesmo, com menos tralha grudada (desenhar 6 bolas cheias pesa).
+   * mesmo, com menos tralha grudada (desenhar 6 bolas cheias pesa). A mesma
+   * bola vira sua (e volta a ser fantasma) quando muda de dono: ver `setProxy`.
    */
-  readonly proxy: boolean;
-  private readonly maxStuck: number;
+  private _proxy: boolean;
+  private maxStuck: number;
   /** Velocidade que veio na rede (o corpo cinemático não tem a dele). */
   private readonly proxyVelocity = new THREE.Vector3();
 
   constructor(physics: Physics, spawn: THREE.Vector3, options: { proxy?: boolean } = {}) {
-    this.proxy = options.proxy === true;
-    this.maxStuck = this.proxy ? Math.max(8, Math.round(quality.stuckItems / 3)) : quality.stuckItems;
-    const desc = this.proxy
+    this._proxy = options.proxy === true;
+    this.maxStuck = stuckLimit(this._proxy);
+    const desc = this._proxy
       ? RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(spawn.x, spawn.y, spawn.z)
       : RAPIER.RigidBodyDesc.dynamic().setTranslation(spawn.x, spawn.y, spawn.z).setLinearDamping(0.12).setAngularDamping(0.35).setCcdEnabled(true);
     this.body = physics.world.createRigidBody(desc);
@@ -131,18 +161,19 @@ export class DungBall {
         .setFriction(1.4)
         .setRestitution(0.08)
         // A bola dos outros é "mundo" pra você: sua bola quica nela, seu besouro esbarra e a câmera desvia.
-        .setCollisionGroups(interactionGroups(this.proxy ? Groups.WORLD : Groups.BALL, 0xffff)),
+        .setCollisionGroups(interactionGroups(this._proxy ? Groups.WORLD : Groups.BALL, 0xffff)),
       this.body,
     );
 
     this.core = new THREE.Mesh(
-      buildDungGeometry(),
+      // A malha é a mesma pra toda bola (a escala faz o tamanho): no online nascem várias, sem custo de montar.
+      sharedDungGeometry(),
       // Material próprio de cada bola: o brilho de sol (30 cm) mexe nele, e no online são várias bolas.
       clay(0xffffff, { vertexColors: true, roughness: 0.82, sheen: 0.35, bump: 0.6, repeat: 2, wet: 0.55, mottle: 0.06, mottleScale: 3.5, unique: true }),
     );
     this.core.castShadow = true;
     this.core.receiveShadow = true;
-    this.core.add(buildInclusions());
+    this.core.add(sharedInclusions());
 
     this.spin.add(this.core, this.stuckGroup);
     this.root.add(this.spin);
@@ -158,7 +189,47 @@ export class DungBall {
   }
 
   get mass(): number {
-    return this.body.mass();
+    // O corpo cinemático do fantasma não tem massa: a conta é a mesma do colisor.
+    return this._proxy ? DENSITY * volumeOf(this._radius) : this.body.mass();
+  }
+
+  /** Bola de outro jogador (segue a rede) ou sua (física local). */
+  get proxy(): boolean {
+    return this._proxy;
+  }
+
+  /** Fora de jogo (broto esperando pra nascer, fantasma guardado pra reusar). */
+  get isParked(): boolean {
+    return this.parked;
+  }
+
+  /** Sol excedente acumulado (volume além do teto). */
+  get excess(): number {
+    return this._excess;
+  }
+
+  /**
+   * O excedente em centímetros de diâmetro, contado como se fosse uma bola à
+   * parte (o volume que sobrou vira "outra bola" de sol): juntar uma bola de
+   * 10 cm numa de 30 rende o mesmo que enterrar a de 10, e um pouco mais.
+   */
+  get excessCm(): number {
+    if (this._excess <= 0) return 0;
+    return Math.round(radiusOf(this._excess) * 4 * 10) / 10;
+  }
+
+  /**
+   * 0..1: o quanto o Sol excedente já acendeu. Raiz do volume: um pouquinho já
+   * aparece; o máximo vem com mais ou menos meia bola de 30 cm a mais.
+   */
+  get excessLevel(): number {
+    return this._proxy ? this.excessGlow : excessGlowOf(this._excess);
+  }
+
+  /** Volume atual (o que ela vai ter depois de crescer suave) + o excedente: o que passa pra outra bola ao ser engolida. */
+  get totalVolume(): number {
+    // Do fantasma só se sabe o brilho do excedente (vem no retrato): a conta volta dele.
+    return this.targetVolume + (this._proxy ? excessFromGlow(this.excessGlow) : this._excess);
   }
 
   /** Diâmetro em centímetros na escala do mundo (1 unidade ≈ 2 cm). */
@@ -167,9 +238,14 @@ export class DungBall {
     return Math.round(this._radius * 2 * 2 * 1000) / 1000;
   }
 
-  /** Participa da física (falso enquanto a toca está engolindo a bola). */
+  /** Participa da física (falso enquanto a toca está engolindo a bola, ou fora de jogo). */
   get isSolid(): boolean {
-    return !this.burying;
+    return !this.burying && !this.parked;
+  }
+
+  /** Afundando na toca agora (a pose vem da toca, ou do dono se for fantasma). */
+  get isBurying(): boolean {
+    return this.burying;
   }
 
   position(target = new THREE.Vector3()): THREE.Vector3 {
@@ -188,15 +264,84 @@ export class DungBall {
    * antes do passo de física (o corpo cinemático chega lá no passo). O
    * tamanho cresce suave, como na bola local.
    */
-  drive(position: THREE.Vector3, rotation: THREE.Quaternion, velocity: THREE.Vector3, radius: number, burying: boolean): void {
+  drive(position: THREE.Vector3, rotation: THREE.Quaternion, velocity: THREE.Vector3, radius: number, burying: boolean, glow = 0): void {
     if (burying !== this.burying) {
       this.burying = burying;
-      this.collider.setEnabled(!burying);
+      this.syncCollider();
     }
     this.body.setNextKinematicTranslation(position);
     this.body.setNextKinematicRotation(rotation);
     this.proxyVelocity.copy(velocity);
     this.targetVolume = volumeOf(clamp(radius, START_RADIUS, MAX_RADIUS));
+    this.excessGlow = clamp(glow, 0, 1);
+  }
+
+  /**
+   * Muda de dono (online): a mesma bola (com a tralha grudada e tudo) passa a
+   * seguir a rede (`true`, fantasma cinemático) ou a física daqui (`false`, sua).
+   * A pose e a velocidade continuam de onde estavam.
+   */
+  setProxy(proxy: boolean): void {
+    if (proxy === this._proxy) return;
+    const velocity = this.velocity(tmpVec);
+    this._proxy = proxy;
+    this.maxStuck = stuckLimit(proxy);
+    this.ghost = false;
+    this.syncGroups();
+    if (proxy) {
+      this.proxyVelocity.copy(velocity);
+      this.body.setBodyType(RAPIER.RigidBodyType.KinematicPositionBased, true);
+      this.body.enableCcd(false);
+      this.excessGlow = this.excessLevel;
+      this.trimStuck();
+    } else {
+      // Enterrando, a toca (ou o dono antigo) ainda conduz: o corpo continua cinemático até `endBurial`.
+      if (!this.burying && !this.parked) this.body.setBodyType(RAPIER.RigidBodyType.Dynamic, true);
+      this.body.enableCcd(true);
+      this.body.setLinearDamping(0.12);
+      this.body.setAngularDamping(0.35);
+      this.body.setLinvel(velocity, true);
+      this.lastVelY = velocity.y;
+    }
+    this.syncCollider();
+  }
+
+  /** Fantasma que engole ou é engolido pela sua bola: as suas bolas atravessam (uma rola por cima da outra). */
+  setGhost(ghost: boolean): void {
+    if (ghost === this.ghost || !this._proxy) return;
+    this.ghost = ghost;
+    this.syncGroups();
+  }
+
+  /** Sua bola é "bola"; a dos outros é "mundo" (sua bola quica nela, seu besouro esbarra, a câmera desvia), menos pras suas bolas quando é fantasma de engolir. */
+  private syncGroups(): void {
+    const filter = this._proxy && this.ghost ? 0xffff & ~Groups.BALL : 0xffff;
+    this.collider.setCollisionGroups(interactionGroups(this._proxy ? Groups.WORLD : Groups.BALL, filter));
+  }
+
+  /** Fora de jogo: some, sem colisão, lá embaixo do jardim (o broto esperando pra nascer). */
+  park(): void {
+    if (this.parked) return;
+    this.parked = true;
+    this.root.visible = false;
+    if (!this._proxy) this.body.setBodyType(RAPIER.RigidBodyType.KinematicPositionBased, true);
+    this.teleport(PARK);
+    this.syncCollider();
+  }
+
+  /** Volta pro jogo: bola nova, pequena e limpa, brotando no lugar indicado. */
+  unpark(position: THREE.Vector3): void {
+    this.parked = false;
+    this.burying = false;
+    this.root.visible = true;
+    if (!this._proxy) this.body.setBodyType(RAPIER.RigidBodyType.Dynamic, true);
+    this.reset(position);
+    this.syncCollider();
+  }
+
+  /** Colisor ligado só com a bola inteira no jardim (nem afundando, nem guardada). */
+  private syncCollider(): void {
+    this.collider.setEnabled(!this.burying && !this.parked);
   }
 
   /** Rotação atual do corpo (a toca continua girando a bola de onde ela estava). */
@@ -205,13 +350,21 @@ export class DungBall {
     return target.set(r.x, r.y, r.z, r.w);
   }
 
-  /** Adiciona volume (a bola cresce suavemente até o novo raio). */
+  /** Adiciona volume (a bola cresce suavemente até o novo raio). No teto, com `overflow`, o resto vira Sol excedente. */
   addVolume(volume: number): void {
-    this.targetVolume = Math.min(this.targetVolume + volume, volumeOf(MAX_RADIUS));
+    const max = volumeOf(MAX_RADIUS);
+    const next = this.targetVolume + volume;
+    if (next > max && this.overflow) this._excess = Math.min(max * EXCESS_CAP, this._excess + next - max);
+    this.targetVolume = Math.min(next, max);
   }
 
-  /** Tira volume (bosta derretendo na poça). Nunca fica menor que a bola inicial. */
+  /** Tira volume (bosta derretendo na poça): primeiro o excedente. Nunca fica menor que a bola inicial. */
   removeVolume(volume: number): void {
+    if (this._excess > 0) {
+      const used = Math.min(this._excess, volume);
+      this._excess -= used;
+      volume -= used;
+    }
     this.targetVolume = Math.max(this.targetVolume - volume, volumeOf(START_RADIUS));
   }
 
@@ -283,7 +436,7 @@ export class DungBall {
       this.updateStuckForRadius();
     }
 
-    if (!this.burying && !this.proxy) {
+    if (!this.burying && !this.parked && !this._proxy) {
       // Resistência ao rolamento: o Rapier não tem, então a bola rolaria para sempre.
       // Devagar ela "gruda" no chão (bosta não é bola de gude); rápido, quase não freia.
       // Água e lama somam um freio extra.
@@ -312,6 +465,19 @@ export class DungBall {
     this.currRot.set(r.x, r.y, r.z, r.w);
   }
 
+  /**
+   * Põe a bola numa pose sem mexer na velocidade (online: virou sua e continua
+   * de onde o dono antigo estava, não de onde o fantasma aparecia atrasado).
+   */
+  snapTo(position: THREE.Vector3, rotation: THREE.Quaternion): void {
+    this.body.setTranslation(position, true);
+    this.body.setRotation(rotation, true);
+    this.currPos.copy(position);
+    this.prevPos.copy(position);
+    this.currRot.copy(rotation);
+    this.prevRot.copy(rotation);
+  }
+
   /** Coloca a bola num ponto (reset). */
   teleport(position: THREE.Vector3): void {
     this.body.setTranslation(position, true);
@@ -328,6 +494,8 @@ export class DungBall {
     this.stuck.length = 0;
     this.targetVolume = volumeOf(START_RADIUS);
     this._radius = START_RADIUS;
+    this._excess = 0;
+    this.excessGlow = 0;
     this.collider.setRadius(START_RADIUS);
     this.colliderRadius = START_RADIUS;
     this.applyVisualRadius();
@@ -355,9 +523,9 @@ export class DungBall {
   }
 
   endBurial(): void {
-    this.body.setBodyType(RAPIER.RigidBodyType.Dynamic, true);
-    this.collider.setEnabled(true);
     this.burying = false;
+    if (!this._proxy && !this.parked) this.body.setBodyType(RAPIER.RigidBodyType.Dynamic, true);
+    this.syncCollider();
   }
 
   /** Visual interpolado + mola de squash & stretch + itens voando até a bola. */
@@ -406,11 +574,43 @@ export class DungBall {
     const glow = smoothstep(SUN_GLOW_FROM, MAX_RADIUS, this._radius);
     if (glow <= 0) {
       if (material.emissiveIntensity !== 0) material.emissiveIntensity = 0;
+      if (this.halo) this.halo.visible = false;
       return;
     }
-    this.glowTime += dt;
+    // Sol excedente: acende mais e pulsa mais rápido (a bola "fervendo" de tanto sol guardado).
+    const extra = this.excessLevel;
+    this.glowTime += dt * (1 + extra * 1.4);
     material.emissive.copy(SUN_COLOR);
-    material.emissiveIntensity = glow * (0.32 + Math.sin(this.glowTime * 1.7) * 0.08);
+    material.emissiveIntensity = glow * (0.32 + extra * 0.55 + Math.sin(this.glowTime * 1.7) * (0.08 + extra * 0.1));
+    this.updateHalo(extra);
+  }
+
+  /**
+   * Sol excedente: um halo de luz em volta da bola, maior e mais forte quanto
+   * mais sol ela guarda (pulsando junto com o brilho). É o que diz de longe
+   * "essa bola vale mais que 30 cm".
+   */
+  private updateHalo(extra: number): void {
+    if (extra <= 0.01) {
+      if (this.halo) this.halo.visible = false;
+      return;
+    }
+    if (!this.halo) {
+      this.halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: coronaTexture(), color: SUN_COLOR, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
+      markAsLight(this.halo);
+      this.root.add(this.halo);
+    }
+    const pulse = 0.5 + Math.sin(this.glowTime * 1.7) * 0.5;
+    this.halo.visible = true;
+    // A borda da bola fica a ~45% do raio da coroa; com mais sol, a coroa abre pra fora.
+    this.halo.scale.setScalar(((this._radius * 2) / 0.45) * (1 + extra * 0.3 + pulse * 0.04 * extra));
+    (this.halo.material as THREE.SpriteMaterial).opacity = 0.18 + extra * 0.5 + pulse * 0.1 * extra;
+  }
+
+  /** Libera o material próprio da bola (a malha é compartilhada: fica). */
+  disposeMaterial(): void {
+    (this.core.material as THREE.Material).dispose();
+    this.halo?.material.dispose();
   }
 
   /** 0..1: o quanto a bola já virou sol (o jogo usa pra festa e som). */
@@ -449,18 +649,54 @@ export class DungBall {
   }
 }
 
-/** Tira uma bola de outro jogador do mundo (ele saiu da sala). */
+/** Tira uma bola do mundo de vez (o jogador saiu da sala, a bola foi engolida). */
 export function disposeBall(ball: DungBall, physics: Physics): void {
   physics.world.removeRigidBody(ball.body);
   ball.root.removeFromParent();
+  ball.disposeMaterial();
 }
 
-function volumeOf(r: number): number {
+/** Quanta tralha uma bola mostra grudada: a sua, tudo que o aparelho aguenta; a dos outros, um terço. */
+function stuckLimit(proxy: boolean): number {
+  return proxy ? Math.max(8, Math.round(quality.stuckItems / 3)) : quality.stuckItems;
+}
+
+/** Brilho do Sol excedente (0..1) pelo volume que passou do teto. */
+function excessGlowOf(excess: number): number {
+  return Math.min(1, 1.5 * Math.sqrt(Math.max(0, excess) / volumeOf(MAX_RADIUS)));
+}
+
+/** O contrário: volume do excedente pelo brilho (o fantasma só sabe o brilho). */
+function excessFromGlow(glow: number): number {
+  const k = Math.max(0, glow) / 1.5;
+  return k * k * volumeOf(MAX_RADIUS);
+}
+
+export function volumeOf(r: number): number {
   return (4 / 3) * Math.PI * r * r * r;
 }
 
-function radiusOf(volume: number): number {
+export function radiusOf(volume: number): number {
   return Math.cbrt((3 * volume) / (4 * Math.PI));
+}
+
+let dungGeometry: THREE.BufferGeometry | null = null;
+let inclusions: { geometry: THREE.BufferGeometry; material: THREE.Material } | null = null;
+
+/** A malha da bola (igual pra todas: sai da mesma semente de ruído). Montada uma vez só. */
+function sharedDungGeometry(): THREE.BufferGeometry {
+  return (dungGeometry ??= buildDungGeometry());
+}
+
+/** Fiapos e sementinhas da bosta: a mesma malha e o mesmo material pra todas as bolas. */
+function sharedInclusions(): THREE.Mesh {
+  if (!inclusions) {
+    const built = buildInclusions();
+    inclusions = { geometry: built.geometry, material: built.material as THREE.Material };
+  }
+  const mesh = new THREE.Mesh(inclusions.geometry, inclusions.material);
+  mesh.castShadow = true;
+  return mesh;
 }
 
 /**

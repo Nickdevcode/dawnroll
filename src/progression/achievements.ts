@@ -11,7 +11,7 @@
  * As do grupo `secret` aparecem como "???" até serem feitas (a graça é descobrir).
  */
 
-export type AchievementGroup = 'size' | 'burrow' | 'garden' | 'collection' | 'mastery' | 'secret';
+export type AchievementGroup = 'size' | 'burrow' | 'garden' | 'collection' | 'mastery' | 'online' | 'secret';
 
 export type AchievementId =
   // Tamanho
@@ -66,6 +66,13 @@ export type AchievementId =
   | 'requests50'
   | 'rodeo'
   | 'fever'
+  // Online (só dá pra fazer numa sala com outros besouros)
+  | 'mpSteal'
+  | 'mpSwallow'
+  | 'mpTackle'
+  | 'mpTeamPush'
+  | 'mpGift'
+  | 'mpSun'
   // Secretas
   | 'melted'
   | 'purist'
@@ -136,13 +143,19 @@ export const ACHIEVEMENTS: readonly AchievementDef[] = [
   { id: 'requests50', group: 'mastery', reward: 80 },
   { id: 'rodeo', group: 'mastery', reward: 60 },
   { id: 'fever', group: 'mastery', reward: 40 },
+  { id: 'mpSteal', group: 'online', reward: 40 },
+  { id: 'mpSwallow', group: 'online', reward: 50 },
+  { id: 'mpTackle', group: 'online', reward: 40 },
+  { id: 'mpTeamPush', group: 'online', reward: 40 },
+  { id: 'mpGift', group: 'online', reward: 40 },
+  { id: 'mpSun', group: 'online', reward: 60 },
   { id: 'melted', group: 'secret', reward: 30 },
   { id: 'purist', group: 'secret', reward: 40 },
   { id: 'onTop', group: 'secret', reward: 30 },
   { id: 'edge', group: 'secret', reward: 20 },
 ];
 
-export const ACHIEVEMENT_GROUPS: readonly AchievementGroup[] = ['size', 'burrow', 'garden', 'collection', 'mastery', 'secret'];
+export const ACHIEVEMENT_GROUPS: readonly AchievementGroup[] = ['size', 'burrow', 'garden', 'collection', 'mastery', 'online', 'secret'];
 
 const IDS = new Set<string>(ACHIEVEMENTS.map((a) => a.id));
 const BY_ID = new Map<AchievementId, AchievementDef>(ACHIEVEMENTS.map((a) => [a.id, a]));
@@ -196,5 +209,7 @@ export const RAINBOW_GOAL = 6;
 export const TOYS_GOAL = 4;
 /** Tamanho mínimo (cm) da bola "pura" (só bosta, nada grudado). */
 export const PURIST_CM = 8;
+/** Empurrar junto (online): segundos seguidos ajudando na bola de outro besouro. */
+export const TEAM_PUSH_SECONDS = 5;
 /** Enterrar "no limite": abaixo deste diâmetro (cm). O mínimo pra enterrar é 3 cm. */
 export const EDGE_CM = 3.2;

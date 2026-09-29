@@ -1,30 +1,46 @@
 import * as THREE from 'three';
 import { MAX_PLAYERS } from '../net/protocol';
 import type { NameplateSource, OnlinePlay } from '../net/OnlinePlay';
-import { onLocaleChange, t } from '../i18n';
+import type { Input } from '../core/Input';
+import { onLocaleChange, t, type MessageKey } from '../i18n';
 import { escapeHtml } from './html';
 import { Icons } from './icons';
+import { EMOTE_ICONS, EmoteButtonIcon, MergeIcon } from './emoteIcons';
+import { EmoteWheel } from './EmoteWheel';
+import { placeMarker, type ScreenMargins } from './screenMarker';
 
 /** Placa de apelido some de longe (vira poluição) e perto demais (tapa o besouro). */
 const PLATE_FAR = 46;
 const PLATE_NEAR = 1.2;
+/** Balão de reação (e o próprio) aparece mais longe que a placa: é pra ser visto. */
+const BUBBLE_FAR = 70;
 
 const tmp = new THREE.Vector3();
 
 /**
  * O online no HUD: o chip da sala (código, quantos na sala, ping e
- * "reconectando") e a placa com o apelido em cima de cada besouro remoto, na
- * cor da vaga dele (a cor nunca vem sozinha: tem o apelido e, no dono, a coroa).
+ * "reconectando"), a placa com o apelido em cima de cada besouro remoto (na
+ * cor da vaga dele: a cor nunca vem sozinha, tem o apelido e, no dono, a
+ * coroa), o balão das reações, o marcador "Aqui!" no chão, a roda de reações
+ * e, no toque, os botões de reagir e de fundir.
  */
 export class OnlineHud {
   private readonly chip: HTMLElement;
   private readonly layer: HTMLElement;
   private readonly plates: HTMLElement[] = [];
   private readonly shown = new Map<HTMLElement, string>();
+  private readonly pingLayer: HTMLElement;
+  private readonly pingEls: HTMLElement[] = [];
+  readonly wheel: EmoteWheel;
+  private readonly touchBar: HTMLElement | null = null;
+  private readonly mergeButton: HTMLButtonElement | null = null;
+  private mergeAvailable = false;
 
   constructor(
     parent: HTMLElement,
     private readonly net: OnlinePlay,
+    input: Input,
+    isTouch: boolean,
   ) {
     this.chip = document.createElement('div');
     this.chip.className = 'online-chip';
@@ -33,27 +49,95 @@ export class OnlineHud {
     this.layer = document.createElement('div');
     this.layer.className = 'nameplates';
     this.layer.setAttribute('aria-hidden', 'true');
-    for (let i = 0; i < MAX_PLAYERS - 1; i++) {
+    // Uma placa por remoto + o balão do seu próprio besouro.
+    for (let i = 0; i < MAX_PLAYERS; i++) {
       const plate = document.createElement('div');
       plate.className = 'nameplate';
       plate.hidden = true;
       this.layer.append(plate);
       this.plates.push(plate);
     }
-    parent.append(this.layer, this.chip);
+    this.pingLayer = document.createElement('div');
+    this.pingLayer.className = 'ping-layer';
+    this.pingLayer.setAttribute('aria-hidden', 'true');
+    for (let i = 0; i < MAX_PLAYERS; i++) {
+      const ping = document.createElement('div');
+      ping.className = 'ping-marker';
+      ping.hidden = true;
+      ping.innerHTML = `<span class="ping-marker__pin">${EMOTE_ICONS[7]}</span><span class="ping-marker__arrow">${Icons.pointer}</span>`;
+      this.pingLayer.append(ping);
+      this.pingEls.push(ping);
+    }
+    this.wheel = new EmoteWheel(parent, isTouch);
+    this.wheel.onSend = (index) => this.net.sendEmote(index);
+    parent.append(this.pingLayer, this.layer, this.chip);
+
+    if (isTouch) {
+      // Toque: reagir (abre a roda) e fundir (aparece só encostando noutra bola; segurar).
+      const bar = document.createElement('div');
+      bar.className = 'online-touch';
+      bar.hidden = true;
+      bar.innerHTML = /* html */ `
+        <button class="btn touch-btn online-touch__merge" type="button" data-touch-merge hidden>${MergeIcon}</button>
+        <button class="btn touch-btn online-touch__emote" type="button" data-touch-emote>${EmoteButtonIcon}</button>`;
+      const merge = bar.querySelector('[data-touch-merge]') as HTMLButtonElement;
+      const emote = bar.querySelector('[data-touch-emote]') as HTMLButtonElement;
+      emote.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        input.queueEmote();
+      });
+      const setMerge = (active: boolean) => {
+        merge.classList.toggle('is-active', active);
+        input.setTouchMerge(active);
+      };
+      merge.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setMerge(true);
+      });
+      merge.addEventListener('pointerup', () => setMerge(false));
+      merge.addEventListener('pointercancel', () => setMerge(false));
+      merge.addEventListener('pointerleave', () => setMerge(false));
+      parent.append(bar);
+      this.touchBar = bar;
+      this.mergeButton = merge;
+    }
+
     net.subscribe(() => this.renderChip());
-    onLocaleChange(() => this.renderChip());
+    onLocaleChange(() => {
+      this.renderChip();
+      this.shown.clear();
+      this.renderTouchLabels();
+    });
+    this.renderTouchLabels();
     // O ping muda sem aviso: atualiza o chip de tempos em tempos.
     window.setInterval(() => {
       if (this.net.active) this.renderChip();
     }, 2000);
   }
 
+  /** Dá pra fundir agora (encostando noutra bola): o botão de fundir do toque aparece. */
+  setMergeAvailable(available: boolean): void {
+    if (available === this.mergeAvailable || !this.mergeButton) return;
+    this.mergeAvailable = available;
+    this.mergeButton.hidden = !available;
+  }
+
+  private renderTouchLabels(): void {
+    if (!this.touchBar) return;
+    this.touchBar.querySelector('[data-touch-emote]')?.setAttribute('aria-label', t('emote.open'));
+    this.mergeButton?.setAttribute('aria-label', t('mp.mergeButton'));
+  }
+
   private renderChip(): void {
     const net = this.net;
     this.chip.hidden = !net.active;
+    if (this.touchBar) this.touchBar.hidden = !net.active;
     if (!net.active) {
       for (const plate of this.plates) plate.hidden = true;
+      for (const ping of this.pingEls) ping.hidden = true;
+      this.wheel.hide();
       return;
     }
     const status = net.status;
@@ -69,7 +153,7 @@ export class OnlineHud {
       ${net.isHost ? `<span class="online-chip__host" title="${escapeHtml(t('online.host'))}">${Icons.crown}</span>` : `<span class="online-chip__ping" data-quality="${quality}">${Icons.signal}<span>${escapeHtml(t('online.ping', { ms: net.ping || '–' }))}</span></span>`}`;
   }
 
-  /** Placas deste quadro (projetadas na tela pela câmera). */
+  /** Placas (e balões) deste quadro, projetadas na tela pela câmera; e os marcadores "Aqui!". */
   setNameplates(sources: readonly NameplateSource[], camera: THREE.Camera): void {
     const width = window.innerWidth;
     const height = window.innerHeight;
@@ -80,26 +164,60 @@ export class OnlineHud {
         plate.hidden = true;
         continue;
       }
+      const talking = source.emote >= 0;
       const distance = camera.position.distanceTo(source.position);
       tmp.copy(source.position).project(camera);
       const behind = tmp.z > 1 || tmp.z < -1;
-      if (behind || distance > PLATE_FAR || distance < PLATE_NEAR || Math.abs(tmp.x) > 1.05 || Math.abs(tmp.y) > 1.05) {
+      const far = talking ? BUBBLE_FAR : PLATE_FAR;
+      if (behind || distance > far || distance < PLATE_NEAR || Math.abs(tmp.x) > 1.05 || Math.abs(tmp.y) > 1.05 || (!source.nick && !talking)) {
         plate.hidden = true;
         continue;
       }
-      const key = `${source.slot}|${source.nick}|${source.isHost}`;
+      const key = `${source.slot}|${source.nick}|${source.isHost}|${source.emote}|${source.dizzy}`;
       if (this.shown.get(plate) !== key) {
         this.shown.set(plate, key);
         plate.dataset.slot = String(source.slot);
-        plate.innerHTML = `${source.isHost ? `<span class="nameplate__crown">${Icons.crown}</span>` : ''}<span class="nameplate__nick">${escapeHtml(source.nick)}</span>`;
+        plate.classList.toggle('is-self', !source.nick);
+        const bubble = talking
+          ? `<span class="nameplate__bubble">${EMOTE_ICONS[source.emote] ?? ''}<span>${escapeHtml(t(`emote.${source.emote}` as MessageKey))}</span></span>`
+          : '';
+        const name = source.nick
+          ? `<span class="nameplate__tag">${source.isHost ? `<span class="nameplate__crown">${Icons.crown}</span>` : ''}<span class="nameplate__nick">${escapeHtml(source.nick)}</span></span>`
+          : '';
+        plate.innerHTML = bubble + name;
       }
       plate.hidden = false;
       const x = (tmp.x * 0.5 + 0.5) * width;
       const y = (-tmp.y * 0.5 + 0.5) * height;
-      // Longe fica um pouco menor e mais transparente (profundidade sem poluir).
-      const fade = 1 - Math.min(1, Math.max(0, (distance - 18) / (PLATE_FAR - 18)));
+      // Longe fica um pouco menor e mais transparente (profundidade sem poluir); o balão fica inteiro.
+      const fade = talking ? 1 : 1 - Math.min(1, Math.max(0, (distance - 18) / (PLATE_FAR - 18)));
       plate.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%, -100%) scale(${(0.8 + fade * 0.2).toFixed(3)})`;
       plate.style.opacity = (0.45 + fade * 0.55).toFixed(2);
+    }
+    this.renderPings(camera, width, height);
+  }
+
+  /** Marcadores "Aqui!": em cima do ponto, ou presos na borda apontando pra ele. */
+  private renderPings(camera: THREE.Camera, width: number, height: number): void {
+    const pings = this.net.active ? this.net.pings : [];
+    const margins: ScreenMargins = { top: 110, bottom: 90, side: 56 };
+    for (let i = 0; i < this.pingEls.length; i++) {
+      const el = this.pingEls[i];
+      const ping = pings[i];
+      if (!ping) {
+        el.hidden = true;
+        continue;
+      }
+      tmp.copy(ping.position);
+      tmp.y += 1.2;
+      const view = tmp.clone().applyMatrix4(camera.matrixWorldInverse);
+      tmp.project(camera);
+      const place = placeMarker({ ndcX: tmp.x, ndcY: tmp.y, behind: view.z > 0 }, margins, width, height);
+      el.hidden = false;
+      el.dataset.slot = String(ping.slot);
+      el.classList.toggle('is-edge', !place.onScreen);
+      el.style.transform = `translate(${place.x.toFixed(1)}px, ${place.y.toFixed(1)}px) translate(-50%, -100%)`;
+      (el.lastElementChild as HTMLElement).style.transform = `rotate(${place.angle.toFixed(1)}deg)`;
     }
   }
 }

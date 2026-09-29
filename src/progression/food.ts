@@ -28,17 +28,55 @@ export const PANTRY_CAPACITY = 8;
 const BANQUET_STEP = 0.1;
 const BANQUET_CAP = 0.5;
 
-/** Contagem do que a bola da rodada já engoliu (por figurinha do catálogo e por cor). */
+/** O conteúdo de uma bola no formato da rede (online): [figurinha, quantas] e [cor, quantas]. */
+export interface LedgerWire {
+  c: Array<[CatalogId, number]>;
+  h: Array<[Hue, number]>;
+}
+
+/**
+ * Contagem do que uma bola já engoliu (por figurinha do catálogo e por cor).
+ * No online cada bola tem a dela e ela viaja junto: roubou a bola, levou o
+ * que tinha dentro; juntou duas, soma as duas.
+ */
 export class RoundLedger {
   private readonly counts = new Map<CatalogId, number>();
   private readonly hueCounts = new Map<Hue, number>();
+  private _version = 0;
+
+  /** Muda a cada alteração (o online só reenvia o conteúdo quando ele mudou). */
+  get version(): number {
+    return this._version;
+  }
 
   add(id: CatalogId, amount = 1): void {
     this.counts.set(id, (this.counts.get(id) ?? 0) + amount);
+    this._version++;
   }
 
   addHue(hue: Hue, amount = 1): void {
     this.hueCounts.set(hue, (this.hueCounts.get(hue) ?? 0) + amount);
+    this._version++;
+  }
+
+  /** Soma o conteúdo de outra bola (fusão, bola engolida). */
+  mergeFrom(other: RoundLedger): void {
+    for (const [id, n] of other.counts) this.counts.set(id, (this.counts.get(id) ?? 0) + n);
+    for (const [hue, n] of other.hueCounts) this.hueCounts.set(hue, (this.hueCounts.get(hue) ?? 0) + n);
+    this._version++;
+  }
+
+  toWire(): LedgerWire {
+    return { c: [...this.counts.entries()].filter(([, n]) => n > 0), h: [...this.hueCounts.entries()].filter(([, n]) => n > 0) };
+  }
+
+  /** Troca o conteúdo pelo que veio da rede (espelho da bola de outro jogador). */
+  loadWire(wire: LedgerWire): void {
+    this.counts.clear();
+    this.hueCounts.clear();
+    for (const [id, n] of wire.c) this.counts.set(id, n);
+    for (const [hue, n] of wire.h) this.hueCounts.set(hue, n);
+    this._version++;
   }
 
   count(id: CatalogId): number {
@@ -89,6 +127,7 @@ export class RoundLedger {
   reset(): void {
     this.counts.clear();
     this.hueCounts.clear();
+    this._version++;
   }
 }
 
@@ -97,17 +136,27 @@ export interface FoodBreakdown {
   variety: number;
   rare: number;
   requests: number;
+  /** Sol excedente (online): o volume que passou dos 30 cm. */
+  sun: number;
   total: number;
 }
 
-export function foodFor(diameterCm: number, ledger: RoundLedger, requestReward: number): FoodBreakdown {
+/**
+ * Comida por centímetro de Sol excedente (o quanto a bola teria passado dos
+ * 30 cm). Um pouco mais que o centímetro normal: juntar bola gigante é esforço
+ * de time e tem que valer a pena.
+ */
+const FOOD_PER_SUN_CM = 4;
+
+export function foodFor(diameterCm: number, ledger: RoundLedger, requestReward: number, sunCm = 0): FoodBreakdown {
   const size = Math.round(diameterCm * FOOD_PER_CM);
   const kinds = ledger.kinds;
   const variety = Math.min(kinds, FULL_KINDS) * FOOD_PER_KIND + Math.max(0, kinds - FULL_KINDS) * (FOOD_PER_KIND / 2);
   let rare = ledger.count('freshDung') * FOOD_PER_FRESH;
   for (const [id, n] of ledger.entries()) if (id !== 'freshDung' && catalogEntry(id).rare) rare += n * FOOD_PER_RARE;
   const requests = Math.round(requestReward);
-  return { size, variety, rare, requests, total: size + variety + rare + requests };
+  const sun = Math.round(Math.max(0, sunCm) * FOOD_PER_SUN_CM);
+  return { size, variety, rare, requests, sun, total: size + variety + rare + requests + sun };
 }
 
 /** Multiplicador de comer `count` bolas juntas. */

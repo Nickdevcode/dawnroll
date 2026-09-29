@@ -71,6 +71,11 @@ import { clamp, createRng, mixSeed, randomSeed } from './utils/math';
 import { OnlinePlay, type NameplateSource, type OnlineBridge } from './net/OnlinePlay';
 import type { NetLook } from './net/protocol';
 import type { CloseReason } from './net/NetSession';
+import type { Happening } from './net/BallSync';
+import type { RoundLedger } from './progression/food';
+import type { InputState } from './core/Input';
+import { DizzyStars } from './fx/DizzyStars';
+import type { DebugBots } from './net/debugBots';
 
 /** Evita "espiral da morte" quando a aba volta do segundo plano. */
 const MAX_FRAME_TIME = 0.1;
@@ -90,6 +95,9 @@ const FRESH_GLINT_RANGE_NOSE = 45;
 /** A primeira vez que a toca é apresentada, ela abre sozinha depois do placar. */
 const BURROW_INTRO_DELAY = 5;
 const FRESH_GLINT_COLOR = new THREE.Color('#ffd479');
+/** Online: brilho do broto nascendo e da bola que você pegou; o "ainda imune" é mais clarinho. */
+const SPROUT_GOLD = new THREE.Color('#e6c46a');
+const SPROUT_SHIMMER = new THREE.Color('#fff4c8');
 /** Online: as cartas de poder ficam por cima do jogo; sem escolher, pega a selecionada depois disso. */
 const ONLINE_PERK_SECONDS = 12;
 /** Quanto tempo as dicas do Equilibrista (como usar / em cima da bola) ficam na tela. */
@@ -197,6 +205,14 @@ export class Game {
   private readonly nameplateSources: NameplateSource[] = [];
   /** Jardim cujo arranjo do online (montinhos e tralha sem desviar do besouro) já está aplicado. */
   private onlineLayoutSeed: number | null = null;
+  /** Estrelinhas de tonto do seu besouro (trombada no online). */
+  private readonly dizzyStars = new DizzyStars();
+  /** Online: segurando o botão de fundir (0..1) e em cima de quem (pra dica). */
+  private mergeHint: { progress: number; nick: string } | null = null;
+  /** Roda de reações aberta: o clique que já estava apertado ao abrir não manda nada. */
+  private wheelGrabHeld = false;
+  /** Desenvolvimento (`?bots=5`): besouros de mentira pra medir o custo de uma sala cheia. */
+  private debugBots: DebugBots | null = null;
   /** Contagem até a toca abrir sozinha na primeira vez (0 = nada agendado). */
   private burrowIntroTimer = 0;
   private freshGlintTimer = 0;
@@ -483,11 +499,13 @@ export class Game {
     const ballSpawn = new THREE.Vector3(0, terrainHeight(0, 1.6) + START_RADIUS + 0.05, 1.6);
     this.ball = new DungBall(this.physics, ballSpawn);
     scene.add(this.ball.root);
+    this.wireBall(this.ball);
 
     this.beetle = new Beetle(this.physics, this.spawn, this.ball);
     scene.add(this.beetle.model.root);
     this.placeRareFind();
     scene.add(this.aura.points);
+    scene.add(this.dizzyStars.group);
     // Acessório com material novo compila em segundo plano antes de aparecer (sem engasgo).
     this.beetle.model.outfit.compile = (object) => this.graphics.renderer.compileAsync(object, this.graphics.camera, scene).then(() => undefined);
     this.applyLook();
@@ -552,6 +570,9 @@ export class Game {
     requestAnimationFrame(this.frame);
 
     if (import.meta.env.DEV) {
+      // `?bots=5`: sala cheia de mentira (medir desempenho sem 6 navegadores).
+      const bots = Number(new URLSearchParams(location.search).get('bots'));
+      if (bots > 0) void import('./net/debugBots').then(({ DebugBots }) => (this.debugBots = new DebugBots(scene, this.physics, Math.min(5, bots))));
       // Handle de depuração para testes automatizados no navegador.
       (window as unknown as { __game: unknown; __terrainHeight: unknown }).__game = this;
       (window as unknown as { __terrainHeight: unknown }).__terrainHeight = terrainHeight;
@@ -600,21 +621,6 @@ export class Game {
     this.collectibles.onDebrisTaken = (i) => this.net.active && this.net.localDebris(i);
     this.collectibles.onPileSpawn = (i, seed, fresh) => this.net.active && this.net.pileSpawned(i, seed, fresh);
     this.collectibles.onDebrisSpawn = (i, seed) => this.net.active && this.net.debrisSpawned(i, seed);
-    this.ball.onImpact = (strength) => {
-      if (strength > 0.25) {
-        const at = this.ball.position(this.tmpBall);
-        this.audio.impact(at, strength, this.ball.radius);
-        this.effects.impact(at, this.ball.radius, strength);
-        this.effects.startle(at, 2 + this.ball.radius);
-        this.cameraRig.shake(strength * 0.12 * Math.min(1, this.ball.radius / 1.5));
-        this.rumble(strength * 0.7, strength * 0.4, 110);
-      }
-      this.tryBump(strength);
-    };
-    this.ball.onShed = (at) => {
-      this.effects.shed(at);
-      this.audio.shed(at);
-    };
 
     this.burrow.onBurialStart = (at, radius) => {
       // Enquanto a bola afunda, o jardim da próxima rodada termina de se montar.
@@ -637,6 +643,92 @@ export class Game {
     this.burrow.onBuried = (result, at) => this.finishRound(result, at);
     // No online o jardim é da sala (não recomeça a cada enterro): só brota uma bola nova.
     this.burrow.onFinished = () => (this.net.active ? this.newBall(false) : this.startNewRound());
+  }
+
+  /**
+   * Sons e efeitos de uma bola sua: a do começo e, no online, as que você
+   * ganha (broto, roubada). Tranco na câmera e poder Trombada só com a principal.
+   */
+  private wireBall(ball: DungBall): void {
+    ball.onImpact = (strength) => {
+      const main = ball === this.ball;
+      if (strength > 0.25) {
+        const at = ball.position(this.tmpBall);
+        this.audio.impact(at, strength, ball.radius);
+        this.effects.impact(at, ball.radius, strength);
+        this.effects.startle(at, 2 + ball.radius);
+        if (main) {
+          this.cameraRig.shake(strength * 0.12 * Math.min(1, ball.radius / 1.5));
+          this.rumble(strength * 0.7, strength * 0.4, 110);
+        }
+      }
+      if (main) this.tryBump(strength);
+    };
+    ball.onShed = (at) => {
+      this.effects.shed(at);
+      this.audio.shed(at);
+    };
+  }
+
+  /**
+   * Online: a sua bola principal agora é outra (roubou, ganhou broto, pegou a
+   * sua largada). Câmera, HUD, toca e pedidos passam a seguir ela; a rodada
+   * (poderes, pedidos cumpridos) continua.
+   */
+  private setMainBall(ball: DungBall, ledger: RoundLedger): void {
+    this.wireBall(ball);
+    if (ball !== this.ball) {
+      this.ball = ball;
+      this.prevBallSpeed = 0;
+      this.ballWasWet = false;
+      this.roundPeakRadius = Math.max(START_RADIUS, ball.radius);
+    }
+    // Agarrado em outra (ajudando alguém, por exemplo): continua nela até soltar.
+    if (!this.beetle.pushing) this.beetle.attachBall(ball);
+    this.progression.useLedger(ledger);
+  }
+
+  /** Online: bola sua nova, fora de jogo até nascer (broto de quem perdeu a bola). */
+  private createBall(): DungBall {
+    const ball = new DungBall(this.physics, this.spawn);
+    ball.park();
+    this.graphics.scene.add(ball.root);
+    this.wireBall(ball);
+    return ball;
+  }
+
+  /** Onde brota uma bola nova: do lado do besouro, fora da boca da toca (senão seria "enterrada" de novo na hora). */
+  private sproutSpot(out: THREE.Vector3): THREE.Vector3 {
+    const facing = this.beetle.facing;
+    let x = this.beetle.center.x + facing.x * 1.6;
+    let z = this.beetle.center.z + facing.z * 1.6;
+    const dx = x - BURROW.x;
+    const dz = z - BURROW.z;
+    const d = Math.hypot(dx, dz);
+    const minDistance = BURROW.radius * 1.6;
+    if (d < minDistance) {
+      const k = d > 1e-3 ? minDistance / d : 1;
+      x = BURROW.x + (d > 1e-3 ? dx * k : minDistance);
+      z = BURROW.z + (d > 1e-3 ? dz * k : 0);
+    }
+    return out.set(x, terrainHeight(x, z) + START_RADIUS + 0.05, z);
+  }
+
+  /**
+   * Online: agarrar escolhe a bola mais perto do lado do besouro (a sua, uma
+   * sua largada ou a de outro jogador: empurrar junto, ou pegar se estiver
+   * solta). Soltando, o besouro volta pra sua bola principal. Enterrando, nada
+   * muda (a toca está conduzindo a principal).
+   */
+  private onlineGrab(state: InputState): void {
+    const beetle = this.beetle;
+    if (beetle.pushing || beetle.riding || beetle.dizzy || this.burrow.isBusy) return;
+    if (state.grab) {
+      const target = this.net.balls.pickGrabTarget();
+      if (!target || target === beetle.currentBall) return;
+      beetle.attachBall(target);
+      if (!target.proxy) this.net.balls.promote(target);
+    } else if (beetle.currentBall !== this.ball) beetle.attachBall(this.ball);
   }
 
   /** Arrancou algo do chão (flor, pedra, brinquedo, bola de tênis...). */
@@ -1102,6 +1194,7 @@ export class Game {
     const look = this.input.consumeLook();
     this.hud.setInputDevice(this.input.device, this.input.gamepad.style);
     this.handleGamepadMenu();
+    this.updateEmoteWheel(look, frameTime);
 
     if (this.simulating) {
       if (this.paused) {
@@ -1155,6 +1248,8 @@ export class Game {
     // Nível + poderes da rodada → besouro, ímã dos montinhos e alcance do Chifrudo (e o embalo da Ladeira abaixo).
     const ballVel = this.ball.body.linvel();
     const mods = this.progression.modifiers(this.ball.radius, Math.hypot(ballVel.x, ballVel.z));
+    // Online: empurrar junto acelera a bola (quem ajuda mira na mesma velocidade do dono).
+    if (this.net.active) mods.pushSpeed *= this.net.balls.pushSpeedBoost();
     this.beetle.modifiers = mods;
     this.collectibles.magnet = mods.magnet;
     this.pickables.pluckReach = mods.pluckReach;
@@ -1164,11 +1259,18 @@ export class Game {
     this.burrow.fixedUpdate(FIXED_DT, this.ball);
     this.applyWaterAndMud(FIXED_DT);
     this.applyWorldPerks(FIXED_DT);
+    if (this.net.active) {
+      this.onlineGrab(state);
+      const holding = state.merge && !this.beetle.dizzy && !this.burrow.isBusy && !this.hud.perkPicker.visible;
+      const merge = this.net.balls.updateMerge(holding, FIXED_DT);
+      this.mergeHint = merge.target ? { progress: merge.progress, nick: merge.target.local ? '' : this.net.nickOf(merge.target.owner) } : null;
+    } else this.mergeHint = null;
     this.beetle.fixedUpdate(FIXED_DT, state, this.cameraRig.yaw);
     this.updateRider(FIXED_DT);
     // Sangue quente: esquenta empurrando com o analógico/teclas apontando pra frente.
     this.progression.updateHeat(FIXED_DT, this.beetle.pushing && Math.hypot(state.moveX, state.moveY) > 0.3);
     this.net.beforePhysics();
+    this.debugBots?.fixedUpdate(this.beetle.center);
     this.physics.step();
     this.ball.fixedUpdate(FIXED_DT);
     this.collectibles.fixedUpdate(FIXED_DT, this.ball, this.beetle.center);
@@ -1269,6 +1371,7 @@ export class Game {
 
   /** Traz a bola para a frente do besouro. */
   private recoverBall(): void {
+    if (this.ball.isParked) return;
     this.beetle.releaseBall();
     const facing = this.beetle.facing;
     const r = this.ball.radius;
@@ -1286,9 +1389,14 @@ export class Game {
     this.save.totalCm += result.diameterCm;
     this.save.bestCm = Math.max(this.save.bestCm, result.diameterCm);
     // O enterro salva tudo junto (recorde + despensa + catálogo).
-    const outcome = this.progression.bury(result.diameterCm, { raining: this.weather.rain > 0.3, riding: this.buriedWhileRiding });
+    // Online: bola com bola doada dentro divide a comida; o que passou dos 30 cm vira Sol excedente.
+    const online = this.net.active;
+    const sunCm = this.ball.excessCm;
+    const share = online ? this.net.burialShare() : 1;
+    const outcome = this.progression.bury(result.diameterCm, { raining: this.weather.rain > 0.3, riding: this.buriedWhileRiding, share, sunCm });
     this.online.recordBurial(result.diameterCm);
-    if (this.net.active) this.net.localBury(result.diameterCm);
+    if (online) this.net.localBury(result.diameterCm, outcome.food.total, sunCm);
+    if (online && sunCm > 0) this.progression.achieve('mpSun');
     this.buriedWhileRiding = false;
     this.hud.setProgress(this.save);
     this.menu.setProgress(this.save);
@@ -1337,25 +1445,13 @@ export class Game {
     this.ridingHintTimer = 0;
     this.antFriendTimer = 0;
 
-    const facing = this.beetle.facing;
-    let x = this.beetle.center.x + facing.x * 1.6;
-    let z = this.beetle.center.z + facing.z * 1.6;
-    // Não nasce dentro da boca da toca (seria "enterrada" de novo na hora).
-    const dx = x - BURROW.x;
-    const dz = z - BURROW.z;
-    const d = Math.hypot(dx, dz);
-    const minDistance = BURROW.radius * 1.6;
-    if (d < minDistance) {
-      const k = d > 1e-3 ? minDistance / d : 1;
-      x = BURROW.x + (d > 1e-3 ? dx * k : minDistance);
-      z = BURROW.z + (d > 1e-3 ? dz * k : 0);
-    }
-    const position = new THREE.Vector3(x, terrainHeight(x, z) + START_RADIUS + 0.05, z);
+    const position = this.sproutSpot(new THREE.Vector3());
     this.ball.reset(position);
     this.ball.endBurial();
     // A bola nova nasceu limpa: as coisas do jardim antigo que estavam grudadas já saíram.
     if (newGarden) this.pickables.reset();
-    else this.net.localNewBall();
+    // Online: pra sala é outra bola (número novo, conteúdo novo).
+    else this.progression.useLedger(this.net.localNewBall());
     this.progression.startRound();
     this.collectibles.freshChance = FRESH_CHANCE;
     this.hud.resetRound();
@@ -1370,22 +1466,26 @@ export class Game {
     this.ball.render(alpha, dt);
     this.beetle.render(alpha, dt);
     this.net.render(alpha, dt);
+    this.debugBots?.render(alpha, dt, this.graphics.camera.position);
     this.looseObjects.render(alpha);
     this.beetle.model.root.updateMatrixWorld();
     this.aura.update(dt, this.beetle.model.root, this.graphics.pixelScale);
+    this.dizzyStars.update(dt, this.beetle.model.getHeadPosition(this.tmpMarker), this.beetle.dizzy);
     this.updateRareFind(dt);
 
     const player = this.beetle.renderPosition(alpha, this.tmpPlayer);
     const ballPos = this.ball.root.position;
     const burying = this.burrow.isBusy;
+    // Empurrando junto (online), a câmera acompanha a bola do outro jogador.
+    const held = this.beetle.pushing ? this.beetle.currentBall : this.ball;
     // Enterrando: a câmera enquadra besouro + toca (a bola some no chão).
-    const cameraBall = burying ? this.tmpFocus.set(BURROW.x, BURROW.ground + 0.8, BURROW.z) : ballPos;
-    // A bola também é obstáculo da lente (menos afundando na toca).
+    const cameraBall = burying ? this.tmpFocus.set(BURROW.x, BURROW.ground + 0.8, BURROW.z) : held.root.position;
+    // A bola também é obstáculo da lente (menos afundando na toca, ou o broto que ainda não nasceu).
     this.cameraBall.center.copy(ballPos);
     this.cameraBall.radius = this.ball.radius;
-    this.cameraRig.ball = burying ? null : this.cameraBall;
+    this.cameraRig.ball = burying || !this.ball.isSolid ? null : this.cameraBall;
     this.showcase.ball = this.cameraRig.ball;
-    this.cameraRig.update(dt, player, cameraBall, this.ball.radius, this.beetle.pushing || burying);
+    this.cameraRig.update(dt, player, cameraBall, held.radius, this.beetle.pushing || burying);
     const showcaseFocus = this.updateShowcase(dt);
     this.graphics.followFocus(player);
     // Jogando, o que é instanciado pelo mapa todo (montinhos, detritos, bichos) só desenha o que
@@ -1423,9 +1523,10 @@ export class Game {
     this.hud.setBall(this.ball.diameterCm, this.ball.dungCount, this.ball.itemCount);
     this.updateAbilityHud();
     const hint = this.computeHint();
-    this.hud.setHint(hint.kind, hint.value);
+    this.hud.setHint(hint.kind, hint.value, hint.label);
     this.updateBurrowMarker(player);
     this.updateNameplates();
+    this.hud.setMergeAvailable(this.mergeHint !== null && !this.paused);
     this.hud.update(dt);
     this.updateAudio(dt, player);
 
@@ -1730,6 +1831,7 @@ export class Game {
     const game = this;
     return {
       scene: this.graphics.scene,
+      camera: this.graphics.camera,
       physics: this.physics,
       get scenery() {
         return game.scenery;
@@ -1739,7 +1841,26 @@ export class Game {
       looseObjects: this.looseObjects,
       weather: this.weather,
       beetle: this.beetle,
-      ball: this.ball,
+      get ball() {
+        return game.ball;
+      },
+      mainLedger: () => this.progression.ledger,
+      createBall: () => this.createBall(),
+      setMainBall: (ball, ledger) => this.setMainBall(ball, ledger),
+      sproutSpot: (out) => this.sproutSpot(out),
+      sprouted: (ball) => {
+        const at = ball.position(this.tmpBall);
+        this.effects.sparkle(at, SPROUT_GOLD);
+        this.audio.newBall(at);
+      },
+      shimmer: (at, radius) => this.effects.sparkle(this.tmpFocus.set(at.x, at.y + radius * 0.8, at.z), SPROUT_SHIMMER),
+      happened: (kind, nick, at) => this.onHappening(kind, nick, at),
+      crumbled: (at, radius) => {
+        this.effects.splat(at, Math.max(0.4, radius * 0.8));
+        this.effects.dig(at, Math.min(1, 0.4 + radius * 0.2));
+        this.audio.shed(at);
+      },
+      achieve: (id) => this.progression.achieve(id),
       profile: () => ({ nick: this.online.state.profile?.nickname ?? '?', look: this.currentLook() }),
       useGarden: (seed) => this.useOnlineGarden(seed),
       compile: (object) => this.graphics.renderer.compileAsync(object, this.graphics.camera, this.graphics.scene).then(() => undefined),
@@ -1747,13 +1868,93 @@ export class Game {
         this.hud.notify(kind === 'host' ? t('online.youHost') : t(kind === 'join' ? 'online.joined' : 'online.left', { name: text }));
         if (kind === 'join') this.audio.notify();
       },
-      remoteBurial: (cm, nick) => {
-        this.hud.notify(t('online.buried', { name: nick, cm: formatCm(cm) }));
+      remoteBurial: (cm, nick, share, food) => {
         const at = this.tmpMarker.set(BURROW.x, BURROW.ground, BURROW.z);
         this.effects.buried(at, cm / 4);
+        // Tinha bola sua dentro: a sua parte da comida vem pra despensa.
+        const gift = share > 0 ? this.progression.receiveShare(cm, food) : null;
+        if (!gift) {
+          this.hud.notify(t('online.buried', { name: nick, cm: formatCm(cm) }));
+          return;
+        }
+        this.hud.notify(t('mp.share', { name: nick, n: gift.food }));
+        this.audio.requestDone();
+        this.hud.setProgress(this.save);
+        this.menu.setProgress(this.save);
+        if (gift.meal && gift.meal.levelAfter > gift.meal.levelBefore) this.audio.levelUp();
+        if (gift.meal && gift.meal.chests.length > 0) this.achievementToast.showChests(gift.meal.chests);
+      },
+      tackle: (by, target, at, mine) => this.onTackle(by, target, at, mine),
+      emote: (uid, emote, at) => {
+        if (uid !== this.net.selfId) this.audio.notify();
+        if (at) this.effects.sparkle(this.tmpFocus.set(at.x, terrainHeight(at.x, at.z) + 0.4, at.z), SPROUT_GOLD);
+        void emote;
       },
       ended: (reason) => this.onlineEnded(reason),
     };
+  }
+
+  /** O que aconteceu com as bolas no online → aviso, som e tranco. */
+  private onHappening(kind: Happening, nick: string, at: THREE.Vector3 | null): void {
+    const name = nick || '?';
+    switch (kind) {
+      case 'took':
+        this.hud.notify(t('mp.took', { name }));
+        this.audio.grab(this.beetle.center);
+        if (at) this.effects.sparkle(at, SPROUT_GOLD);
+        break;
+      case 'taken':
+        this.hud.notify(t('mp.taken', { name }));
+        this.audio.release(this.beetle.center);
+        this.rumble(0.4, 0.6, 220);
+        break;
+      case 'swallowed':
+        this.hud.notify(t('mp.swallowed', { name }));
+        if (at) this.effects.splat(at, 1.2);
+        this.audio.impact(at ?? this.beetle.center, 0.7, this.ball.radius);
+        this.cameraRig.shake(0.08);
+        break;
+      case 'eaten':
+        this.hud.notify(t('mp.eaten', { name }));
+        this.audio.impact(this.beetle.center, 0.6, 1);
+        this.rumble(0.6, 0.8, 300);
+        break;
+      case 'gave':
+        this.hud.notify(nick ? t('mp.gave', { name }) : t('mp.gaveSomeone'));
+        this.audio.requestDone();
+        if (at) this.effects.celebrate(at, 0.5);
+        break;
+      case 'got':
+        this.hud.notify(t('mp.got', { name }));
+        this.audio.requestDone();
+        if (at) this.effects.celebrate(at, 0.5);
+        break;
+      case 'joined':
+        this.hud.notify(t('mp.joinedOwn'));
+        this.audio.requestDone();
+        if (at) this.effects.sparkle(at, SPROUT_GOLD);
+        break;
+      case 'crumbled':
+        this.hud.notify(t('mp.crumbled'));
+        break;
+    }
+  }
+
+  /** Trombada decidida pelo dono da sala: tranco, poeira e som (e o aviso se foi com você). */
+  private onTackle(by: string, target: string, at: THREE.Vector3, mine: 'by' | 'target' | null): void {
+    this.effects.impact(at, 0.5, 0.9);
+    this.effects.startle(at, 4);
+    this.audio.impact(at, 0.9, 0.6);
+    if (mine === 'target') {
+      this.hud.notify(t('mp.bumped', { name: by }));
+      this.cameraRig.shake(0.14);
+      this.rumble(0.9, 0.7, 350);
+    } else if (mine === 'by') {
+      this.hud.notify(t('mp.tackled', { name: target }));
+      this.cameraRig.shake(0.08);
+      this.rumble(0.6, 0.4, 180);
+      this.progression.achieve('mpTackle');
+    }
   }
 
   /** Visual salvo agora (o que a sala vê). */
@@ -1810,8 +2011,54 @@ export class Game {
   private clearInput(): void {
     const state = this.input.state;
     state.moveX = state.moveY = 0;
-    state.grab = state.run = false;
-    state.jumpPressed = state.resetPressed = state.abilityPressed = false;
+    state.grab = state.run = state.merge = false;
+    state.jumpPressed = state.resetPressed = state.abilityPressed = state.emotePressed = false;
+  }
+
+  /**
+   * Online: roda de reações. G / ↓ / o botão do toque abre (e, aberta, manda a
+   * acesa); aberta, o mouse (ou o analógico direito) aponta a frase em vez de
+   * girar a câmera, e clique/A manda. Nada disso vaza pro besouro.
+   */
+  private updateEmoteWheel(look: { x: number; y: number }, dt: number): void {
+    const state = this.input.state;
+    const wheel = this.hud.emoteWheel;
+    if (!wheel || !this.net?.active) {
+      state.emotePressed = false;
+      return;
+    }
+    const blocked = !this.started || this.paused || this.choosing || this.hud.perkPicker.visible;
+    if (state.emotePressed) {
+      state.emotePressed = false;
+      if (!blocked) {
+        if (wheel.isOpen) wheel.confirm();
+        else wheel.show();
+      }
+    }
+    if (blocked) {
+      if (wheel.isOpen) wheel.hide();
+      return;
+    }
+    wheel.update(dt);
+    if (!wheel.isOpen) {
+      this.wheelGrabHeld = state.grab;
+      return;
+    }
+    wheel.aim(look.x, look.y);
+    look.x = look.y = 0;
+    const pad = this.input.gamepad;
+    if (pad.dpadPressed.left) wheel.step(-1);
+    if (pad.dpadPressed.right) wheel.step(1);
+    // B do controle fecha sem mandar nada.
+    if (this.input.menuActions.includes('back')) {
+      wheel.hide();
+      return;
+    }
+    const grabEdge = state.grab && !this.wheelGrabHeld;
+    this.wheelGrabHeld = state.grab;
+    if (grabEdge || state.jumpPressed) wheel.confirm();
+    state.grab = false;
+    state.jumpPressed = false;
   }
 
   /** Comeu da despensa (na placa da toca): som e festa se subiu de nível. */
@@ -2135,9 +2382,14 @@ export class Game {
     this.hud.setScentMarkers(points);
   }
 
-  private computeHint(): { kind: HintKind; value: number } {
-    if (this.paused || this.choosing) return { kind: 'none', value: 0 };
+  private computeHint(): { kind: HintKind; value: number; label?: string } {
+    // Roda de reações aberta: a dica não fica por trás dela.
+    if (this.paused || this.choosing || this.hud.emoteWheel?.isOpen) return { kind: 'none', value: 0 };
     if (this.dissolving) return { kind: 'dissolving', value: 0 };
+    if (this.net.active) {
+      const online = this.onlineHint();
+      if (online) return online;
+    }
     if (this.beetle.riding) return { kind: this.ridingHintTimer > 0 ? 'riding' : 'none', value: 0 };
     if (this.abilityFarTimer > 0) return { kind: 'abilityFar', value: 0 };
     if (this.abilityHintTimer > 0 && this.progression.rider.ready) return { kind: 'ability', value: 0 };
@@ -2148,6 +2400,24 @@ export class Game {
     const ballPos = this.ball.position(this.tmpBall);
     const dist = ballPos.distanceTo(this.beetle.center) - this.ball.radius;
     return { kind: dist < 1.4 ? 'grab' : 'none', value: 0 };
+  }
+
+  /** Dicas do online (na frente das de sempre): tonto, broto chegando, fundir, empurrando junto, bola solta. */
+  private onlineHint(): { kind: HintKind; value: number; label?: string } | null {
+    const balls = this.net.balls;
+    if (this.beetle.dizzy) return { kind: 'dizzy', value: 0 };
+    const sprout = balls.sproutIn;
+    if (sprout > 0) return { kind: 'sprout', value: Math.ceil(sprout) };
+    if (this.burrow.isBusy) return null;
+    const merge = this.mergeHint;
+    if (merge) return { kind: merge.nick ? 'merge' : 'mergeOwn', value: merge.progress, label: merge.nick };
+    const helping = balls.assistingOwner();
+    if (helping) return { kind: 'coPush', value: 0, label: this.net.nickOf(helping) };
+    if (!this.beetle.pushing) {
+      const loose = balls.looseNearby(1.4);
+      if (loose) return { kind: 'steal', value: 0, label: this.net.nickOf(loose.owner) };
+    }
+    return null;
   }
 
   /** Marcador da toca no HUD (some perto dela, durante o enterro e na pausa). */

@@ -543,7 +543,7 @@ export class Menu {
       ? /* html */ `<ul class="touch-list">
           <li data-t="touch.move"></li><li data-t="touch.look"></li><li data-t="touch.grab"></li>
           <li data-t="touch.jump"></li><li data-t="touch.recall"></li><li data-t="touch.burrow"></li>
-          <li data-t="touch.ability"></li>
+          <li data-t="touch.ability"></li><li data-t="touch.online"></li>
         </ul>`
       : /* html */ `<dl class="keys">
           ${row(keys('W', 'A', 'S', 'D'), 'controls.move')}
@@ -554,6 +554,8 @@ export class Menu {
           ${row(keys('R'), 'controls.recall')}
           ${row(keys('T'), 'controls.burrow')}
           ${row(keys('Q'), 'controls.ability')}
+          ${row(keys('G'), 'controls.emote')}
+          ${row(keys('F'), 'controls.merge')}
           ${row(keyT('key.wheel'), 'controls.zoom')}
           ${row(keys('Esc'), 'controls.pause')}
         </dl>`;
@@ -574,6 +576,10 @@ export class Menu {
           <ul class="help-list">
             <li data-t="help.burrow1"></li><li data-t="help.burrow2"></li><li data-t="help.burrow3"></li>
           </ul>
+          <h3 class="sheet__heading" data-t="help.online"></h3>
+          <ul class="help-list">
+            <li data-t="help.online1"></li><li data-t="help.online2"></li><li data-t="help.online3"></li>
+          </ul>
           <h3 class="sheet__heading" data-t="help.controls"></h3>
           ${controls}
           <div data-pad-help hidden>
@@ -586,6 +592,8 @@ export class Menu {
               ${row(`${pad('lt')}${pad('b')}`, 'controls.run')}
               ${row(pad('y'), 'controls.recall')}
               ${row(pad('ability'), 'controls.ability')}
+              ${row(keys('↓'), 'controls.emote')}
+              ${row(keys('←'), 'controls.merge')}
               ${row(`${pad('lb')}${pad('rb')}`, 'controls.zoom')}
               ${row(pad('start'), 'controls.pause')}
             </dl>

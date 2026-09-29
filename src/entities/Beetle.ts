@@ -16,7 +16,7 @@ const COYOTE_TIME = 0.12;
 const JUMP_BUFFER = 0.14;
 
 /** Distância máxima (da superfície da bola) para conseguir agarrar. */
-const GRAB_REACH = 0.8;
+export const GRAB_REACH = 0.8;
 /** Folga entre o traseiro do besouro e a bola na pose de empurrar. */
 const PUSH_GAP = 0.36;
 /** Altura (acima do chão) em que o traseiro erguido toca a bola. */
@@ -55,6 +55,8 @@ const SOLVER_GROUND = interactionGroups(Groups.PLAYER, Groups.WORLD);
 const SOLVER_OFF = interactionGroups(Groups.PLAYER, 0);
 
 const UP = new THREE.Vector3(0, 1, 0);
+/** O que o besouro tonto "recebe" de comando: nada. */
+const STUNNED_INPUT: InputState = { moveX: 0, moveY: 0, run: false, grab: false, jumpPressed: false, resetPressed: false, abilityPressed: false, merge: false, emotePressed: false };
 const tmpA = new THREE.Vector3();
 const tmpB = new THREE.Vector3();
 const tmpC = new THREE.Vector3();
@@ -120,13 +122,21 @@ export class Beetle {
   private ridePhase = 0;
   /** Solver desligado agora (Equilibrista)? */
   private solverOff = false;
+  /** Tonto (levou uma trombada no online): segundos sem comando. */
+  private stunTimer = 0;
+  /**
+   * Empurrando a bola de outro jogador (online): a força não mexe no fantasma
+   * daqui, vai pela rede pro dono dela. Aceleração pedida neste passo (u/s²).
+   */
+  readonly assist = new THREE.Vector3();
 
   onEvent: ((event: BeetleEvent) => void) | null = null;
 
   constructor(
     private readonly physics: Physics,
     spawn: THREE.Vector3,
-    private readonly ball: DungBall,
+    /** A bola com que o besouro mexe agora (no online muda: roubou, ganhou broto, foi ajudar alguém). */
+    private ball: DungBall,
   ) {
     this.position.copy(spawn).add(new THREE.Vector3(0, COLLIDER_RADIUS, 0));
     this.prevPosition.copy(this.position);
@@ -180,6 +190,57 @@ export class Beetle {
   /** Velocidade atual (para poeira dos passos). */
   get currentVelocity(): THREE.Vector3 {
     return this.velocity;
+  }
+
+  /** A bola com que o besouro mexe agora. */
+  get currentBall(): DungBall {
+    return this.ball;
+  }
+
+  /** Empurrando a bola de outro jogador (a força vai pela rede). */
+  get assisting(): boolean {
+    return this.pushing && this.ball.proxy;
+  }
+
+  /** Tonto da trombada (sem comando por um instante). */
+  get dizzy(): boolean {
+    return this.stunTimer > 0;
+  }
+
+  /**
+   * Troca a bola do besouro (online: pegou outra, ganhou broto, foi ajudar).
+   * Solta a de antes; em cima dela, desce na hora (cai de onde estava).
+   */
+  attachBall(ball: DungBall): void {
+    if (ball === this.ball) return;
+    this.releaseBall();
+    if (this.riding || this.hop) {
+      this.riding = false;
+      this.hop = null;
+      this.syncSolver();
+    }
+    this.ball = ball;
+  }
+
+  /** Levou uma trombada: solta a bola, desce de cima dela e fica tonto por `seconds`. */
+  stun(seconds: number): void {
+    this.stunTimer = Math.max(this.stunTimer, seconds);
+    this.releaseBall();
+    if (this.riding) this.dismount();
+  }
+
+  /**
+   * Distância da superfície de uma bola até o besouro, se ela estiver do lado
+   * (nem embaixo nem em cima dele); Infinity se não dá pra agarrar de onde está.
+   */
+  grabGap(ball: DungBall): number {
+    if (!ball.isSolid) return Infinity;
+    const ballPos = ball.position(tmpC);
+    const r = ball.radius;
+    const horizontal = Math.hypot(ballPos.x - this.position.x, ballPos.z - this.position.z);
+    const surfaceDistance = Math.hypot(horizontal, ballPos.y - this.position.y) - r - COLLIDER_RADIUS;
+    const beside = ballPos.y - r < this.position.y + 0.6 && ballPos.y + r > this.position.y - 0.3;
+    return beside ? surfaceDistance : Infinity;
   }
 
   /** Posição do centro do colisor no passo atual (sem interpolação). */
@@ -236,7 +297,8 @@ export class Beetle {
 
   /** Perto o bastante da bola (e com ela inteira) pra pular em cima dela? */
   canMount(): boolean {
-    if (this.riding || this.hop || !this.ball.isSolid) return false;
+    // A bola dos outros não (o fantasma segue a rede: ninguém anda em cima dele).
+    if (this.riding || this.hop || !this.ball.isSolid || this.ball.proxy) return false;
     const c = this.ball.position(tmpC);
     const surface = Math.hypot(c.x - this.position.x, c.y - this.position.y, c.z - this.position.z) - this.ball.radius - COLLIDER_RADIUS;
     return surface < MOUNT_REACH;
@@ -308,6 +370,12 @@ export class Beetle {
     this.prevPosition.copy(this.position);
     this.prevYaw = this.yaw;
     this.syncSolver();
+    this.assist.set(0, 0, 0);
+    // Tonto: o comando não chega (nem andar, nem agarrar, nem pular); a gravidade continua.
+    if (this.stunTimer > 0) {
+      this.stunTimer = Math.max(0, this.stunTimer - dt);
+      input = STUNNED_INPUT;
+    }
 
     // Direção desejada relativa à câmera.
     const forward = tmpA.set(-Math.sin(cameraYaw), 0, -Math.cos(cameraYaw));
@@ -322,8 +390,8 @@ export class Beetle {
       return;
     }
     if (this.riding) {
-      // Pular (ou a bola sumir na toca) desce da bola.
-      if (input.jumpPressed || !this.ball.isSolid) this.dismount();
+      // Pular (ou a bola sumir na toca, ou virar de outro jogador) desce da bola.
+      if (input.jumpPressed || !this.ball.isSolid || this.ball.proxy) this.dismount();
       else this.updateRide(dt, wish, wishAmount, input.run);
       return;
     }
@@ -500,15 +568,8 @@ export class Beetle {
   }
 
   private canGrab(): boolean {
-    if (!this.ball.isSolid) return false;
-    const ballPos = this.ball.position(tmpC);
-    const r = this.ball.radius;
-    const dx = ballPos.x - this.position.x;
-    const dz = ballPos.z - this.position.z;
-    const horizontal = Math.hypot(dx, dz);
-    const surfaceDistance = Math.hypot(horizontal, ballPos.y - this.position.y) - r - COLLIDER_RADIUS;
     // Precisa estar do lado da bola, não embaixo nem em cima dela.
-    return surfaceDistance < GRAB_REACH && ballPos.y - r < this.position.y + 0.6 && ballPos.y + r > this.position.y - 0.3;
+    return this.grabGap(this.ball) < GRAB_REACH;
   }
 
   private startPush(): void {
@@ -547,7 +608,7 @@ export class Beetle {
   }
 
   private nudgeBall(dt: number, wish: THREE.Vector3, amount: number): void {
-    if (amount < 0.1) return;
+    if (amount < 0.1 || this.ball.proxy) return;
     const ballPos = this.ball.position(tmpC);
     const toBall = new THREE.Vector3(ballPos.x - this.position.x, 0, ballPos.z - this.position.z);
     const dist = toBall.length();
@@ -593,8 +654,12 @@ export class Beetle {
     const neededLen = needed.length();
     const applied = Math.min(neededLen, accelLimit);
     if (neededLen > 1e-4) needed.multiplyScalar(applied / neededLen);
-    const mass = ball.mass;
-    ball.body.applyImpulse({ x: needed.x * mass * dt, y: 0, z: needed.z * mass * dt }, true);
+    // Bola de outro jogador: o empurrão vai pela rede pro dono (que aplica na física dele).
+    if (ball.proxy) this.assist.set(needed.x, 0, needed.z);
+    else {
+      const mass = ball.mass;
+      ball.body.applyImpulse({ x: needed.x * mass * dt, y: 0, z: needed.z * mass * dt }, true);
+    }
     this.pushStrain = damp(this.pushStrain, clamp(neededLen / accelLimit, 0, 1) * (amount > 0.1 ? 1 : 0.3), 5, dt);
 
     // Besouro se posiciona atrás da bola (de ré) seguindo a direção de empurrar.
