@@ -13,6 +13,9 @@ import { looksNotice } from './lookText';
 import { PerkPicker } from './PerkPicker';
 import { RoundPanel, type RoundView } from './RoundPanel';
 import { placeMarker, type ProjectedPoint, type ScreenMargins } from './screenMarker';
+import { OnlineHud } from './OnlineHud';
+import type { NameplateSource, OnlinePlay } from '../net/OnlinePlay';
+import type * as THREE from 'three';
 
 /** Marcos de tamanho (cm) que disparam um aviso comemorativo; o nome vem do dicionário. */
 const MILESTONES: ReadonlyArray<[number, MessageKey]> = [
@@ -94,6 +97,7 @@ export class Hud {
   private lastAbility = '';
   private readonly roundPanel: RoundPanel;
   readonly perkPicker: PerkPicker;
+  private onlineHud: OnlineHud | null = null;
   private pantryCount = 0;
   /** Textos fixos: elemento + chave (+ atributo, se não for o texto). */
   private readonly texts: Array<[HTMLElement, MessageKey, string?]> = [];
@@ -195,6 +199,16 @@ export class Hud {
     if (this.isTouch) this.bindTouchControls();
     onLocaleChange(() => this.refreshTexts());
     this.refreshTexts();
+  }
+
+  /** O online ficou pronto: chip da sala e placas de apelido entram no HUD. */
+  attachOnlinePlay(net: OnlinePlay): void {
+    this.onlineHud = new OnlineHud(this.hud, net);
+  }
+
+  /** Placas de apelido dos besouros remotos neste quadro. */
+  setNameplates(sources: readonly NameplateSource[], camera: THREE.Camera): void {
+    this.onlineHud?.setNameplates(sources, camera);
   }
 
   /** HUD aparece durante o jogo e some por trás do menu. */
@@ -416,10 +430,10 @@ export class Hud {
     this.burrowButton.classList.toggle('has-food', count > 0);
   }
 
-  showPerkPicker(options: readonly PerkOffer[], cm: number): void {
+  showPerkPicker(options: readonly PerkOffer[], cm: number, ambient = false): void {
     this.hint.classList.remove('is-visible');
     this.currentHint = '';
-    this.perkPicker.show(options, cm, this.device, this.padStyle);
+    this.perkPicker.show(options, cm, this.device, this.padStyle, ambient);
   }
 
   /** Marcadores dos montinhos fresquinhos (poder Faro). Lista vazia esconde. */

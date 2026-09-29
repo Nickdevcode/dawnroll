@@ -98,6 +98,17 @@ export class Online {
     return this._state;
   }
 
+  /**
+   * Conta aberta, pronta pro multiplayer: o cliente do Supabase, o id e o
+   * apelido do jogador. Null sem conta (o online exige conta) ou com o perfil
+   * ainda carregando.
+   */
+  get player(): { client: SupabaseClient; userId: string; nickname: string } | null {
+    const profile = this._state.profile;
+    if (this._state.status !== 'signedIn' || !this.client || !this.userId || !profile) return null;
+    return { client: this.client, userId: this.userId, nickname: profile.nickname };
+  }
+
   /** Conta aberta com apelido sorteado (a janelinha do apelido aparece). */
   get needsNickname(): boolean {
     return this._state.status === 'signedIn' && this._state.profile !== null && !this._state.profile.nicknameSet;

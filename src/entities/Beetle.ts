@@ -167,6 +167,16 @@ export class Beetle {
     return this.pushStrain;
   }
 
+  /** Para onde a cabeça aponta (rad, em volta do Y): vai no retrato do online. */
+  get heading(): number {
+    return this.yaw;
+  }
+
+  /** 0 = andando, 1 = de ponta-cabeça empurrando (a pose, pro retrato do online). */
+  get pushAmount(): number {
+    return this.pushBlend;
+  }
+
   /** Velocidade atual (para poeira dos passos). */
   get currentVelocity(): THREE.Vector3 {
     return this.velocity;

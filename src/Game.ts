@@ -46,7 +46,7 @@ import type { Rarity } from './progression/unlocks';
 import type { ShowcaseFrameName } from './core/ShowcaseCamera';
 import type { BootScreen } from './ui/BootScreen';
 import type { ProjectedPoint } from './ui/screenMarker';
-import { t, type MessageKey } from './i18n';
+import { formatCm, t, type MessageKey } from './i18n';
 import { Progression, type MealResult } from './progression/Progression';
 import { catalogIdForDebris, catalogIdForPickable, type CatalogId } from './progression/catalog';
 import { classifyHue, type Hue } from './progression/colors';
@@ -68,6 +68,9 @@ import type { Look } from './progression/looks';
 import { quality } from './core/device';
 import { GRAVITY } from './core/Physics';
 import { clamp, createRng, mixSeed, randomSeed } from './utils/math';
+import { OnlinePlay, type NameplateSource, type OnlineBridge } from './net/OnlinePlay';
+import type { NetLook } from './net/protocol';
+import type { CloseReason } from './net/NetSession';
 
 /** Evita "espiral da morte" quando a aba volta do segundo plano. */
 const MAX_FRAME_TIME = 0.1;
@@ -87,6 +90,8 @@ const FRESH_GLINT_RANGE_NOSE = 45;
 /** A primeira vez que a toca é apresentada, ela abre sozinha depois do placar. */
 const BURROW_INTRO_DELAY = 5;
 const FRESH_GLINT_COLOR = new THREE.Color('#ffd479');
+/** Online: as cartas de poder ficam por cima do jogo; sem escolher, pega a selecionada depois disso. */
+const ONLINE_PERK_SECONDS = 12;
 /** Quanto tempo as dicas do Equilibrista (como usar / em cima da bola) ficam na tela. */
 const ABILITY_HINT_SECONDS = 6;
 const RIDING_HINT_SECONDS = 3;
@@ -185,6 +190,13 @@ export class Game {
   private startDisabled = true;
   /** Escolhendo um poder: a simulação congela e o mouse fica solto pra clicar nas cartas. */
   private choosing = false;
+  /** Online: sala, jogadores remotos e mundo compartilhado (nada acontece sem sala). */
+  private net!: OnlinePlay;
+  /** Online: cartas de poder abertas por cima do jogo (segundos até escolher sozinho; 0 = nenhuma). */
+  private onlinePerkTimer = 0;
+  private readonly nameplateSources: NameplateSource[] = [];
+  /** Jardim cujo arranjo do online (montinhos e tralha sem desviar do besouro) já está aplicado. */
+  private onlineLayoutSeed: number | null = null;
   /** Contagem até a toca abrir sozinha na primeira vez (0 = nada agendado). */
   private burrowIntroTimer = 0;
   private freshGlintTimer = 0;
@@ -384,7 +396,10 @@ export class Game {
       this.effects.celebrate(this.ball.root.position, this.ball.radius);
       this.audio.milestone(index);
     };
-    this.weather.onThunder = (distance) => this.audio.thunder(distance);
+    this.weather.onThunder = (distance) => {
+      this.audio.thunder(distance);
+      this.net?.thunder(distance);
+    };
     this.input.gamepad.onConnectionChange = (connected, style) => {
       this.menu.setGamepad(connected ? style : null);
       if (connected) {
@@ -400,8 +415,9 @@ export class Game {
     document.addEventListener('visibilitychange', () => {
       if (!document.hidden) return;
       this.lastTime = 0;
-      // No celular não existe Esc: sair do app (ou trocar de aba) pausa o jogo.
-      if (this.started) this.pause();
+      // No celular não existe Esc: sair do app (ou trocar de aba) pausa o jogo. No online a
+      // sala não pausa: o besouro só fica parado onde estava.
+      if (this.started && !this.net?.active) this.pause();
     });
     window.addEventListener('keydown', (e) => {
       // Digitando (e-mail, senha, apelido): nenhuma tecla é atalho.
@@ -502,6 +518,9 @@ export class Game {
     // O jogo abre no menu: madrugada.
     this.effects.setMenuNight(true);
 
+    this.net = new OnlinePlay(this.onlineBridge(), () => this.online.player);
+    this.menu.attachOnlinePlay(this.net);
+    this.hud.attachOnlinePlay(this.net);
     this.wireEvents();
     this.wireCameraCollision();
     boot.step(0.88, 'loader.shaders');
@@ -521,6 +540,9 @@ export class Game {
     void boot.finish().then(() => this.menu.setRevealed());
     // A parte online só liga com o jardim de pé (a biblioteca baixa em segundo plano).
     void this.online.start();
+    // Link de convite (?sala=CÓDIGO): abre o "Jogar online" e entra na sala assim que a conta estiver pronta.
+    const invite = new URLSearchParams(location.search).get('sala');
+    if (invite) this.menu.openOnline(invite);
     // O jardim da segunda rodada já vai nascendo (no menu sobra tempo).
     this.prepareNextGarden();
     this.hud.setBall(this.ball.diameterCm, 0, 0);
@@ -571,6 +593,13 @@ export class Game {
     };
     this.pickables.onPick = (event) => this.onPick(event);
     this.looseObjects.onPick = (event) => this.onPick(event);
+    // Online: o que a sua bola pega vira evento da sala; o que renasce aqui (sendo o dono) também.
+    this.pickables.onAbsorb = (id) => this.net.active && this.net.localAbsorb(id);
+    this.looseObjects.onSwallow = (id) => this.net.active && this.net.localLoose(id);
+    this.collectibles.onPileTaken = (i) => this.net.active && this.net.localPile(i);
+    this.collectibles.onDebrisTaken = (i) => this.net.active && this.net.localDebris(i);
+    this.collectibles.onPileSpawn = (i, seed, fresh) => this.net.active && this.net.pileSpawned(i, seed, fresh);
+    this.collectibles.onDebrisSpawn = (i, seed) => this.net.active && this.net.debrisSpawned(i, seed);
     this.ball.onImpact = (strength) => {
       if (strength > 0.25) {
         const at = this.ball.position(this.tmpBall);
@@ -606,7 +635,8 @@ export class Game {
       this.cameraRig.shake(0.012 + strength * 0.012);
     };
     this.burrow.onBuried = (result, at) => this.finishRound(result, at);
-    this.burrow.onFinished = () => this.startNewRound();
+    // No online o jardim é da sala (não recomeça a cada enterro): só brota uma bola nova.
+    this.burrow.onFinished = () => (this.net.active ? this.newBall(false) : this.startNewRound());
   }
 
   /** Arrancou algo do chão (flor, pedra, brinquedo, bola de tênis...). */
@@ -681,6 +711,8 @@ export class Game {
       this.currentOutfit = { ...outfit };
       this.beetle.model.setOutfit(outfit);
     }
+    // Online: a sala vê a roupa nova (só o que está salvo; provar no guarda-roupa não conta).
+    if (!preview && this.net?.active) this.net.lookChanged();
   }
 
   /**
@@ -810,8 +842,7 @@ export class Game {
    * travar o jogo: logo que uma rodada começa, o jardim da seguinte já vai
    * nascendo nos intervalos entre os quadros.
    */
-  private prepareNextGarden(): void {
-    const seed = randomSeed();
+  private prepareNextGarden(seed = randomSeed()): void {
     this.scenery.prepareNext(seed);
     this.gardenParts = null;
     this.gardenRush = false;
@@ -964,14 +995,18 @@ export class Game {
     this.input.gamepad.rumble(strong, weak, durationMs);
   }
 
-  /** Pausa: a noite cai sobre o jardim e o menu volta (com "Continuar"). */
+  /**
+   * Pausa: a noite cai sobre o jardim e o menu volta (com "Continuar"). No online
+   * o menu abre por cima do jogo rodando (a sala não para): sem noite e sem abafar o som.
+   */
   private pause(): void {
     if (this.menu.isVisible) return;
     if (this.input.pointerLocked) document.exitPointerLock();
     this.input.gamepad.suppressHeldDirection();
     this.menu.show(true);
-    this.audio.setPaused(true);
-    this.effects.setMenuNight(true);
+    const online = this.net.active;
+    this.audio.setPaused(!online);
+    this.effects.setMenuNight(!online);
     this.hud.setVisible(false);
     // Escolhendo poder: as cartas ficam atrás do menu e não podem ser escolhidas às cegas pelo teclado.
     this.hud.perkPicker.setSuspended(true);
@@ -987,6 +1022,14 @@ export class Game {
 
   private get paused(): boolean {
     return this.menu.isVisible;
+  }
+
+  /**
+   * A simulação anda? No solo, não com menu ou cartas abertas. No online sempre
+   * (a sala não para por ninguém); com o menu aberto o besouro só não recebe comando.
+   */
+  private get simulating(): boolean {
+    return this.net.active ? this.started : !this.paused && !this.choosing;
   }
 
   /**
@@ -1060,8 +1103,11 @@ export class Game {
     this.hud.setInputDevice(this.input.device, this.input.gamepad.style);
     this.handleGamepadMenu();
 
-    if (!this.paused && !this.choosing) {
-      this.cameraRig.applyLook(look.x, look.y, look.zoom);
+    if (this.simulating) {
+      if (this.paused) {
+        // Online com o menu aberto: o jogo roda, mas o besouro e a câmera não recebem comando.
+        this.clearInput();
+      } else this.cameraRig.applyLook(look.x, look.y, look.zoom);
       // No toque, mirar com o dedão é trabalhoso: a câmera volta sozinha pra trás do besouro.
       if (this.hud.isTouch || this.input.device === 'gamepad') {
         if (look.x !== 0 || look.y !== 0) this.lastLookTime = this.elapsed;
@@ -1078,6 +1124,7 @@ export class Game {
         this.input.state.abilityPressed = false;
       }
       this.updateRound(frameTime);
+      this.updateOnlinePerks(frameTime);
     } else if (this.choosing) {
       // Congelado na escolha: nem o pulo nem o "trazer bola" apertados agora valem depois
       // (o direcional pra cima navega as cartas e também é o botão do poder no controle).
@@ -1091,7 +1138,7 @@ export class Game {
 
     this.applyWeather();
     this.advanceGarden(this.burrow.isBusy ? GardenBudget.burying : this.paused || this.choosing ? GardenBudget.paused : GardenBudget.playing);
-    const alpha = this.paused || this.choosing ? 1 : this.accumulator / FIXED_DT;
+    const alpha = this.simulating ? this.accumulator / FIXED_DT : 1;
     this.renderFrame(alpha, frameTime);
     this.runDisposals();
     this.trackPerformance(frameTime);
@@ -1121,11 +1168,13 @@ export class Game {
     this.updateRider(FIXED_DT);
     // Sangue quente: esquenta empurrando com o analógico/teclas apontando pra frente.
     this.progression.updateHeat(FIXED_DT, this.beetle.pushing && Math.hypot(state.moveX, state.moveY) > 0.3);
+    this.net.beforePhysics();
     this.physics.step();
     this.ball.fixedUpdate(FIXED_DT);
     this.collectibles.fixedUpdate(FIXED_DT, this.ball, this.beetle.center);
     this.pickables.fixedUpdate(this.ball);
     this.looseObjects.fixedUpdate(this.ball);
+    this.net.afterPhysics();
     this.checkSecrets();
     // Trombada de frente: o "impacto" da bola só vê queda/quique (vertical); bater rolando
     // numa coisa grande demais aparece como freada brusca na horizontal.
@@ -1239,6 +1288,7 @@ export class Game {
     // O enterro salva tudo junto (recorde + despensa + catálogo).
     const outcome = this.progression.bury(result.diameterCm, { raining: this.weather.rain > 0.3, riding: this.buriedWhileRiding });
     this.online.recordBurial(result.diameterCm);
+    if (this.net.active) this.net.localBury(result.diameterCm);
     this.buriedWhileRiding = false;
     this.hud.setProgress(this.save);
     this.menu.setProgress(this.save);
@@ -1246,7 +1296,8 @@ export class Game {
     if (outcome.meal && outcome.meal.levelAfter > outcome.meal.levelBefore) this.audio.levelUp();
     if (outcome.meal && outcome.meal.chests.length > 0) this.achievementToast.showChests(outcome.meal.chests);
     if (outcome.pass && outcome.pass.tierAfter > outcome.pass.tierBefore) this.achievementToast.showPassTier(outcome.pass.tierAfter);
-    if (outcome.introduceBurrow) this.burrowIntroTimer = BURROW_INTRO_DELAY;
+    // A toca se apresenta sozinha só no solo (no online ela abriria por cima da sala rodando).
+    if (outcome.introduceBurrow && !this.net.active) this.burrowIntroTimer = BURROW_INTRO_DELAY;
     this.effects.buried(at, result.diameterCm / 4);
     this.audio.buried(at, result.diameterCm / 4, record);
     this.cameraRig.shake(0.1);
@@ -1270,6 +1321,15 @@ export class Game {
     this.placeRareFind();
     // Teias voltam, bichos param de ser atraídos (o Fedor irresistível era da rodada).
     this.effects.newRound();
+    this.newBall(true);
+  }
+
+  /**
+   * Uma bola pequena brota do lado do besouro e a rodada recomeça (poderes,
+   * pedidos). `newGarden`: o jardim acabou de ser trocado (solo); no online o
+   * jardim é o mesmo e a sala fica sabendo da bola nova.
+   */
+  private newBall(newGarden: boolean): void {
     this.effects.setAttract(0);
     this.roundPeakRadius = START_RADIUS;
     this.abilityHintTimer = 0;
@@ -1294,7 +1354,8 @@ export class Game {
     this.ball.reset(position);
     this.ball.endBurial();
     // A bola nova nasceu limpa: as coisas do jardim antigo que estavam grudadas já saíram.
-    this.pickables.reset();
+    if (newGarden) this.pickables.reset();
+    else this.net.localNewBall();
     this.progression.startRound();
     this.collectibles.freshChance = FRESH_CHANCE;
     this.hud.resetRound();
@@ -1308,6 +1369,7 @@ export class Game {
     this.updateChest(dt);
     this.ball.render(alpha, dt);
     this.beetle.render(alpha, dt);
+    this.net.render(alpha, dt);
     this.looseObjects.render(alpha);
     this.beetle.model.root.updateMatrixWorld();
     this.aura.update(dt, this.beetle.model.root, this.graphics.pixelScale);
@@ -1355,7 +1417,7 @@ export class Game {
     this.collectibles.update(dt);
     this.burrow.update(dt, this.elapsed, this.ball.radius);
     this.updateEffects(dt, player);
-    if (!this.paused && !this.choosing) this.collectCritters();
+    if (this.simulating && !this.paused) this.collectCritters();
     this.updateFreshPiles(dt, player);
 
     this.hud.setBall(this.ball.diameterCm, this.ball.dungCount, this.ball.itemCount);
@@ -1363,6 +1425,7 @@ export class Game {
     const hint = this.computeHint();
     this.hud.setHint(hint.kind, hint.value);
     this.updateBurrowMarker(player);
+    this.updateNameplates();
     this.hud.update(dt);
     this.updateAudio(dt, player);
 
@@ -1603,6 +1666,13 @@ export class Game {
       this.hud.notify(t(rank === 2 ? 'perk.gained.up' : 'perk.gained', { name: t(`perk.${id}.name` as MessageKey) }));
       return;
     }
+    if (this.net.active) {
+      // Online: a sala não congela. As cartas ficam por cima do jogo e escolhem sozinhas se ninguém escolher.
+      this.onlinePerkTimer = ONLINE_PERK_SECONDS;
+      this.hud.showPerkPicker(options, cm, true);
+      this.audio.perkOffer();
+      return;
+    }
     this.choosing = true;
     // O analógico de andar costuma estar apertado quando as cartas chegam: não vira navegação.
     this.input.gamepad.suppressHeldDirection();
@@ -1614,8 +1684,11 @@ export class Game {
   }
 
   private choosePerk(perk: PerkId): void {
+    const wasOnline = this.onlinePerkTimer > 0;
     this.choosing = false;
+    this.onlinePerkTimer = 0;
     this.grantPerk(perk);
+    if (wasOnline) return;
     // A escolha é um gesto (clique/tecla): dá pra prender o mouse de novo na hora.
     if (!this.hud.isTouch && !this.paused) this.input.requestPointerLock();
     this.canvas.focus();
@@ -1627,7 +1700,9 @@ export class Game {
     switch (perk) {
       case 'nose':
         // O Faro já chega farejando: alguns montinhos viram fresquinhos e mais deles vão nascer (★★: de novo).
-        this.collectibles.promoteFresh(NOSE_PROMOTE_COUNT);
+        // No online quem decide os montinhos é o dono da sala.
+        if (this.net.active) this.net.requestNose(NOSE_PROMOTE_COUNT);
+        else this.collectibles.promoteFresh(NOSE_PROMOTE_COUNT);
         this.collectibles.freshChance = noseFreshChance(rank);
         break;
       case 'rider':
@@ -1638,12 +1713,105 @@ export class Game {
         this.effects.setAttract(rank);
         break;
       case 'rainCall':
-        this.weather.callRain(rank === 2);
+        // O clima é de todo mundo: no online o dono da sala chama a chuva pra sala inteira.
+        if (this.net.active) this.net.requestRain(rank === 2);
+        else this.weather.callRain(rank === 2);
         this.hud.notify(t('event.rainCall'));
         break;
       default:
         break;
     }
+  }
+
+  // --- online ------------------------------------------------------------------------------
+
+  /** O que o online precisa do jogo (ver `OnlineBridge`). */
+  private onlineBridge(): OnlineBridge {
+    const game = this;
+    return {
+      scene: this.graphics.scene,
+      physics: this.physics,
+      get scenery() {
+        return game.scenery;
+      },
+      collectibles: this.collectibles,
+      pickables: this.pickables,
+      looseObjects: this.looseObjects,
+      weather: this.weather,
+      beetle: this.beetle,
+      ball: this.ball,
+      profile: () => ({ nick: this.online.state.profile?.nickname ?? '?', look: this.currentLook() }),
+      useGarden: (seed) => this.useOnlineGarden(seed),
+      compile: (object) => this.graphics.renderer.compileAsync(object, this.graphics.camera, this.graphics.scene).then(() => undefined),
+      notify: (text, kind) => {
+        this.hud.notify(kind === 'host' ? t('online.youHost') : t(kind === 'join' ? 'online.joined' : 'online.left', { name: text }));
+        if (kind === 'join') this.audio.notify();
+      },
+      remoteBurial: (cm, nick) => {
+        this.hud.notify(t('online.buried', { name: nick, cm: formatCm(cm) }));
+        const at = this.tmpMarker.set(BURROW.x, BURROW.ground, BURROW.z);
+        this.effects.buried(at, cm / 4);
+      },
+      ended: (reason) => this.onlineEnded(reason),
+    };
+  }
+
+  /** Visual salvo agora (o que a sala vê). */
+  private currentLook(): NetLook {
+    const outfit = this.progression.outfit;
+    return { skin: this.progression.skin, head: outfit.head, face: outfit.face, neck: outfit.neck, back: outfit.back };
+  }
+
+  /**
+   * Deixa o jardim na semente da sala. Se for outro jardim, troca na hora (e o
+   * besouro e a bola vão pro começo, a bola do mesmo tamanho). Montinhos e
+   * tralha vão pro arranjo do online (sem desviar do besouro: todo mundo igual).
+   */
+  private useOnlineGarden(seed: number): void {
+    if (this.scenery.seed !== seed) {
+      this.prepareNextGarden(seed);
+      this.swapGarden();
+      this.pickables.reset();
+      this.placeRareFind();
+      this.beetle.teleport(this.spawn);
+      const r = this.ball.radius;
+      this.ball.teleport(new THREE.Vector3(0, terrainHeight(0, 1.6 + r) + r + 0.05, 1.6 + r));
+    }
+    // Reconectando no mesmo jardim, o arranjo já está certo (o mundo do dono ajusta só o que mudou).
+    if (this.onlineLayoutSeed === seed) return;
+    this.onlineLayoutSeed = seed;
+    this.collectibles.relayout(mixSeed(seed, GardenSalt.collectibles), null);
+  }
+
+  /** A sala acabou (saiu, caiu a internet): volta pro solo, no jardim em que estava. */
+  private onlineEnded(reason: CloseReason): void {
+    this.onlinePerkTimer = 0;
+    this.onlineLayoutSeed = null;
+    if (this.hud.perkPicker.visible) this.hud.perkPicker.pickSelected();
+    if (reason !== 'left') this.hud.notify(t(reason === 'full' ? 'online.error.room_full' : 'online.lost'));
+  }
+
+  /** Online: cartas de poder por cima do jogo (direcional do controle, e escolha sozinha no fim do tempo). */
+  private updateOnlinePerks(dt: number): void {
+    // Com o menu aberto as cartas ficam suspensas: o relógio da escolha espera junto.
+    if (this.onlinePerkTimer <= 0 || this.paused) return;
+    this.hud.perkPicker.handleDpad(this.input.gamepad.dpadPressed);
+    this.onlinePerkTimer -= dt;
+    if (this.onlinePerkTimer <= 0 && this.hud.perkPicker.visible) this.hud.perkPicker.pickSelected();
+  }
+
+  /** Placas com o apelido de cada jogador da sala (em cima do besouro dele). */
+  private updateNameplates(): void {
+    const sources = this.net.active && !this.paused ? this.net.nameplates(this.nameplateSources) : (this.nameplateSources.length = 0, this.nameplateSources);
+    this.hud.setNameplates(sources, this.graphics.camera);
+  }
+
+  /** Menu aberto no online: nada do teclado/controle chega no besouro. */
+  private clearInput(): void {
+    const state = this.input.state;
+    state.moveX = state.moveY = 0;
+    state.grab = state.run = false;
+    state.jumpPressed = state.resetPressed = state.abilityPressed = false;
   }
 
   /** Comeu da despensa (na placa da toca): som e festa se subiu de nível. */
@@ -1675,6 +1843,11 @@ export class Game {
   private beginChest(key: string): void {
     const grant = this.progression.chests.find((c) => c.key === key);
     if (!grant || !this.beetle) return;
+    // A cerimônia escurece o jardim e vira a câmera: no meio da sala, não (os baús esperam).
+    if (this.net.active) {
+      this.hud.notify(t('online.chestLater'));
+      return;
+    }
     this.chest = { key, rarity: grant.rarity, result: null, rewards: [], index: -1, skip: false };
     this.placeChestSpot();
     this.menu.setChestMode(true);

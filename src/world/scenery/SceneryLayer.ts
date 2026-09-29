@@ -172,6 +172,15 @@ export class SceneryLayer {
     }
   }
 
+  /** Rebrotou (online: o jardim livre refaz o que foi arrancado): volta ao lote, à física e aos pousos. */
+  reattach(record: PickableRecord): void {
+    if (!record.picked) return;
+    record.picked = false;
+    this.removables?.show(record.id);
+    if (this.active) for (const collider of record.colliders) collider.setEnabled(true);
+    for (const spot of record.landingSpots) if (!this.landingSpots.includes(spot)) this.landingSpots.push(spot);
+  }
+
   // ---------------------------------------------------------------------------
 
   private addPickable(spec: PickableSpec): void {

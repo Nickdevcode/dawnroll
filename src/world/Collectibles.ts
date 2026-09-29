@@ -3,7 +3,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { clay } from '../render/clayMaterial';
 import { InstancePool } from '../render/InstancePool';
 import { claySphere, displace, paintVertices, solidColor, taperedTube } from '../render/geometry';
-import { createRng, smoothstep, type Rng } from '../utils/math';
+import { createRng, mixSeed, smoothstep, type Rng } from '../utils/math';
 import { noise3 } from '../utils/noise';
 import { dungFlyBody, dungFlyWing, snailShell } from '../fx/critters/models';
 import { leafGeometry, latheGeometry, smoothProfile } from './scenery/shapes';
@@ -54,6 +54,9 @@ const MAX_FLIES = 3;
 export const FRESH_CHANCE = 0.1;
 /** O fresquinho vale o dobro de bola. */
 const FRESH_VOLUME = 2;
+/** Sementes de cada vaga derivadas da semente do jardim (montinho i, detrito i). */
+const PILE_SALT = 0x5000;
+const DEBRIS_SALT = 0x6000;
 /** Tom do fresquinho: mais claro, dourado e úmido (multiplica as cores do montinho). */
 const FRESH_TINT = new THREE.Color(1.55, 1.2, 0.62);
 const PLAIN_TINT = new THREE.Color(1, 1, 1);
@@ -76,7 +79,12 @@ interface DungPile {
   flyCount: number;
   /** Montinho fresquinho: raro, cheira mais, rende o dobro e conta no catálogo. */
   fresh: boolean;
-  seed: number;
+  /** Fase do "respirar" e do voo das moscas (cada montinho num tempo). */
+  phase: number;
+  /** Semente de onde ele está agora (o online manda só isto pra todo mundo montar igual). */
+  spawnSeed: number;
+  /** Sendo sugado pela bola de OUTRO jogador (online): voa até ela e não engorda a sua. */
+  into: DungBall | null;
   /** Vaga no pool de instâncias de montinho. */
   slot: number;
   /** De onde o montinho começou a ser sugado (o respingo sai dali). */
@@ -118,6 +126,8 @@ interface Debris {
   /** Parado no chão, é desenhado como instância; ao grudar vira um Mesh de verdade na bola. */
   pool: InstancePool | null;
   slot: number;
+  /** Semente de onde (e o que) ele é (as vagas do chão; o online manda só isto). */
+  seed: number;
 }
 
 /** Detrito solto por um poder: tem prazo de validade e chega ao chão com um pulinho. */
@@ -220,6 +230,19 @@ export class Collectibles {
   magnet = 0;
   /** Chance de um montinho renascer fresquinho (o poder Faro aumenta). */
   freshChance = FRESH_CHANCE;
+  /**
+   * Quem decide onde as coisas renascem: este aparelho (`local`: solo, ou o
+   * dono da sala) ou a sala (`remote`: espera o dono mandar a semente).
+   */
+  authority: 'local' | 'remote' = 'local';
+  /** Renascer longe do besouro (solo). No online, desligado: todo mundo tem que montar igual. */
+  avoidPlayer = true;
+  /** Online: a bola deste aparelho pegou o montinho/detrito `i` (o jogo avisa a sala). */
+  onPileTaken: ((index: number) => void) | null = null;
+  onDebrisTaken: ((index: number) => void) | null = null;
+  /** Online (quem decide): renasceu aqui — a sala precisa da semente. */
+  onPileSpawn: ((index: number, seed: number, fresh: boolean) => void) | null = null;
+  onDebrisSpawn: ((index: number, seed: number) => void) | null = null;
 
   /** `seed` = derivada da semente do jardim: o mesmo jardim começa com os montinhos e a tralha nos mesmos lugares. */
   constructor(private readonly scenery: Scenery, seed: number) {
@@ -245,8 +268,8 @@ export class Collectibles {
     this.flyWingPool.mesh.userData.skipAO = true;
     this.group.add(this.pilePool.mesh, this.flyBodyPool.mesh, this.flyWingPool.mesh);
 
-    for (let i = 0; i < DUNG_PILES; i++) this.spawnPile(i < 7);
-    for (let i = 0; i < DEBRIS_COUNT; i++) this.debris.push(this.spawnDebris());
+    for (let i = 0; i < DUNG_PILES; i++) this.spawnPile(i < 7, mixSeed(seed, PILE_SALT + i));
+    for (let i = 0; i < DEBRIS_COUNT; i++) this.debris.push(this.spawnDebris(mixSeed(seed, DEBRIS_SALT + i)));
     this.prepareTintedPools();
   }
 
@@ -257,7 +280,9 @@ export class Collectibles {
 
     // Bola sendo enterrada não pega nada (mas os montinhos continuam renascendo).
     const solid = ball.isSolid;
-    for (const pile of this.piles) {
+    const avoid = this.avoidPlayer ? playerPosition : undefined;
+    for (let index = 0; index < this.piles.length; index++) {
+      const pile = this.piles[index];
       if (pile.state === 'idle') {
         if (!solid) continue;
         const p = pile.mesh.position;
@@ -266,16 +291,23 @@ export class Collectibles {
           pile.state = 'absorbing';
           pile.timer = ABSORB_SECONDS;
           pile.absorbFrom.copy(p);
+          pile.into = null;
+          this.onPileTaken?.(index);
         }
       } else if (pile.state === 'absorbing') {
         pile.timer -= dt;
-        // Escorrega para dentro da bola encolhendo.
-        pile.mesh.position.lerp(center, 1 - Math.exp(-14 * dt));
+        // Escorrega para dentro da bola encolhendo (a de outro jogador, se foi ele quem pegou).
+        const target = pile.into ? pile.into.position(tmpTarget) : center;
+        pile.mesh.position.lerp(target, 1 - Math.exp(-14 * dt));
         pile.mesh.scale.multiplyScalar(Math.exp(-7 * dt));
         if (pile.timer <= 0) {
           pile.state = 'gone';
           pile.timer = RESPAWN_SECONDS;
           pile.mesh.visible = false;
+          if (pile.into) {
+            pile.into = null;
+            continue;
+          }
           // O montinho inteiro vira bola (o Katamari do cenário dá o resto do crescimento).
           ball.addVolume((4 / 3) * Math.PI * Math.pow(pile.size, 3) * (pile.fresh ? FRESH_VOLUME : 1));
           ball.dungCount++;
@@ -286,7 +318,8 @@ export class Collectibles {
         }
       } else {
         pile.timer -= dt;
-        if (pile.timer <= 0) this.respawnPile(pile, playerPosition);
+        // No online, quem decide é o dono da sala (a semente chega por `applyPileSpawn`).
+        if (pile.timer <= 0 && this.authority === 'local') this.respawnPile(index, pile, avoid);
       }
     }
 
@@ -294,7 +327,9 @@ export class Collectibles {
     for (let i = 0; i < this.debris.length; i++) {
       // Repõe o mundo para nunca "acabar" o que pegar — na MESMA vaga do array
       // (o que grudou agora pertence à bola; a lista não cresce com a sessão).
-      if (this.tryStick(this.debris[i], center, r, ball)) this.debris[i] = this.spawnDebris(playerPosition);
+      if (!this.tryStick(this.debris[i], center, r, ball)) continue;
+      this.onDebrisTaken?.(i);
+      if (this.authority === 'local') this.refillDebris(i, avoid);
     }
     for (let i = 0; i < this.extras.length; i++) {
       const extra = this.extras[i];
@@ -318,8 +353,17 @@ export class Collectibles {
     const dz = p.z - center.z;
     const reach = r + item.size * 0.35 + this.magnet;
     if (dx * dx + dy * dy + dz * dz >= reach * reach) return false;
-    item.active = false;
     const at = p.clone();
+    this.attachTo(item, ball);
+    // Grudar também engorda um pouquinho a bola.
+    ball.addVolume((4 / 3) * Math.PI * Math.pow(item.size * 0.45, 3));
+    this.onCollect?.({ kind: 'debris', position: at, size: item.size, color: (item.object.userData.tint as THREE.Color) ?? DUNG_TINT, material: item.material, fresh: false });
+    return true;
+  }
+
+  /** Tira o detrito do chão e gruda na bola (a sua ou, no online, a de quem pegou). */
+  private attachTo(item: Debris, ball: DungBall): void {
+    item.active = false;
     if (item.pool) item.pool.remove(item.slot);
     // Cor por instância não vai junto para o Mesh solto: a cor é assada na geometria.
     const tint = item.object.userData.instanceTint as THREE.Color | undefined;
@@ -331,10 +375,6 @@ export class Collectibles {
       burySize: item.size,
     });
     ball.itemCount++;
-    // Grudar também engorda um pouquinho a bola.
-    ball.addVolume((4 / 3) * Math.PI * Math.pow(item.size * 0.45, 3));
-    this.onCollect?.({ kind: 'debris', position: at, size: item.size, color: (item.object.userData.tint as THREE.Color) ?? DUNG_TINT, material: item.material, fresh: false });
-    return true;
   }
 
   /**
@@ -350,7 +390,7 @@ export class Collectibles {
         continue;
       }
       if (pile.state === 'idle') {
-        const wobble = Math.sin(this.time * 2 + pile.seed);
+        const wobble = Math.sin(this.time * 2 + pile.phase);
         const s = pile.size * (1 + wobble * 0.03);
         pile.mesh.scale.set(s, pile.size * (1 - wobble * 0.04), s);
       }
@@ -363,7 +403,7 @@ export class Collectibles {
       }
       pile.flies.forEach((fly, i) => {
         if (i >= pile.flyCount) return;
-        const t = this.time * (1.6 + i * 0.4) + pile.seed * 3 + i * 2.1;
+        const t = this.time * (1.6 + i * 0.4) + pile.phase * 3 + i * 2.1;
         const radius = 1.1 + Math.sin(t * 0.7) * 0.25;
         fly.body.position.set(Math.cos(t) * radius, 1.4 + Math.sin(t * 2.3) * 0.3, Math.sin(t) * radius);
         fly.body.rotation.y = -t;
@@ -433,13 +473,103 @@ export class Collectibles {
   relayout(seed: number, avoid: THREE.Vector3 | null): void {
     this.rng = createRng(seed);
     const player = avoid ?? undefined;
-    for (const pile of this.piles) this.placePile(pile, this.randomFreeSpot(6, PLAY_RADIUS - 2, 0.6, player, 8));
+    this.piles.forEach((pile, i) => this.placePile(pile, mixSeed(seed, PILE_SALT + i), { avoid: player, avoidDistance: 8 }));
     for (let i = 0; i < this.debris.length; i++) {
       const item = this.debris[i];
       if (item.active) this.discard(item);
-      this.debris[i] = this.spawnDebris(player);
+      this.debris[i] = this.spawnDebris(mixSeed(seed, DEBRIS_SALT + i), player);
     }
     this.clearExtras();
+  }
+
+  // --- Online ------------------------------------------------------------------------
+
+  /** Onde está cada montinho e cada detrito (o dono da sala manda pra quem chega). */
+  worldState(): { piles: Array<{ seed: number; fresh: boolean; gone: boolean }>; debris: number[] } {
+    return {
+      piles: this.piles.map((pile) => ({ seed: pile.spawnSeed, fresh: pile.fresh, gone: pile.state !== 'idle' })),
+      debris: this.debris.map((item) => item.seed),
+    };
+  }
+
+  /**
+   * Deixa tudo como o dono da sala diz (quem chega ou reconecta). Só remonta o
+   * que difere: o que já estava igual não pisca.
+   */
+  applyWorldState(piles: ReadonlyArray<{ seed: number; fresh: boolean; gone: boolean }>, debris: readonly number[]): void {
+    piles.forEach((state, i) => {
+      const pile = this.piles[i];
+      if (!pile) return;
+      if (state.gone) {
+        if (pile.state === 'idle') this.hidePile(pile);
+        pile.spawnSeed = state.seed;
+        return;
+      }
+      if (pile.state !== 'idle' || pile.spawnSeed !== state.seed) this.placePile(pile, state.seed, { fresh: state.fresh });
+      else if (pile.fresh !== state.fresh) this.setFresh(pile, state.fresh, createRng(state.seed));
+    });
+    debris.forEach((seed, i) => {
+      if (i >= this.debris.length) return;
+      const item = this.debris[i];
+      if (item.active && item.seed === seed) return;
+      if (item.active) this.discard(item);
+      this.debris[i] = this.spawnDebris(seed);
+    });
+  }
+
+  /** O dono da sala fez o montinho `i` renascer com esta semente. */
+  applyPileSpawn(index: number, seed: number, fresh: boolean): void {
+    const pile = this.piles[index];
+    if (pile) this.placePile(pile, seed, { fresh });
+  }
+
+  /** O dono da sala repôs a vaga de detrito `i`. */
+  applyDebrisSpawn(index: number, seed: number): void {
+    if (index < 0 || index >= this.debris.length) return;
+    const old = this.debris[index];
+    if (old.active) this.discard(old);
+    this.debris[index] = this.spawnDebris(seed);
+  }
+
+  /** Outro jogador pegou o montinho `i`: ele voa até a bola dele (sem engordar a sua). */
+  takePileRemote(index: number, into: DungBall | null): void {
+    const pile = this.piles[index];
+    if (!pile || pile.state === 'gone') return;
+    if (!into) {
+      this.hidePile(pile);
+      return;
+    }
+    pile.state = 'absorbing';
+    pile.timer = ABSORB_SECONDS;
+    pile.absorbFrom.copy(pile.mesh.position);
+    pile.into = into;
+  }
+
+  /** Outro jogador pegou o detrito `i`: gruda na bola dele (ou só some, se a bola dele não está aqui). */
+  takeDebrisRemote(index: number, into: DungBall | null): void {
+    const item = this.debris[index];
+    if (!item?.active) return;
+    if (into) this.attachTo(item, into);
+    else this.discard(item);
+    // Quem decide (o dono da sala) repõe a vaga e avisa a sala.
+    if (this.authority === 'local') this.refillDebris(index, undefined);
+  }
+
+  /**
+   * Virou o dono da sala no meio: passa a decidir e repõe as vagas de detrito
+   * que estavam esperando o dono antigo (avisando a sala de cada uma).
+   */
+  claimAuthority(): void {
+    this.authority = 'local';
+    for (let i = 0; i < this.debris.length; i++) if (!this.debris[i].active) this.refillDebris(i, undefined);
+  }
+
+  /** Poder Faro de alguém da sala: o dono sorteia quais viram fresquinhos e manda os índices. */
+  applyPromote(indices: readonly number[]): void {
+    for (const i of indices) {
+      const pile = this.piles[i];
+      if (pile && pile.state === 'idle' && !pile.fresh) this.setFresh(pile, true, this.rng);
+    }
   }
 
   private clearExtras(): void {
@@ -513,31 +643,39 @@ export class Collectibles {
     return out;
   }
 
-  /** Poder Faro: alguns montinhos comuns, sorteados, viram fresquinhos na hora. */
-  promoteFresh(count: number): void {
-    const plain = this.piles.filter((pile) => pile.state === 'idle' && !pile.fresh);
-    for (let i = 0; i < count && plain.length > 0; i++) {
-      const [pile] = plain.splice(Math.floor(this.rng.next() * plain.length), 1);
-      this.setFresh(pile, true);
+  /** Poder Faro: alguns montinhos comuns, sorteados, viram fresquinhos na hora. Devolve quais (pro online). */
+  promoteFresh(count: number): number[] {
+    const plain = this.piles.map((pile, i) => ({ pile, i })).filter(({ pile }) => pile.state === 'idle' && !pile.fresh);
+    const promoted: number[] = [];
+    for (let n = 0; n < count && plain.length > 0; n++) {
+      const [{ pile, i }] = plain.splice(Math.floor(this.rng.next() * plain.length), 1);
+      this.setFresh(pile, true, this.rng);
+      promoted.push(i);
     }
+    return promoted;
   }
 
   // ---------------------------------------------------------------------------
 
-  private randomFreeSpot(minRadius: number, maxRadius: number, footprint: number, avoid?: THREE.Vector3, avoidDist = 0): THREE.Vector2 {
+  private randomFreeSpot(rng: Rng, minRadius: number, maxRadius: number, footprint: number, avoid?: THREE.Vector3, avoidDist = 0): THREE.Vector2 {
     for (let i = 0; i < 60; i++) {
-      const a = this.rng.next() * Math.PI * 2;
-      const d = minRadius + Math.sqrt(this.rng.next()) * (maxRadius - minRadius);
+      const a = rng.next() * Math.PI * 2;
+      const d = minRadius + Math.sqrt(rng.next()) * (maxRadius - minRadius);
       const x = Math.cos(a) * d;
       const z = Math.sin(a) * d;
       if (!this.scenery.isFree(x, z, footprint) || this.scenery.isInsideSolid(x, z, footprint)) continue;
       if (avoid && Math.hypot(avoid.x - x, avoid.z - z) < avoidDist) continue;
       return new THREE.Vector2(x, z);
     }
-    return new THREE.Vector2(this.rng.range(-20, 20), this.rng.range(-20, 20));
+    return new THREE.Vector2(rng.range(-20, 20), rng.range(-20, 20));
   }
 
-  private spawnPile(nearSpawn: boolean): void {
+  /** Semente nova do sorteio contínuo (renascer quando este aparelho é quem decide). */
+  private nextSeed(): number {
+    return (this.rng.next() * 0x100000000) >>> 0;
+  }
+
+  private spawnPile(nearSpawn: boolean, seed: number): void {
     const mesh = new THREE.Object3D();
 
     const pile: DungPile = {
@@ -548,33 +686,61 @@ export class Collectibles {
       flies: [],
       flyCount: 0,
       fresh: false,
-      seed: this.rng.next() * 100,
+      phase: (seed % 10000) / 100,
+      spawnSeed: seed,
+      into: null,
       absorbFrom: new THREE.Vector3(),
       slot: this.pilePool.add(new THREE.Matrix4()),
     };
     for (let i = 0; i < MAX_FLIES; i++) pile.flies.push(this.buildFly(mesh));
     this.piles.push(pile);
-    this.placePile(pile, nearSpawn ? this.randomFreeSpot(3, 12, 0.6) : this.randomFreeSpot(6, PLAY_RADIUS - 2, 0.6));
+    this.placePile(pile, seed, { near: nearSpawn });
   }
 
-  private respawnPile(pile: DungPile, player: THREE.Vector3): void {
-    this.placePile(pile, this.randomFreeSpot(6, PLAY_RADIUS - 2, 0.6, player, 14));
+  /** Renasce (este aparelho decide): semente nova do sorteio contínuo, e avisa a sala. */
+  private respawnPile(index: number, pile: DungPile, avoid: THREE.Vector3 | undefined): void {
+    this.placePile(pile, this.nextSeed(), { avoid, avoidDistance: 14 });
+    this.onPileSpawn?.(index, pile.spawnSeed, pile.fresh);
   }
 
-  private placePile(pile: DungPile, spot: THREE.Vector2): void {
-    pile.size = this.rng.range(0.28, 0.62);
+  /** Repõe a vaga de detrito `index` (este aparelho decide) e avisa a sala. */
+  private refillDebris(index: number, avoid: THREE.Vector3 | undefined): void {
+    const seed = this.nextSeed();
+    this.debris[index] = this.spawnDebris(seed, avoid);
+    this.onDebrisSpawn?.(index, seed);
+  }
+
+  /**
+   * Põe o montinho no lugar que a semente manda (lugar, tamanho, giro, moscas).
+   * `fresh` vindo de fora (o dono da sala decidiu) vale mais que o sorteio.
+   */
+  private placePile(pile: DungPile, seed: number, options: { near?: boolean; avoid?: THREE.Vector3; avoidDistance?: number; fresh?: boolean } = {}): void {
+    const rng = createRng(seed);
+    const spot = options.near ? this.randomFreeSpot(rng, 3, 12, 0.6) : this.randomFreeSpot(rng, 6, PLAY_RADIUS - 2, 0.6, options.avoid, options.avoidDistance ?? 0);
+    pile.spawnSeed = seed;
+    pile.into = null;
+    pile.size = rng.range(0.28, 0.62);
     pile.mesh.position.set(spot.x, terrainHeight(spot.x, spot.y) - 0.03, spot.y);
-    pile.mesh.rotation.y = this.rng.next() * Math.PI * 2;
+    pile.mesh.rotation.y = rng.next() * Math.PI * 2;
     pile.mesh.scale.setScalar(pile.size);
     pile.mesh.visible = true;
     pile.state = 'idle';
-    this.setFresh(pile, this.rng.next() < this.freshChance);
+    const rolled = rng.next() < this.freshChance;
+    this.setFresh(pile, options.fresh ?? rolled, rng);
   }
 
-  private setFresh(pile: DungPile, fresh: boolean): void {
+  /** Some do chão (pego por alguém, ou "já não estava lá" quando se entra na sala). */
+  private hidePile(pile: DungPile): void {
+    pile.state = 'gone';
+    pile.timer = RESPAWN_SECONDS;
+    pile.mesh.visible = false;
+    pile.into = null;
+  }
+
+  private setFresh(pile: DungPile, fresh: boolean, rng: Rng): void {
     pile.fresh = fresh;
     // Metade dos comuns tem 1–2 moscas; o fresquinho junta todas.
-    pile.flyCount = fresh ? MAX_FLIES : this.rng.next() < 0.5 ? 1 + Math.floor(this.rng.next() * 2) : 0;
+    pile.flyCount = fresh ? MAX_FLIES : rng.next() < 0.5 ? 1 + Math.floor(rng.next() * 2) : 0;
     this.pilePool.setColor(pile.slot, fresh ? FRESH_TINT : PLAIN_TINT);
   }
 
@@ -599,24 +765,28 @@ export class Collectibles {
     };
   }
 
-  /** Sorteia um detrito da tabela e acha um lugar para ele (no cantinho dele, às vezes). */
-  private spawnDebris(avoid?: THREE.Vector3): Debris {
-    const rng = this.rng;
+  /**
+   * Sorteia um detrito da tabela e acha um lugar para ele (no cantinho dele, às
+   * vezes). Tudo sai da semente: a mesma semente dá o mesmo detrito no mesmo
+   * lugar em qualquer aparelho (se `avoid` também for o mesmo).
+   */
+  private spawnDebris(seed: number, avoid?: THREE.Vector3): Debris {
+    const rng = createRng(seed);
     const rule = pickRule(rng.next());
     const material: DebrisMaterial = rule.material === 'clover' && rng.next() < FOUR_LEAF_CHANCE ? 'fourLeaf' : rule.material;
     const built = this.buildDebris(material, rng);
-    const zone = rule.zone && rng.next() < rule.zone.share ? this.zoneSpot(rule.zone.kind, built.size, avoid) : null;
-    const spot = zone ?? this.randomFreeSpot(4, PLAY_RADIUS - 1, 0.3, avoid, avoid ? 12 : 0);
-    return this.place(built, spot.x, spot.y);
+    const zone = rule.zone && rng.next() < rule.zone.share ? this.zoneSpot(rng, rule.zone.kind, built.size, avoid) : null;
+    const spot = zone ?? this.randomFreeSpot(rng, 4, PLAY_RADIUS - 1, 0.3, avoid, avoid ? 12 : 0);
+    return this.place(built, spot.x, spot.y, seed);
   }
 
   /** Ponto livre dentro de um cantinho (em cima da toalha vale; dentro de objeto, não). */
-  private zoneSpot(kind: ZoneKind, size: number, avoid?: THREE.Vector3): THREE.Vector2 | null {
+  private zoneSpot(rng: Rng, kind: ZoneKind, size: number, avoid?: THREE.Vector3): THREE.Vector2 | null {
     const zone = this.scenery.zoneOf(kind);
     if (!zone) return null;
     for (let i = 0; i < 30; i++) {
-      const a = this.rng.next() * Math.PI * 2;
-      const d = Math.sqrt(this.rng.next()) * zone.radius * 0.95;
+      const a = rng.next() * Math.PI * 2;
+      const d = Math.sqrt(rng.next()) * zone.radius * 0.95;
       const x = zone.x + Math.cos(a) * d;
       const z = zone.z + Math.sin(a) * d;
       if (this.scenery.isInsideSolid(x, z, size * 0.4 + 0.1) || this.scenery.isDug(x, z)) continue;
@@ -627,7 +797,7 @@ export class Collectibles {
   }
 
   /** Assenta um detrito no chão (ou na toalha) e o põe no pool de instâncias da variante dele. */
-  private place(built: BuiltDebris, x: number, z: number): Debris {
+  private place(built: BuiltDebris, x: number, z: number, seed = 0): Debris {
     const { object, size } = built;
     object.castShadow = size > 0.28;
     object.receiveShadow = true;
@@ -643,7 +813,7 @@ export class Collectibles {
       if (tint) object.geometry = DebrisKit.tinted(object.geometry, tint);
       this.group.add(object);
     }
-    return { object, size, material: built.material, active: true, pool: slot < 0 ? null : pool, slot };
+    return { object, size, material: built.material, active: true, pool: slot < 0 ? null : pool, slot, seed };
   }
 
   /** Modela um detrito do material pedido (tamanho, pose e altura sorteados). */
@@ -848,6 +1018,7 @@ function pickRule(roll: number): SpawnRule {
 const WHITE = new THREE.Color(1, 1, 1);
 /** Pose de rascunho para escrever a matriz dos extras animados. */
 const tmpPose = new THREE.Object3D();
+const tmpTarget = new THREE.Vector3();
 
 // -----------------------------------------------------------------------------
 // Modelos

@@ -19,6 +19,8 @@ export class PerkPicker {
   readonly element: HTMLElement;
   /** O jogador escolheu um poder. */
   onChoose: ((perk: PerkId) => void) | null = null;
+  /** Cartas por cima do jogo rodando (online): sem pegar o foco. */
+  private ambient = false;
 
   private readonly eyebrow: HTMLElement;
   private readonly title: HTMLElement;
@@ -97,7 +99,14 @@ export class PerkPicker {
     return !this.element.hidden;
   }
 
-  show(options: readonly PerkOffer[], cm: number, device: InputDevice, padStyle: PadStyle): void {
+  /**
+   * `ambient` (online): o jogo segue rodando por baixo das cartas. Elas não
+   * pegam o foco (senão o Espaço do pulo "clicaria" a carta) e a escolha é pelas
+   * teclas 1/2/3, toque, ou direcional do controle (ver `handleDpad`).
+   */
+  show(options: readonly PerkOffer[], cm: number, device: InputDevice, padStyle: PadStyle, ambient = false): void {
+    this.ambient = ambient;
+    this.element.classList.toggle('is-ambient', ambient);
     this.options = [...options];
     this.cm = cm;
     this.device = device;
@@ -127,6 +136,19 @@ export class PerkPicker {
     this.device = device;
     this.padStyle = padStyle;
     if (this.visible) this.renderHint();
+  }
+
+  /** Online: ←/→ do direcional trocam de carta, ↓ escolhe (o analógico e o A continuam no besouro). */
+  handleDpad(dpad: { left: boolean; right: boolean; down: boolean }): void {
+    if (!this.visible || this.suspended || !this.ambient) return;
+    if (dpad.left) this.select(this.selected - 1);
+    if (dpad.right) this.select(this.selected + 1);
+    if (dpad.down) this.choose(this.selected);
+  }
+
+  /** Online: acabou o tempo de escolher, fica com a carta selecionada. */
+  pickSelected(): void {
+    this.choose(this.selected);
   }
 
   /** Controle: direções andam entre as cartas, A escolhe a selecionada. Devolve se usou a ação. */
@@ -170,9 +192,10 @@ export class PerkPicker {
   }
 
   private renderHint(): void {
-    if (this.device === 'gamepad') this.hint.textContent = t('perk.pick.gamepad', { button: PAD_LABELS[this.padStyle].a });
+    if (this.device === 'gamepad') this.hint.textContent = this.ambient ? t('perk.pick.dpad') : t('perk.pick.gamepad', { button: PAD_LABELS[this.padStyle].a });
     else if (this.device === 'touch') this.hint.textContent = t('perk.pick.touch');
     else this.hint.textContent = t('perk.pick.keys', { keys: this.options.map((_, i) => i + 1).join(', ') });
+    if (this.ambient) this.hint.textContent += ` · ${t('perk.pick.auto')}`;
     // No toque não há seleção (é tocar e pronto): o destaque some.
     this.element.classList.toggle('is-touch-hint', this.device === 'touch');
   }
@@ -187,7 +210,7 @@ export class PerkPicker {
     if (buttons.length === 0) return;
     const next = Math.min(Math.max(index, 0), buttons.length - 1);
     this.mark(next);
-    buttons[next].focus({ preventScroll: true });
+    if (!this.ambient) buttons[next].focus({ preventScroll: true });
   }
 
   /** Só o destaque (o foco já está lá, ou vai chegar). */

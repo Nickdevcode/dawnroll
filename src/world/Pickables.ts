@@ -88,6 +88,8 @@ function closestOnSegment(p: THREE.Vector3, a: THREE.Vector3, b: THREE.Vector3, 
 
 export class Pickables {
   onPick: ((event: PickEvent) => void) | null = null;
+  /** Online: a sua bola arrancou o arrancável `id` (o jogo avisa a sala). */
+  onAbsorb: ((id: number) => void) | null = null;
   /**
    * Tamanho de bola (raio) que falta para arrancar o que ela está encostando
    * agora; 0 = nada grande demais encostado. Lido pelo HUD (dica).
@@ -120,6 +122,55 @@ export class Pickables {
   reset(): void {
     for (const geometry of this.baked.values()) geometry.dispose();
     this.baked.clear();
+  }
+
+  /**
+   * Online: outro jogador arrancou o arrancável `id`. Some daqui também e, se a
+   * bola dele está na cena, gruda nela (sem engordar a sua nem contar pra você).
+   */
+  absorbRemote(id: number, into: DungBall | null): void {
+    const record = this.scenery.pickables[id];
+    if (!record || record.picked) return;
+    this.scenery.detach(record);
+    if (!into) return;
+    const mesh = this.meshFor(record);
+    const scale = Math.min(1, (into.radius * 1.4) / record.extent);
+    const style = StickStyles[record.kind];
+    into.stick(mesh, {
+      depth: record.extent * scale * style.depth,
+      lean: (style.lean[0] + style.lean[1]) / 2,
+      lieTangent: style.lieTangent,
+      scale,
+      burySize: record.extent * scale * 0.7,
+    });
+    into.itemCount++;
+  }
+
+  /** Online (jardim livre): o arrancável `id` rebrotou. */
+  regrow(id: number): void {
+    const record = this.scenery.pickables[id];
+    if (record?.picked) this.scenery.reattach(record);
+  }
+
+  /** Malha de verdade do arrancável, no lugar dele no mundo (a geometria assada é guardada pra reusar). */
+  private meshFor(record: PickableRecord): THREE.Mesh {
+    let geometry = this.baked.get(record.id);
+    if (!geometry) {
+      geometry = bakeObject(record.root);
+      this.baked.set(record.id, geometry);
+    }
+    const mesh = new THREE.Mesh(geometry, materialFor(record));
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    record.root.updateMatrixWorld(true);
+    record.root.matrixWorld.decompose(mesh.position, mesh.quaternion, mesh.scale);
+    mesh.updateMatrixWorld(true);
+    return mesh;
+  }
+
+  /** Arrancáveis já engolidos neste jardim (o dono da sala manda pra quem chega). */
+  pickedIds(): number[] {
+    return this.scenery.pickables.filter((r) => r.picked).map((r) => r.id);
   }
 
   /** Passo fixo: encostou e cabe = arranca; encostou e não cabe = avisa. */
@@ -175,18 +226,7 @@ export class Pickables {
 
   private absorb(record: PickableRecord, ball: DungBall, center: THREE.Vector3, random: () => number): void {
     this.scenery.detach(record);
-
-    let geometry = this.baked.get(record.id);
-    if (!geometry) {
-      geometry = bakeObject(record.root);
-      this.baked.set(record.id, geometry);
-    }
-    const mesh = new THREE.Mesh(geometry, materialFor(record));
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-    record.root.updateMatrixWorld(true);
-    record.root.matrixWorld.decompose(mesh.position, mesh.quaternion, mesh.scale);
-    mesh.updateMatrixWorld(true);
+    const mesh = this.meshFor(record);
 
     // Cabe na bola: coisa muito comprida "amassa" um pouco ao grudar (senão vira espeto).
     const scale = Math.min(1, (ball.radius * 1.4) / record.extent);
@@ -206,6 +246,7 @@ export class Pickables {
     const toObject = tmpSeg.copy(record.center).sub(center);
     if (toObject.lengthSq() < 1e-6) toObject.set(0, 1, 0);
     const contact = center.clone().addScaledVector(toObject.normalize(), ball.radius);
+    this.onAbsorb?.(record.id);
     this.onPick?.({
       kind: record.kind,
       position: contact,

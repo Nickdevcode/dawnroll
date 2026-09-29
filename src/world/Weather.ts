@@ -21,6 +21,20 @@ import { noise3 } from '../utils/noise';
  */
 
 type Phase = 'clear' | 'gathering' | 'drizzle' | 'raining' | 'easing' | 'clearing';
+const PHASES: readonly Phase[] = ['clear', 'gathering', 'drizzle', 'raining', 'easing', 'clearing'];
+
+/** Retrato do clima pro online (o dono da sala manda; os outros seguem). */
+export interface WeatherSync {
+  phase: string;
+  timer: number;
+  duration: number;
+  time: number;
+  event: RainEvent;
+  overcast: number;
+  rain: number;
+  wetness: number;
+  puddleFill: number;
+}
 
 export interface WeatherState {
   /** 0 = céu limpo, 1 = tempestade fechada. */
@@ -61,6 +75,11 @@ export class Weather implements WeatherState {
 
   /** Trovão pendente: segundos até o som chegar (luz antes, som depois). */
   onThunder: ((distance: number) => void) | null = null;
+  /**
+   * Online, sem ser o dono da sala: segue o clima que chega da rede (não muda
+   * de fase nem sorteia raio sozinho; só continua a fase atual até o próximo retrato).
+   */
+  follower = false;
 
   private phase: Phase = 'clear';
   private timer: number;
@@ -96,20 +115,20 @@ export class Weather implements WeatherState {
       case 'clear':
         // Nuvenzinhas passando: sombra leve, só de vez em quando.
         targetOvercast = 0.25 * smoothstep(0.1, 0.45, noise3(this.time * 0.03, 11.3, 2.9));
-        if (this.timer >= this.duration) {
+        if (this.timer >= this.duration && !this.follower) {
           this.event = this.rollEvent(false);
           this.enter('gathering', GATHER_SECONDS);
         }
         break;
       case 'gathering':
         targetOvercast = lerp(0.2, e.cover, smoothstep(0, 1, t));
-        if (this.timer >= this.duration) this.enter('drizzle', this.rng.range(20, 30));
+        if (this.timer >= this.duration && !this.follower) this.enter('drizzle', this.rng.range(20, 30));
         break;
       case 'drizzle':
         // Primeiro uns pingos soltos, depois engrossa até o "ombro" da chuva.
         targetOvercast = e.cover;
         targetRain = e.peak * SHOULDER * smoothstep(0, 1, t) + 0.06 * (1 - t) * smoothstep(0, 0.1, t);
-        if (this.timer >= this.duration) this.enter('raining', e.length);
+        if (this.timer >= this.duration && !this.follower) this.enter('raining', e.length);
         break;
       case 'raining': {
         // Respira: rajadas e trechos mais fracos. Entra e sai pelo ombro (sem degrau).
@@ -117,18 +136,18 @@ export class Weather implements WeatherState {
         const swell = smoothstep(0, 0.2, t) * (1 - smoothstep(0.8, 1, t));
         targetOvercast = e.cover;
         targetRain = e.peak * lerp(SHOULDER, 0.6 + 0.4 * breath, swell);
-        if (this.timer >= this.duration) this.enter('easing', this.rng.range(25, 35));
+        if (this.timer >= this.duration && !this.follower) this.enter('easing', this.rng.range(25, 35));
         break;
       }
       case 'easing':
         // Afina até sobrar só um pingo aqui e outro ali.
         targetOvercast = e.cover;
         targetRain = e.peak * SHOULDER * (1 - smoothstep(0, 0.85, t)) + 0.05 * (1 - smoothstep(0.7, 1, t));
-        if (this.timer >= this.duration) this.enter('clearing', CLEARING_SECONDS);
+        if (this.timer >= this.duration && !this.follower) this.enter('clearing', CLEARING_SECONDS);
         break;
       case 'clearing':
         targetOvercast = e.cover * (1 - smoothstep(0, 1, t));
-        if (this.timer >= this.duration) this.enter('clear', this.rng.range(150, 230));
+        if (this.timer >= this.duration && !this.follower) this.enter('clear', this.rng.range(150, 230));
         break;
     }
 
@@ -143,6 +162,49 @@ export class Weather implements WeatherState {
     else this.puddleFill = Math.max(0, this.puddleFill - 0.0042 * dt);
 
     this.updateLightning(dt);
+  }
+
+  /** Retrato do clima agora (o dono da sala manda de tempos em tempos). */
+  snapshot(): WeatherSync {
+    return {
+      phase: this.phase,
+      timer: this.timer,
+      duration: this.duration,
+      time: this.time,
+      event: { ...this.event },
+      overcast: this.overcast,
+      rain: this.rain,
+      wetness: this.wetness,
+      puddleFill: this.puddleFill,
+    };
+  }
+
+  /**
+   * Chegou o clima do dono da sala. A fase e o relógio dela pulam pro dele; os
+   * números suaves (céu, chuva, molhado, poça) andam até lá sem degrau, a não
+   * ser que estejam muito longe (acabou de entrar na sala).
+   */
+  applySync(sync: WeatherSync): void {
+    if (!PHASES.includes(sync.phase as Phase)) return;
+    this.phase = sync.phase as Phase;
+    this.timer = sync.timer;
+    this.duration = sync.duration;
+    this.time = sync.time;
+    this.event = { ...sync.event };
+    const snap = Math.abs(this.overcast - sync.overcast) > 0.3 || Math.abs(this.puddleFill - sync.puddleFill) > 0.3;
+    if (snap) {
+      this.overcast = sync.overcast;
+      this.rain = sync.rain;
+    }
+    // Molhado e poça mudam devagar: encaixar direto não aparece.
+    this.wetness = sync.wetness;
+    this.puddleFill = sync.puddleFill;
+  }
+
+  /** Raio que o dono da sala viu (o seguidor pisca e troveja junto). */
+  remoteThunder(distance: number): void {
+    this.flash = Math.max(this.flash, distance < 0.5 ? 1 : 0.25);
+    this.onThunder?.(distance);
   }
 
   /** Força a próxima fase (atalho de teste: F8 anda o clima uma fase para frente). */
@@ -192,7 +254,7 @@ export class Weather implements WeatherState {
 
   private updateLightning(dt: number): void {
     this.flash = Math.max(0, this.flash - dt * 3.2);
-    if (!this.event.stormy) return;
+    if (!this.event.stormy || this.follower) return;
     // Tempestade chegando (ou indo embora): trovoada abafada lá longe, clarão fraco.
     if (this.phase === 'gathering' || this.phase === 'drizzle' || this.phase === 'easing') {
       if (this.phase === 'gathering' && this.timer < this.duration * 0.4) return;

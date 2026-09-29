@@ -217,6 +217,11 @@ export class Scenery {
     this.garden.detach(record);
   }
 
+  /** Rebrotou (online): volta tudo. */
+  reattach(record: PickableRecord): void {
+    this.garden.reattach(record);
+  }
+
   /** Árvores gigantes, moitas e o vaso: o horizonte do jardim. */
   private addHorizon(): void {
     const rng = createRng(HORIZON_SEED);

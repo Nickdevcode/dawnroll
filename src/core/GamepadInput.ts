@@ -86,6 +86,11 @@ export class GamepadInput {
   active = false;
   /** Ações de menu deste quadro (bordas, com repetição ao segurar a direção). */
   readonly menuActions: MenuAction[] = [];
+  /**
+   * Só o direcional (sem o analógico), apertado agora: as cartas de poder do
+   * online usam ←/→ e ↓ sem brigar com o andar (o analógico) nem com o pulo (A).
+   */
+  readonly dpadPressed = { left: false, right: false, down: false };
   /** Rolagem pedida pelo analógico direito neste quadro (pixels; positivo = pra baixo). */
   menuScroll = 0;
 
@@ -105,6 +110,7 @@ export class GamepadInput {
   /** Lê o controle. `dt` em segundos. */
   poll(dt: number): void {
     this.menuActions.length = 0;
+    this.dpadPressed.left = this.dpadPressed.right = this.dpadPressed.down = false;
     this.jumpPressed = this.recallPressed = this.startPressed = this.abilityPressed = false;
     this.moveX = this.moveY = this.lookX = this.lookY = this.zoom = this.menuScroll = 0;
     this.grab = this.run = this.active = false;
@@ -129,6 +135,10 @@ export class GamepadInput {
     this.abilityPressed = edge(Button.R3) || edge(Button.Up);
     this.startPressed = edge(Button.Start) || edge(Button.Back);
     this.active = mx !== 0 || my !== 0 || lx !== 0 || ly !== 0 || pressed.some(Boolean);
+
+    this.dpadPressed.left = edge(Button.Left);
+    this.dpadPressed.right = edge(Button.Right);
+    this.dpadPressed.down = edge(Button.Down);
 
     // Menu: A escolhe, B volta, LB/RB trocam de aba; direções com repetição ao segurar.
     if (edge(Button.A)) this.menuActions.push('confirm');

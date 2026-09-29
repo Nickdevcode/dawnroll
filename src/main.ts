@@ -2,6 +2,7 @@ import './ui/styles.css';
 import './ui/menu.css';
 import './ui/online.css';
 import './ui/economy.css';
+import './ui/multiplayer.css';
 import { settings } from './core/settings';
 import { setLanguagePreference, t } from './i18n';
 import { Game } from './Game';

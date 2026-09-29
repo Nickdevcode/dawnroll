@@ -1,0 +1,420 @@
+/* ==========================================================================
+   Online: placa "Jogar online" (criar, entrar com código, a sala), o chip da
+   sala no HUD e as placas de apelido em cima dos besouros remotos. Botões e
+   campos são os da conta (`account-*`, `field__input`): mesmo vocabulário.
+   ========================================================================== */
+
+:root {
+  /* Cor de cada vaga da sala (placa do apelido). Tons bem separados entre si e
+     sempre com o apelido junto: a cor nunca é a única pista. */
+  --player-0: #ffb547;
+  --player-1: #5aa9e6;
+  --player-2: #7cc36a;
+  --player-3: #e8729a;
+  --player-4: #a98be8;
+  --player-5: #45c1b5;
+  --online-good: #3f9a3a;
+  --online-ok: #d99a1c;
+  --online-bad: #c8472e;
+}
+
+/* --- Link do menu ----------------------------------------------------------- */
+.menu__link--online .menu__link-meta {
+  font-family: var(--font-display);
+  letter-spacing: 0.12em;
+}
+
+/* --- Placa ------------------------------------------------------------------- */
+.online {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.online__blurb {
+  margin: 0;
+  color: var(--color-ink-soft);
+  line-height: 1.5;
+}
+.online__notice {
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-start;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: rgba(43, 42, 94, 0.06);
+  color: var(--dawn-indigo);
+}
+.online__notice p {
+  margin: 0;
+  line-height: 1.45;
+}
+.online__notice-icon svg {
+  width: 26px;
+  height: 26px;
+}
+.online__wide {
+  width: 100%;
+}
+.online__label {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-ink-soft);
+}
+.online__join {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.online__join-row {
+  display: flex;
+  gap: var(--space-2);
+}
+.online__code-input {
+  flex: 1;
+  font-family: var(--font-display);
+  font-size: 22px;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  text-align: center;
+}
+.online__code-input::placeholder {
+  letter-spacing: 0.06em;
+  font-size: 16px;
+}
+.online__error {
+  min-height: 1.3em;
+  margin: 0;
+  color: var(--account-danger);
+  font-weight: 700;
+  line-height: 1.4;
+}
+.online__error:empty {
+  min-height: 0;
+}
+
+/* A sala: código grande, pra ditar pro amigo do lado. */
+.online__room {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(180deg, #fff6df 0%, #ffe9bf 100%);
+  box-shadow: var(--inner-highlight), 0 4px 0 rgba(200, 145, 42, 0.35);
+  text-align: center;
+}
+.online__code {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(40px, 11vw, 56px);
+  font-weight: 900;
+  letter-spacing: 0.18em;
+  padding-left: 0.18em; /* compensa o espaço depois da última letra */
+  color: var(--dawn-indigo);
+  line-height: 1.05;
+  animation: online-code-in var(--dur-slow) var(--ease-out);
+}
+@keyframes online-code-in {
+  from {
+    transform: scale(0.85);
+    opacity: 0;
+  }
+}
+.online__code-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-2);
+}
+.online__hint {
+  margin: 0;
+  font-size: 14px;
+  color: var(--color-ink-soft);
+}
+
+.online__players-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.online__count {
+  margin-left: var(--space-1);
+  color: var(--dawn-indigo);
+}
+.online__status {
+  margin: 0;
+  font-weight: 700;
+  color: var(--online-ok);
+  animation: online-pulse 1.4s ease-in-out infinite;
+}
+@keyframes online-pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+.online__players {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.online__player {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 52px;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: #fffdf8;
+  box-shadow: 0 2px 0 rgba(43, 42, 94, 0.08);
+  animation: online-player-in var(--dur-med) var(--ease-out);
+}
+@keyframes online-player-in {
+  from {
+    transform: translateY(6px);
+    opacity: 0;
+  }
+}
+.online__player:focus-visible {
+  outline: 3px solid var(--dawn-sun-deep);
+  outline-offset: 2px;
+}
+.online__player.is-empty {
+  background: transparent;
+  border: 2px dashed rgba(43, 42, 94, 0.14);
+  box-shadow: none;
+  color: rgba(109, 86, 70, 0.6);
+  animation: none;
+}
+.online__player[data-slot='0'] { --player: var(--player-0); }
+.online__player[data-slot='1'] { --player: var(--player-1); }
+.online__player[data-slot='2'] { --player: var(--player-2); }
+.online__player[data-slot='3'] { --player: var(--player-3); }
+.online__player[data-slot='4'] { --player: var(--player-4); }
+.online__player[data-slot='5'] { --player: var(--player-5); }
+.online__avatar {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--player, #ccc) 28%, #fffdf8);
+  box-shadow: inset 0 0 0 3px var(--player, rgba(43, 42, 94, 0.1));
+}
+.online__player.is-empty .online__avatar {
+  background: rgba(43, 42, 94, 0.05);
+  box-shadow: none;
+}
+.online__avatar svg {
+  width: 30px;
+  height: 30px;
+}
+.online__nick {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 800;
+  color: var(--color-ink);
+}
+.online__player.is-empty .online__nick {
+  font-weight: 600;
+  color: inherit;
+}
+.online__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  background: rgba(43, 42, 94, 0.08);
+  color: var(--dawn-indigo);
+  font-size: 12px;
+  font-weight: 800;
+}
+.online__badge--host {
+  padding: 3px 7px;
+  background: color-mix(in srgb, var(--rank-gold) 40%, transparent);
+  color: #7a5310;
+}
+.online__badge svg {
+  width: 16px;
+  height: 16px;
+}
+.online__ping {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 800;
+}
+.online__ping svg,
+.online-chip__ping svg {
+  width: 16px;
+  height: 16px;
+}
+[data-quality='good'] {
+  color: var(--online-good);
+}
+[data-quality='ok'] {
+  color: var(--online-ok);
+}
+[data-quality='bad'] {
+  color: var(--online-bad);
+}
+.online__room-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-bottom: var(--space-2);
+}
+
+/* --- Chip da sala no HUD ---------------------------------------------------- */
+.online-chip {
+  position: absolute;
+  z-index: 3;
+  top: max(var(--space-4), env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 6px 14px 6px 8px;
+  border-radius: var(--radius-pill);
+  background: rgba(27, 26, 68, 0.62);
+  color: var(--dawn-cream);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), 0 8px 24px rgba(15, 12, 40, 0.22);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  pointer-events: none;
+  white-space: nowrap;
+}
+.online-chip[hidden] {
+  display: none;
+}
+.online-chip__icon svg {
+  width: 22px;
+  height: 22px;
+}
+.online-chip__text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.1;
+}
+.online-chip__text strong {
+  font-family: var(--font-display);
+  font-size: 14px;
+  letter-spacing: 0.06em;
+}
+.online-chip__text span {
+  font-size: 12px;
+  opacity: 0.8;
+}
+.online-chip__ping,
+.online-chip__host {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 800;
+}
+.online-chip__host {
+  color: var(--rank-gold);
+}
+.online-chip__host svg {
+  width: 18px;
+  height: 18px;
+}
+/* No escuro do chip os tons de rede precisam ser mais claros. */
+.online-chip [data-quality='good'] {
+  color: #8fe07f;
+}
+.online-chip [data-quality='ok'] {
+  color: #ffd166;
+}
+.online-chip [data-quality='bad'] {
+  color: #ff8a70;
+}
+.online-chip[data-state='reconnecting'] .online-chip__text span {
+  animation: online-pulse 1.4s ease-in-out infinite;
+  opacity: 1;
+  color: #ffd166;
+}
+/* Celular deitado: o centro do topo é apertado; o chip desce pro rodapé do meio. */
+.is-touch .online-chip {
+  top: auto;
+  bottom: max(var(--space-3), env(safe-area-inset-bottom));
+}
+
+/* --- Placas de apelido ------------------------------------------------------- */
+.nameplates {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.nameplate {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px 4px;
+  border-radius: var(--radius-pill);
+  background: rgba(27, 26, 68, 0.72);
+  color: #fff;
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  box-shadow: inset 0 -3px 0 var(--player, rgba(255, 255, 255, 0.4));
+  will-change: transform, opacity;
+}
+.nameplate[hidden] {
+  display: none;
+}
+.nameplate[data-slot='0'] { --player: var(--player-0); }
+.nameplate[data-slot='1'] { --player: var(--player-1); }
+.nameplate[data-slot='2'] { --player: var(--player-2); }
+.nameplate[data-slot='3'] { --player: var(--player-3); }
+.nameplate[data-slot='4'] { --player: var(--player-4); }
+.nameplate[data-slot='5'] { --player: var(--player-5); }
+.nameplate__crown svg {
+  width: 14px;
+  height: 14px;
+  color: var(--rank-gold);
+}
+.nameplate__nick {
+  max-width: 14ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* --- Cartas de poder por cima do jogo (online) -------------------------------- */
+.perk-picker.is-ambient {
+  /* O jogo segue: as cartas não escurecem a tela nem pegam o clique no mundo. */
+  background: none;
+  pointer-events: none;
+}
+.perk-picker.is-ambient .perk-card {
+  pointer-events: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .online__code,
+  .online__player,
+  .online__status,
+  .online-chip[data-state='reconnecting'] .online-chip__text span {
+    animation: none;
+  }
+}

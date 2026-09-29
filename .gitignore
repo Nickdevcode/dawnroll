@@ -11,3 +11,5 @@ docs/
 .impeccable/
 .vercel/
 shots/
+# Arquivos locais do CLI do Supabase (projeto ligado, versão): nada disso vai pro repo.
+supabase/.temp/

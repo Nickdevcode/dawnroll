@@ -32,6 +32,20 @@ export function getClient(): Promise<SupabaseClient> {
   return pending;
 }
 
+/**
+ * Chama uma função do banco de um jeito que sobrevive ao fechamento da aba
+ * (`keepalive`): sair da sala ao fechar o jogo. Não espera resposta.
+ */
+export function rpcOnUnload(fn: string, accessToken: string, body: Record<string, unknown> = {}): void {
+  if (!onlineConfigured) return;
+  void fetch(`${url}/rest/v1/rpc/${fn}`, {
+    method: 'POST',
+    keepalive: true,
+    headers: { apikey: key, Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  }).catch(() => undefined);
+}
+
 /** Quais jeitos de entrar estão ligados no projeto (o botão do Google só aparece se estiver). */
 export interface AuthProviders {
   email: boolean;

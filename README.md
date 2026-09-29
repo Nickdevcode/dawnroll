@@ -29,6 +29,7 @@ Um besouro rola-bosta de massinha num jardim em miniatura. Você rola uma bola d
 | 🛒 **Feirinha e moedas** | Duas moedas (🪙 moedas e 💧 **gotas de orvalho**, as raras), ganhas nas conquistas, nos baús e no passe. A loja vende cascos, acessórios e baús; quem já jogava ganhou tudo retroativo (ver abaixo) |
 | 🎁 **Baús 3D** | Cada nível novo dá um baú (madeira, prata, cristal ou **do Sol**), que **cai no jardim** e abre numa cerimônia no estilo Clash Royale: os prêmios saem **um por vez** (moedas, orvalho e, às vezes, um visual com suspense de raridade) e no fim vem o resumo |
 | 🌸 **Passe Florada** | Temporada até 27/10 com 20 níveis, 12 desafios e 8 visuais exclusivos (o último é o casco **Girassol**) |
+| 🌐 **Online** | Até **6 besouros no mesmo jardim**: crie uma sala e passe o código (ou o link) pros amigos. Cada um rola a sua bola, e o que um engole some pra todo mundo (ver abaixo) |
 | 🏆 **Conta e ranking** | Entre com e-mail e senha (ou Google) pra **salvar o besouro na nuvem** e continuar de qualquer aparelho, e dispute o **ranking global** em 4 abas: enterradas, da semana, montanha e coleção (ver abaixo) |
 | 💩 **Montinho fresquinho** | Mais ou menos 1 em cada 10 montinhos nasce fresquinho: mais claro e dourado, com três moscas e um brilho de vez em quando. Vale o dobro de bola e conta como raro |
 | 🌧️ **Clima** | Nada muda de supetão: nuvenzinhas passando no sol → o céu fecha devagar → **garoa que vai engrossando** → chuva que "respira" (trechos fracos e rajadas) → amaina aos poucos → abre. Cada chuva é sorteada: **pancada** curta e fraca ou **tempestade** longa com raio, trovoada ao longe antes de chegar e depois de ir embora. O céu fecha, a luz fica difusa, tudo fica molhado e brilhante |
@@ -207,6 +208,22 @@ Conta é **opcional**: sem ela o jogo continua igualzinho, salvando no aparelho.
 
 > "Maior bola" ficou de fora de propósito: o teto é 30 cm, então virava um empate geral.
 
+### 🌐 Online: o mesmo jardim com os amigos
+
+**Jogar online** fica logo abaixo de "Jogar", no menu. O online precisa de conta (é assim que a sala sabe quem é quem, e o progresso continua contando igual ao solo).
+
+| | |
+|---|---|
+| 🚪 **Criar sala** | O jardim em que você está vira o da sala e aparece um **código de 5 letras** (sem as que confundem, tipo 0/O e 1/I/L), grande, pra ditar pro amigo do lado. Tem **Copiar código** e **Mandar convite** (no celular abre o WhatsApp e cia.) |
+| 🔑 **Entrar com código** | Digita o código (ou cola o link inteiro) e pronto. O link `dawnroll.vercel.app/?sala=CÓDIGO` já abre o jogo entrando na sala |
+| 🪲 **Na sala** | Até **6 besouros**, cada um com o seu casco e acessórios, e o **apelido em cima** (na cor da vaga, e com coroa no dono da sala). Um chip no alto mostra a sala, quantos estão nela e o ping |
+| 🌿 **Jardim livre** | Cada um rola a sua bola e enterra na toca quando quiser (conta XP, passe, conquistas e ranking igualzinho ao solo). O jardim **não recomeça** a cada enterro: quem enterrou ganha uma bola nova e o que foi arrancado **rebrota** sozinho depois de uns minutos |
+| 🌍 **Um mundo só** | O que a bola de um engole (flor, pedra, montinho, tralha, bola de tênis) some pra todo mundo e aparece grudado na bola dele. A chuva é a mesma pra sala inteira (o poder Cheiro de chuva chama chuva pra todo mundo!) |
+| ⏸️ **Sem pausa** | A sala não para por ninguém: o menu abre por cima do jogo rodando, e as cartas de poder aparecem sem congelar (teclas 1/2/3, toque, ou ←/→ e ↓ no direcional; se ninguém escolher, pega sozinho em 12 s). Baús abrem fora da sala |
+| 🔌 **Caiu?** | Se o dono da sala sai (ou cai), **outro assume** e todo mundo reconecta nele em poucos segundos, sem travar o jogo de ninguém. Se a sua internet piscar, você volta pro seu lugar |
+
+> 🚧 Vem aí (em fases): roubar e fundir bolas, empurrar junto com o parceiro, a **Disputa** em times (com pódio), procurar partida, amigos com convite e turmas. O plano está nas notas do projeto.
+
 ---
 
 ## 🚀 Rodando no seu PC
@@ -261,6 +278,9 @@ Projeto **Dawnroll** no Supabase (`msmauxysewzacyotifcr`, Canadá). O schema int
 | `profiles` | Apelido, se foi escolhido, casco (pro ranking) e `hidden` (moderação) | Todo mundo lê (menos os escondidos); **ninguém escreve direto** — o apelido só troca pelo `set_nickname` (com o filtro) |
 | `saves` | O save inteiro do jogo (JSON) + revisão | Só o dono |
 | `player_stats` | Os números do ranking (enterradas, semana, cm, figurinhas) | Todo mundo lê; **ninguém escreve direto** — só as funções abaixo |
+| `rooms` | Salas online: código, dono, modo, versão do protocolo e o "batimento" do dono | Só quem está na sala lê; escrever só pelas funções |
+| `room_members` | Quem está em cada sala (um jogador por sala) e quando bateu o ponto | Só quem está na sala lê |
+| `net_reports` | Como cada conexão online fechou (direta, via TURN ou falhou): o número que diz se vale ter servidor próprio | Ninguém lê pela API; grava pela função |
 
 | Função (RPC) | Pra quê |
 |---|---|
@@ -270,6 +290,11 @@ Projeto **Dawnroll** no Supabase (`msmauxysewzacyotifcr`, Canadá). O schema int
 | `import_progress` | Enterros de convidado entram no ranking, **uma vez por conta** |
 | `leaderboard` | Topo de cada aba + a sua linha |
 | `delete_account` | Apaga a conta (e tudo dela, em cascata) |
+| `create_room` / `join_room` / `leave_room` | Online: cria a sala (código criptográfico, até 12 por hora), entra pelo código (até 40 tentativas a cada 10 min: chutar código não compensa) e sai |
+| `room_heartbeat` / `claim_host` | O ponto de cada um (o dono renova a sala) e assumir a sala quando o dono some (6 s sem ponto) |
+| `report_connection` | Telemetria de conexão (até 60 por hora) |
+
+**🌐 O online por dentro:** o jogo em si **não passa pelo servidor**. Os besouros de uma sala conversam direto pelo navegador (WebRTC), com o dono da sala no centro repassando pros outros. O Supabase só faz o "aperto de mão" (canal **privado** do Realtime `room:<id>`, que só membro da sala abre: RLS em `realtime.messages`; o acesso público ao Realtime está desligado) e guarda quem está em qual sala. Pra quem está numa rede que não deixa conectar direto (4G, CGNAT), a função **`turn-credentials`** (Edge Function) entrega uma credencial temporária do TURN do Cloudflare (1 TB/mês grátis), só pra quem está logado; sem a chave configurada, ela devolve só STUN. Uma faxina (`pg_cron`, de 5 em 5 min) apaga sala morta, vaga esquecida e registro velho.
 
 **🛡️ Segurança e anti-trapaça.** O jogo roda no navegador, então não dá pra barrar 100% de trapaça; o servidor corta o grosso:
 
@@ -419,8 +444,16 @@ src/
 │   ├── UiSounds.ts         # sons do menu por delegação de eventos
 │   ├── dsp.ts / loops.ts   # ruídos, reverb, onda do pad; peças dos sons contínuos
 │   └── voices/             # receitas de som (foley, natureza, instrumentos, interface, baú e moedas)
+├── net/                    # online: salas de até 6, P2P (WebRTC) com o dono da sala no centro
+│   ├── protocol.ts         # o que viaja: retrato binário de 58 bytes (20/s) e eventos validados
+│   ├── NetSession.ts       # a sala viva: dono, vagas, repasse, relógio, ponto, troca de dono, reconexão
+│   ├── OnlinePlay.ts       # o online dentro do jogo: besouros/bolas remotos, mundo compartilhado, clima, rebrota
+│   ├── snapshotBuffer.ts   # desenha os outros um pouquinho no passado, interpolado (liso com rede ruim)
+│   ├── clock.ts            # relógio da sala (ping/pong tipo NTP)
+│   └── transport/          # WebRTC (PeerLink, StarNet), sinalização pelo Realtime, STUN/TURN, rede de mentirinha
 ├── online/                 # conta, save na nuvem e ranking (Supabase)
 │   ├── Online.ts           # fachada: sessão, perfil/apelido, entrar/sair/excluir, ranking (com cache curtinho)
+│   ├── Rooms.ts            # salas no banco: criar, entrar pelo código, sair, ponto, assumir
 │   ├── CloudSave.ts        # sobe o save com trava de revisão; junta com a nuvem ao entrar e em conflito
 │   ├── BurialQueue.ts      # fila de enterros a caminho do ranking (sobrevive a fechar o jogo e ficar offline)
 │   ├── saveMerge.ts        # junta dois saves sem perder progresso (maior contador, união das listas)
@@ -432,7 +465,9 @@ src/
 └── ui/
     ├── Hud.ts              # HUD em jogo, dicas, marcador da toca, resultado, toque
     ├── RoundPanel.ts       # nível, pedidos (recolhíveis) e poderes da rodada no HUD
-    ├── PerkPicker.ts       # as cartas de "escolha um poder"
+    ├── PerkPicker.ts       # as cartas de "escolha um poder" (no online: por cima do jogo, sem congelar)
+    ├── OnlineSheet.ts      # placa "Jogar online": criar sala, entrar com código, a sala (código, quem está)
+    ├── OnlineHud.ts        # chip da sala no HUD e as placas de apelido em cima dos besouros
     ├── BurrowSheet.ts      # placa da toca: despensa, catálogo (com curiosidades), poderes e conquistas
     ├── WardrobeSheet.ts    # placa do guarda-roupa: abas por lugar, vestir, provar, comprar, selo "Novo"
     ├── ShopSheet.ts        # Feirinha: baús (abrir e comprar), cascos e acessórios à venda, provar e comprar
@@ -560,6 +595,11 @@ Ferramentas de medição (descartáveis, em `shots/lead/`, fora do git): `bench.
 - **Baú no próprio jardim:** a cerimônia acontece na cena do jogo (pega a luz, o contorno, o bloom e o desfoque), com a câmera do provador rodeando o baú em vez do besouro (e o besouro como obstáculo da lente). O baú cai entre o besouro e a câmera, num lugar livre de pedra e da bola. Os brilhos são aditivos e ficam **atrás** do prêmio (vistos da câmera): na frente, lavavam o visual que sai.
 - **Provador grudando no besouro (corrigido):** a lente evita a bola com uma folga generosa; com o besouro colado nela, o próprio alvo ficava dentro da folga e toda direção dava "sem espaço", então a câmera grudava no casco. Agora, com o alvo dentro da folga, só a bola de verdade bloqueia.
 - **Tampa oca some de costas:** a tampa do baú é meio cilindro oco; aberta, ela mostra o lado de dentro, que o *backface culling* não desenha. Ganhou um fundo sólido.
+- **Online de graça, e sem atraso no controle:** cada jogador simula o próprio besouro e a própria bola exatamente como no solo (física local, zero atraso), e manda um retrato de 58 bytes 20 vezes por segundo. Os outros aparecem como corpos cinemáticos "fantasmas" (o seu besouro esbarra neles, a sua bola quica neles), desenhados ~100 ms no passado e interpolados. O dono da sala é o árbitro do mundo compartilhado (onde montinho e tralha renascem, o que rebrota, o clima). Custo de servidor: zero (P2P + STUN; TURN grátis até 1 TB/mês). Plano B, se um dia precisar: um Durable Object do Cloudflare no lugar do dono, atrás da mesma interface de transporte.
+- **Montinho e tralha com semente por vaga:** pra todo mundo ver o mesmo chão, cada montinho e cada detrito sai da própria semente (a do jardim, e depois a que o dono da sala sorteou ao renascer). A sala só troca "vaga 12, semente X"; cada aparelho monta igual. No online, renascer não desvia do besouro (senão cada tela desviaria de um besouro diferente).
+- **A folga da interpolação anda devagar:** medir o tremor da rede e ajustar a folga na hora fazia o instante desenhado voltar no tempo (a bola dos outros engasgava com rede ruim). Suavizada, com rede simulada de 150 ms, ±40 ms e 5% de perda: zero saltos e zero engasgos.
+- **Troca de dono rápida:** quem assume anuncia no canal da sala e os outros vão direto nele; ninguém fica batendo no dono que sumiu. Dono que fecha a aba avisa ("bye") e sai do banco na hora; se ele cai de verdade, ~6 s. O prazo de silêncio (8 s) cobre a travada de compilar shader num aparelho fraco (senão o dono "caía" ao apertar Jogar).
+- **Cada bola com o seu material:** o brilho de sol (30 cm) mexia no material compartilhado; com várias bolas, uma no teto acenderia todas.
 - **Online sem atrasar o jogo:** o `supabase-js` é importado sob demanda depois do jardim abrir (pedaço separado do bundle). O navegador continua sendo a cópia de trabalho do save; a nuvem recebe o JSON inteiro alguns segundos depois (espera 3 s, no máximo 15 s mudando sem parar) e ao trocar de aba/fechar.
 - **Sobe quando o jogo grava, não quando o save muda:** o jogo mexe nos contadores de movimento a cada passo sem gravar; comparar o save vivo antes/depois do upload fazia a nuvem receber o save a cada 3 s com a bola rolando. Agora um contador de gravações decide se ficou coisa por subir.
 - **Sair não apaga o que não subiu:** o "Sair" espera o login em andamento, sobe o que falta e só zera o aparelho depois de a nuvem confirmar e o logout dar certo.

@@ -108,25 +108,37 @@ export class DungBall {
   /** Um item se soltou (a bola encolheu na água): posição de mundo, para o respingo. */
   onShed: ((position: THREE.Vector3) => void) | null = null;
 
-  constructor(physics: Physics, spawn: THREE.Vector3) {
-    const desc = RAPIER.RigidBodyDesc.dynamic()
-      .setTranslation(spawn.x, spawn.y, spawn.z)
-      .setLinearDamping(0.12)
-      .setAngularDamping(0.35)
-      .setCcdEnabled(true);
+  /**
+   * Bola de outro jogador (online): corpo cinemático que segue a pose da rede
+   * (`drive`), sólida pra sua bola e seu besouro esbarrarem nela. O visual é o
+   * mesmo, com menos tralha grudada (desenhar 6 bolas cheias pesa).
+   */
+  readonly proxy: boolean;
+  private readonly maxStuck: number;
+  /** Velocidade que veio na rede (o corpo cinemático não tem a dele). */
+  private readonly proxyVelocity = new THREE.Vector3();
+
+  constructor(physics: Physics, spawn: THREE.Vector3, options: { proxy?: boolean } = {}) {
+    this.proxy = options.proxy === true;
+    this.maxStuck = this.proxy ? Math.max(8, Math.round(quality.stuckItems / 3)) : quality.stuckItems;
+    const desc = this.proxy
+      ? RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(spawn.x, spawn.y, spawn.z)
+      : RAPIER.RigidBodyDesc.dynamic().setTranslation(spawn.x, spawn.y, spawn.z).setLinearDamping(0.12).setAngularDamping(0.35).setCcdEnabled(true);
     this.body = physics.world.createRigidBody(desc);
     this.collider = physics.world.createCollider(
       RAPIER.ColliderDesc.ball(START_RADIUS)
         .setDensity(DENSITY)
         .setFriction(1.4)
         .setRestitution(0.08)
-        .setCollisionGroups(interactionGroups(Groups.BALL, 0xffff)),
+        // A bola dos outros é "mundo" pra você: sua bola quica nela, seu besouro esbarra e a câmera desvia.
+        .setCollisionGroups(interactionGroups(this.proxy ? Groups.WORLD : Groups.BALL, 0xffff)),
       this.body,
     );
 
     this.core = new THREE.Mesh(
       buildDungGeometry(),
-      clay(0xffffff, { vertexColors: true, roughness: 0.82, sheen: 0.35, bump: 0.6, repeat: 2, wet: 0.55, mottle: 0.06, mottleScale: 3.5 }),
+      // Material próprio de cada bola: o brilho de sol (30 cm) mexe nele, e no online são várias bolas.
+      clay(0xffffff, { vertexColors: true, roughness: 0.82, sheen: 0.35, bump: 0.6, repeat: 2, wet: 0.55, mottle: 0.06, mottleScale: 3.5, unique: true }),
     );
     this.core.castShadow = true;
     this.core.receiveShadow = true;
@@ -166,8 +178,25 @@ export class DungBall {
   }
 
   velocity(target = new THREE.Vector3()): THREE.Vector3 {
+    if (this.proxy) return target.copy(this.proxyVelocity);
     const v = this.body.linvel();
     return target.set(v.x, v.y, v.z);
+  }
+
+  /**
+   * Bola de outro jogador: pose, velocidade e tamanho vindos da rede. Chamar
+   * antes do passo de física (o corpo cinemático chega lá no passo). O
+   * tamanho cresce suave, como na bola local.
+   */
+  drive(position: THREE.Vector3, rotation: THREE.Quaternion, velocity: THREE.Vector3, radius: number, burying: boolean): void {
+    if (burying !== this.burying) {
+      this.burying = burying;
+      this.collider.setEnabled(!burying);
+    }
+    this.body.setNextKinematicTranslation(position);
+    this.body.setNextKinematicRotation(rotation);
+    this.proxyVelocity.copy(velocity);
+    this.targetVolume = volumeOf(clamp(radius, START_RADIUS, MAX_RADIUS));
   }
 
   /** Rotação atual do corpo (a toca continua girando a bola de onde ela estava). */
@@ -254,7 +283,7 @@ export class DungBall {
       this.updateStuckForRadius();
     }
 
-    if (!this.burying) {
+    if (!this.burying && !this.proxy) {
       // Resistência ao rolamento: o Rapier não tem, então a bola rolaria para sempre.
       // Devagar ela "gruda" no chão (bosta não é bola de gude); rápido, quase não freia.
       // Água e lama somam um freio extra.
@@ -414,10 +443,16 @@ export class DungBall {
 
   /** Teto de segurança para não acumular draw calls (some o mais antigo). */
   private trimStuck(): void {
-    while (this.stuck.length > quality.stuckItems) {
+    while (this.stuck.length > this.maxStuck) {
       this.stuck.shift()!.object.removeFromParent();
     }
   }
+}
+
+/** Tira uma bola de outro jogador do mundo (ele saiu da sala). */
+export function disposeBall(ball: DungBall, physics: Physics): void {
+  physics.world.removeRigidBody(ball.body);
+  ball.root.removeFromParent();
 }
 
 function volumeOf(r: number): number {

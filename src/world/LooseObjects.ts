@@ -53,6 +53,8 @@ export class LooseObjects {
   pluckReach = 1;
   /** Raio de bola que falta para engolir o que ela está encostando agora (0 = nada). */
   blockedBySize = 0;
+  /** Online: a sua bola engoliu a bola de tênis `id` (o jogo avisa a sala). */
+  onSwallow: ((id: number) => void) | null = null;
 
   private readonly items: LooseItem[] = [];
   private readonly geometry = tennisBallGeometry();
@@ -208,26 +210,29 @@ export class LooseObjects {
   }
 
   /**
+   * Online: outro jogador engoliu a bola de tênis `id`. Some daqui e, se a
+   * bola dele está na cena, gruda nela (sem engordar a sua).
+   */
+  swallowRemote(id: number, into: DungBall | null): void {
+    const item = this.items[id];
+    if (!item || item.swallowed || item.parked) return;
+    this.takeFromWorld(item, into);
+  }
+
+  /** Ids das bolas de tênis já engolidas (o dono da sala manda pra quem chega). */
+  swallowedIds(): number[] {
+    return this.items.flatMap((item, i) => (item.swallowed ? [i] : []));
+  }
+
+  /**
    * A bola engoliu: o corpo sai da física, a bola do mundo some e uma cópia
    * (mesma malha e material) gruda na bola — a original fica guardada para a
    * rodada nova (a bola de bosta apaga o que grudou quando reinicia).
    */
   private swallow(item: LooseItem, ball: DungBall, center: THREE.Vector3): void {
-    item.swallowed = true;
-    item.body.setEnabled(false);
-    item.mesh.visible = false;
-
-    const stuck = new THREE.Mesh(this.geometry, this.material);
-    stuck.castShadow = true;
-    stuck.receiveShadow = true;
-    stuck.position.copy(item.currPos);
-    stuck.quaternion.copy(item.currRot);
-    stuck.updateMatrixWorld(true);
-    const extent = TENNIS_BALL_RADIUS * 2;
-    const scale = Math.min(1, (ball.radius * 1.4) / extent);
-    ball.stick(stuck, { depth: TENNIS_BALL_RADIUS * 0.45 * scale, scale, burySize: extent * scale * 0.7 });
+    this.takeFromWorld(item, ball);
     ball.addVolume(STATS.volume);
-    ball.itemCount++;
+    this.onSwallow?.(this.items.indexOf(item));
 
     const toItem = tmpDir.copy(item.currPos).sub(center);
     if (toItem.lengthSq() < 1e-6) toItem.set(0, 1, 0);
@@ -239,5 +244,23 @@ export class LooseObjects {
       size: STATS.size,
       variant: 'tennisBall',
     });
+  }
+
+  /** Tira a bola de tênis do mundo e gruda uma cópia dela na bola de bosta (se houver). */
+  private takeFromWorld(item: LooseItem, ball: DungBall | null): void {
+    item.swallowed = true;
+    item.body.setEnabled(false);
+    item.mesh.visible = false;
+    if (!ball) return;
+    const stuck = new THREE.Mesh(this.geometry, this.material);
+    stuck.castShadow = true;
+    stuck.receiveShadow = true;
+    stuck.position.copy(item.currPos);
+    stuck.quaternion.copy(item.currRot);
+    stuck.updateMatrixWorld(true);
+    const extent = TENNIS_BALL_RADIUS * 2;
+    const scale = Math.min(1, (ball.radius * 1.4) / extent);
+    ball.stick(stuck, { depth: TENNIS_BALL_RADIUS * 0.45 * scale, scale, burySize: extent * scale * 0.7 });
+    ball.itemCount++;
   }
 }

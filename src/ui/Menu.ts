@@ -29,6 +29,8 @@ import { PassIcon, ShopIcon } from './economyIcons';
 import { amountChip } from './purchase';
 import { shownSeason } from '../progression/seasons';
 import { RankingSheet } from './RankingSheet';
+import { OnlineSheet } from './OnlineSheet';
+import type { OnlinePlay } from '../net/OnlinePlay';
 import { AccountSheet } from './AccountSheet';
 import { NicknameDialog } from './NicknameDialog';
 import { HangerIcon, skinIcon } from './lookIcons';
@@ -45,8 +47,8 @@ import { nearestInDirection } from './spatialNav';
  * Ranking, Conta (a do chip no canto de cima), Configurações (com abas) e Como jogar.
  */
 
-export type SheetName = 'burrow' | 'wardrobe' | 'shop' | 'pass' | 'ranking' | 'account' | 'settings' | 'help';
-const SHEETS: readonly SheetName[] = ['burrow', 'wardrobe', 'shop', 'pass', 'ranking', 'account', 'settings', 'help'];
+export type SheetName = 'online' | 'burrow' | 'wardrobe' | 'shop' | 'pass' | 'ranking' | 'account' | 'settings' | 'help';
+const SHEETS: readonly SheetName[] = ['online', 'burrow', 'wardrobe', 'shop', 'pass', 'ranking', 'account', 'settings', 'help'];
 /** Placas com o besouro no provador (a câmera vem pra frente dele e o menu principal sai de cena). */
 export const SHOWCASE_SHEETS: ReadonlySet<SheetName> = new Set(['wardrobe', 'shop', 'pass']);
 type TabName = 'graphics' | 'audio' | 'controls' | 'language';
@@ -115,6 +117,10 @@ export class Menu {
   private readonly welcome: WelcomeDialog;
   private readonly ranking: RankingSheet;
   private readonly account: AccountSheet;
+  /** Placa "Jogar online" (salas). */
+  private readonly onlineSheet: OnlineSheet;
+  private readonly onlineMeta: HTMLElement;
+  private net: OnlinePlay | null = null;
   private readonly nicknameDialog: NicknameDialog;
   /** Chip da conta no canto de cima (besouro + apelido, ou "Entrar"). */
   private readonly accountChip: HTMLButtonElement;
@@ -157,6 +163,9 @@ export class Menu {
         <div class="menu__actions">
           <button class="menu__play" type="button" data-play disabled>
             <span class="menu__play-icon">${Icons.play}</span><span data-play-label></span>
+          </button>
+          <button class="menu__link menu__link--online" type="button" data-open="online" aria-expanded="false" aria-controls="sheet-online" hidden>
+            <span class="menu__link-icon">${Icons.group}</span><span data-t="menu.online"></span><span class="menu__link-meta" data-online-meta></span>
           </button>
           <button class="menu__link" type="button" data-open="burrow" aria-expanded="false" aria-controls="sheet-burrow">
             <span class="menu__link-icon">${GameIcons.burrow}<span class="menu__link-badge" data-burrow-badge hidden></span></span>
@@ -201,7 +210,8 @@ export class Menu {
     this.pass = new PassSheet(progression);
     this.ranking = new RankingSheet(online);
     this.account = new AccountSheet(online, progression);
-    this.element.append(this.burrow.element, this.wardrobe.element, this.shop.element, this.pass.element, this.ranking.element, this.account.element);
+    this.onlineSheet = new OnlineSheet(online);
+    this.element.append(this.onlineSheet.element, this.burrow.element, this.wardrobe.element, this.shop.element, this.pass.element, this.ranking.element, this.account.element);
     parent.append(this.element);
     this.nicknameDialog = new NicknameDialog(parent, online, progression, () => this.isVisible && this.revealed);
     // Boas-vindas das moedas: não briga com a janelinha do apelido (espera ela fechar).
@@ -217,6 +227,8 @@ export class Menu {
       if (target === 'chests') this.shop.prepare('chests');
     };
     this.ranking.onOpenAccount = () => this.open('account');
+    this.onlineSheet.onOpenAccount = () => this.open('account');
+    this.onlineSheet.onPlay = () => this.onPlay?.();
     this.account.onOpenRanking = () => this.open('ranking');
 
     const $ = <T extends HTMLElement>(sel: string) => this.element.querySelector(sel) as T;
@@ -230,8 +242,10 @@ export class Menu {
     this.shopMeta = $('[data-shop-meta]');
     this.passBadge = $('[data-pass-badge]');
     this.passMeta = $('[data-pass-meta]');
+    this.onlineMeta = $('[data-online-meta]');
     this.accountChip = $('[data-open="account"]');
     this.sheets = {
+      online: this.onlineSheet.element,
       burrow: this.burrow.element,
       wardrobe: this.wardrobe.element,
       shop: this.shop.element,
@@ -242,6 +256,7 @@ export class Menu {
       help: $('#sheet-help'),
     };
     this.openers = {
+      online: $('[data-open="online"]'),
       burrow: $('[data-open="burrow"]'),
       wardrobe: $('[data-open="wardrobe"]'),
       shop: $('[data-open="shop"]'),
@@ -458,6 +473,35 @@ export class Menu {
   private pageSheet(direction: 1 | -1): void {
     const body = this.openSheet ? this.sheets[this.openSheet].querySelector<HTMLElement>('.sheet__body') : null;
     body?.scrollBy({ top: direction * body.clientHeight * 0.6, behavior: 'smooth' });
+  }
+
+  /** O online ficou pronto (o jardim já existe): a placa passa a acompanhar a sala. */
+  attachOnlinePlay(net: OnlinePlay): void {
+    this.net = net;
+    this.onlineSheet.attach(net);
+    net.subscribe(() => this.updateOnlineMode());
+    this.updateOnlineMode();
+  }
+
+  /** Link `?sala=CÓDIGO`: abre a placa do online e entra na sala (assim que der). */
+  openOnline(code: string): void {
+    this.open('online');
+    void this.onlineSheet.joinFromLink(code);
+  }
+
+  /**
+   * Dentro de uma sala o jogo não para: o que vira a câmera pro provador ou abre
+   * baú (guarda-roupa, Feirinha, passe) espera a pessoa sair da sala. O link do
+   * online mostra o código da sala.
+   */
+  private updateOnlineMode(): void {
+    const inRoom = this.net?.active ?? false;
+    this.element.classList.toggle('is-online', inRoom);
+    for (const name of ['wardrobe', 'shop', 'pass'] as const) {
+      this.openers[name].hidden = inRoom;
+      if (inRoom && this.openSheet === name) this.closeSheet(false);
+    }
+    this.onlineMeta.textContent = inRoom && this.net?.code ? this.net.code : '';
   }
 
   setProgress(save: SaveData): void {
@@ -697,6 +741,7 @@ export class Menu {
       this.progression.markBurrowSeen();
     }
     if (name === 'ranking') this.ranking.prepare();
+    if (name === 'online') this.onlineSheet.prepare();
     if (name === 'account') this.account.prepare();
     // Provador (guarda-roupa, Feirinha, passe): o menu principal sai de cena e o besouro vira o centro.
     this.element.classList.toggle('has-showcase', SHOWCASE_SHEETS.has(name));
@@ -802,6 +847,7 @@ export class Menu {
     const chip = this.accountChip;
     chip.hidden = status === 'disabled';
     this.openers.ranking.hidden = status === 'disabled';
+    this.openers.online.hidden = status === 'disabled';
     if (status === 'disabled') return;
     chip.dataset.state = status;
     if (status === 'signedIn') {
