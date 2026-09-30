@@ -638,6 +638,7 @@ export class Menu {
           ${row(keyT('key.wheel'), 'controls.zoom')}
           ${row(keys('G'), 'controls.emote')}
           ${row(keys('F'), 'controls.merge')}
+          ${row(keys('C'), 'controls.pull')}
           ${row(keys('J'), 'controls.invite')}
           ${row(keys('Esc', 'P'), 'controls.pause')}
         </dl>`;
@@ -687,6 +688,7 @@ export class Menu {
                 ${row(pad('lb', 'rb'), 'controls.zoom')}
                 ${row(pad('down'), 'controls.emote')}
                 ${row(pad('left'), 'controls.merge')}
+                ${row(pad('up'), 'controls.pull')}
                 ${row(pad('right'), 'controls.invite')}
                 ${row(pad('start'), 'controls.pause')}
               </dl>

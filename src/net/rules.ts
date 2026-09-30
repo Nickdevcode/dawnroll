@@ -12,6 +12,10 @@ import type { NetRules } from './protocol';
  *  - Engolir: a sua bola rola por cima de uma bola rival de até 70% do tamanho.
  *  - Fundir (doar): encosta a sua bola na de outro e segura o botão → a sua
  *    entra na dele. No enterro, a comida é dividida pela parte de cada um.
+ *  - Puxar (o contrário de doar): encosta a sua bola na de um rival e segura
+ *    o outro botão → a dele entra na sua, inteira. Leva mais tempo que doar e
+ *    o rival vê o aviso (dá pra fugir). Bola que o dono empurra só se for do
+ *    seu tamanho pra baixo; bola solta, de qualquer tamanho.
  *  - Empurrar junto: agarrar a bola que outro está empurrando soma a força.
  *  - Proteções: broto novo fica 5 s imune; bola afundando na toca não se
  *    rouba; quem perde a bola ganha um broto em 3 s.
@@ -45,6 +49,13 @@ export const GIFT_RESPROUT_SECONDS = 0.8;
 export const MERGE_HOLD_SECONDS = 0.7;
 /** Fundir: a sua bola precisa estar encostando (folga entre as superfícies). */
 export const MERGE_REACH = 0.9;
+/**
+ * Puxar: segurar o botão por isso encostado na bola do rival. Bem mais que
+ * doar: o rival vê o aviso e tem tempo de fugir (é roubo, não pode ser de graça).
+ */
+export const PULL_HOLD_SECONDS = 1.5;
+/** Puxar: já puxando, a bola do rival pode se afastar um pouco disso (a mais que o encostar) sem a puxada cair. */
+export const PULL_KEEP_SLACK = 0.5;
 /** Bola sua largada no jardim (depois de pegar outra) esfarela se ninguém mexer nela por isso. */
 export const ABANDON_SECONDS = 60;
 /** Bolas de um jogador ao mesmo tempo (a que ele faz + as largadas): passou, a largada mais velha esfarela. */
@@ -141,6 +152,32 @@ export function judgeMerge(
   if (!canHelp(relation(asker, target.owner, teams), rules)) return 'rules';
   if (ball.burying || target.burying) return 'burying';
   if (centerDistance > ball.radius + target.radius + MERGE_REACH + HOST_REACH_SLACK) return 'far';
+  return 'ok';
+}
+
+/**
+ * Dá pra puxar a bola `target` (de um rival) pra dentro da sua bola `ball`?
+ * Tudo menos a distância (quem está puxando confere o encostar; o dono da
+ * sala, com folga, em `judgePull`). `loose` = o dono dela não empurra (ou
+ * levou trombada): aí vale qualquer tamanho; empurrada, só até o seu.
+ */
+export function pullBlock(ball: BallFacts | undefined, target: BallFacts | undefined, asker: string, now: number, rules: NetRules, teams?: ReadonlyMap<string, number>, tolerance = 0): Verdict {
+  if (!ball || !target) return 'gone';
+  if (ball.owner !== asker || target.owner === asker) return 'mine';
+  if (ball.burying || target.burying) return 'burying';
+  if (target.immune || target.gift) return 'immune';
+  // Parceiro não se rouba (com ele é fundir, e a menor entra na maior).
+  if (relation(asker, target.owner, teams) !== 'rival' || !rules.steal) return 'rules';
+  // Um tiquinho de folga no tamanho (o raio que chega pela rede está atrasado).
+  if (!isLoose(target, now, tolerance) && target.radius > ball.radius * 1.02) return 'size';
+  return 'ok';
+}
+
+/** Dono da sala: puxar a bola `target` pra dentro da bola `ball` (de quem pede). */
+export function judgePull(ball: BallFacts | undefined, target: BallFacts | undefined, asker: string, now: number, rules: NetRules, centerDistance: number, teams?: ReadonlyMap<string, number>): Verdict {
+  const block = pullBlock(ball, target, asker, now, rules, teams, LOOSE_TOLERANCE);
+  if (block !== 'ok') return block;
+  if (centerDistance > ball!.radius + target!.radius + MERGE_REACH + PULL_KEEP_SLACK + HOST_REACH_SLACK) return 'far';
   return 'ok';
 }
 

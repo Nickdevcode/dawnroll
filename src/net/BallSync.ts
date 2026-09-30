@@ -15,6 +15,8 @@ import {
   MAX_OWNED_BALLS,
   MERGE_HOLD_SECONDS,
   MERGE_REACH,
+  PULL_HOLD_SECONDS,
+  PULL_KEEP_SLACK,
   RESPROUT_SECONDS,
   SPROUT_IMMUNE_SECONDS,
   SWALLOW_RATIO,
@@ -22,9 +24,11 @@ import {
   isLoose,
   judgeClaim,
   judgeMerge,
+  judgePull,
   judgeSwallow,
   mergeDirection,
   newBallId,
+  pullBlock,
   relation,
   canHelp,
   canTakeFrom,
@@ -41,12 +45,32 @@ import {
  * seguem a rede. Quando uma bola muda de dono (roubo), é a MESMA bola que
  * troca de papel (`DungBall.setProxy`): a tralha grudada e o tamanho continuam.
  *
- * Também é aqui que o dono da sala confere os pedidos de pegar, engolir e
- * fundir (`judge`) e que todo mundo aplica as decisões dele.
+ * Também é aqui que o dono da sala confere os pedidos de pegar, engolir,
+ * fundir e puxar (`judge`) e que todo mundo aplica as decisões dele.
  */
 
-/** Acontecimentos da bagunça que viram aviso na tela (e som). */
-export type Happening = 'took' | 'taken' | 'swallowed' | 'eaten' | 'gave' | 'got' | 'joined' | 'crumbled';
+/**
+ * Acontecimentos da bagunça que viram aviso na tela (e som). Puxar: `pulled`
+ * = você puxou a bola de alguém; `pulledMine` = alguém puxou a sua.
+ */
+export type Happening = 'took' | 'taken' | 'swallowed' | 'eaten' | 'gave' | 'got' | 'joined' | 'crumbled' | 'pulled' | 'pulledMine';
+
+/** Segurando o botão de fundir (doar / juntar as suas) ou o de puxar (a bola do rival pra sua). */
+export type MergeMode = 'give' | 'pull';
+
+/** O que dá pra fazer com a bola encostada na sua agora, e o que você está segurando. */
+export interface MergeView {
+  /** Bola com que dá pra fundir a sua (doar pra outro, juntar uma sua largada), ou null. */
+  give: BallRecord | null;
+  /** Bola de rival que dá pra puxar pra sua, ou null. */
+  pull: BallRecord | null;
+  /** Segurando agora (null = nada) e o quanto já foi (0..1). */
+  holding: MergeMode | null;
+  progress: number;
+}
+
+/** Como uma bola entra noutra: engolida (rolou por cima), doada (fundir) ou puxada (roubo). */
+type AbsorbKind = 'swallow' | 'gift' | 'pull';
 
 /** O que as bolas precisam do jogo. */
 export interface BallGame {
@@ -120,6 +144,8 @@ export interface BallRecord {
   immune: boolean;
   burying: boolean;
   gift: boolean;
+  /** Fantasma: o dono está puxando alguma bola com ela (quem estiver encostado vê o aviso). */
+  pull: boolean;
   /** Sua: ajudas no empurrão (quem, quanto, quando chegou). */
   readonly assists: Map<string, { ax: number; az: number; at: number }>;
   /** Sua: último conteúdo mandado (reenvia quando muda). */
@@ -166,7 +192,13 @@ export class BallSync {
   private readonly poses: BallPose[] = [];
   /** Broto esperando pra nascer (perdeu a bola). */
   private sprout: { rec: BallRecord; at: number } | null = null;
-  private mergeHold = 0;
+  /** Segurando fundir/puxar: qual, em que bola (número) e há quanto tempo. */
+  private holdKind: MergeMode | null = null;
+  private holdTarget = 0;
+  private holdTime = 0;
+  /** Acabou de fundir/puxar: aquele botão só vale de novo depois de soltar (não emenda uma na outra). */
+  private holdSpent: MergeMode | null = null;
+  private readonly mergeView: MergeView = { give: null, pull: null, holding: null, progress: 0 };
   private teamPush = 0;
   private claimAt = 0;
   private shimmerTimer = 0;
@@ -256,6 +288,7 @@ export class BallSync {
       immune: false,
       burying: false,
       gift: false,
+      pull: false,
       assists: new Map(),
       sentVersion: -1,
       sentCounts: -1,
@@ -287,11 +320,11 @@ export class BallSync {
   /**
    * Largada da Disputa (e pódio): as suas bolas largadas esfarelam, o broto que
    * ia nascer não nasce mais (a bola principal recomeça do zero, ver `renewMain`)
-   * e ninguém fica segurando "fundir" ou ajudando alguém.
+   * e ninguém fica segurando "fundir"/"puxar" ou ajudando alguém.
    */
   clearForMatch(): void {
     this.sprout = null;
-    this.mergeHold = 0;
+    this.releaseHold();
     this.teamPush = 0;
     const main = this.game.ball;
     for (const rec of [...this.records.values()]) if (rec.local && rec.ball !== main) this.crumble(rec, false);
@@ -322,7 +355,7 @@ export class BallSync {
     }
     this.gulps.length = 0;
     this.tombstones.clear();
-    this.mergeHold = 0;
+    this.releaseHold();
     this.teamPush = 0;
   }
 
@@ -376,6 +409,7 @@ export class BallSync {
     pose.pushed = this.pushedByMe(rec);
     pose.immune = this.room.now() - rec.bornAt < SPROUT_IMMUNE_SECONDS;
     pose.gift = this.isGifting(rec);
+    pose.pull = this.isPulling(rec);
     pose.glow = ball.excessLevel;
     out.push(pose);
   }
@@ -403,6 +437,7 @@ export class BallSync {
       rec.immune = pose.immune;
       rec.burying = pose.burying;
       rec.gift = pose.gift;
+      rec.pull = pose.pull;
     }
     const assist = snapshot.assist;
     if (assist.ball !== 0) {
@@ -593,22 +628,105 @@ export class BallSync {
   }
 
   /**
-   * Segurando o botão de fundir: depois de `MERGE_HOLD_SECONDS` encostado na
-   * mesma bola, funde. Devolve o alvo e o quanto já segurou (0..1) pra dica.
+   * A bola de rival que dá pra puxar pra dentro da sua agora (encostando, e as
+   * regras deixam: ver `pullBlock`). A que você já está puxando pode se afastar
+   * um pouquinho sem cair (`PULL_KEEP_SLACK`: o quique da física não zera a puxada).
    */
-  updateMerge(held: boolean, dt: number): { target: BallRecord | null; progress: number } {
-    const target = this.mergeTarget();
-    if (!held || !target) {
-      this.mergeHold = 0;
-      return { target, progress: 0 };
+  pullTarget(): BallRecord | null {
+    const main = this.game.ball;
+    const mainRec = this.byBall.get(main);
+    if (!mainRec || !main.isSolid) return null;
+    const now = this.room.now();
+    const rules = this.room.rules();
+    const teams = this.room.teams();
+    const mine = this.facts(mainRec, now);
+    const c = main.position(tmpPos2);
+    let best: BallRecord | null = null;
+    let bestGap = Infinity;
+    for (const rec of this.records.values()) {
+      if (rec.local || !rec.placed || !rec.ball.isSolid) continue;
+      const reach = MERGE_REACH + (this.holdKind === 'pull' && this.holdTarget === rec.id ? PULL_KEEP_SLACK : 0);
+      const gap = rec.ball.position(tmpPos).distanceTo(c) - main.radius - rec.ball.radius;
+      if (gap >= reach || gap >= bestGap) continue;
+      if (pullBlock(mine, this.facts(rec, now), this.room.selfId, now, rules, teams) !== 'ok') continue;
+      best = rec;
+      bestGap = gap;
     }
-    this.mergeHold += dt;
-    if (this.mergeHold < MERGE_HOLD_SECONDS) return { target, progress: this.mergeHold / MERGE_HOLD_SECONDS };
-    this.mergeHold = -1e9; // só de novo soltando o botão
+    return best;
+  }
+
+  /**
+   * Um rival está puxando a sua bola agora (a bola dele, com a bandeira de
+   * puxar, encostada na sua, e as regras deixam)? Devolve a bola dele pro
+   * aviso "fulano está puxando a sua bola!", ou null.
+   */
+  pulledBy(): BallRecord | null {
+    const main = this.game.ball;
+    const mainRec = this.byBall.get(main);
+    if (!mainRec || !main.isSolid) return null;
+    const now = this.room.now();
+    const rules = this.room.rules();
+    const teams = this.room.teams();
+    const mine = this.facts(mainRec, now);
+    const c = main.position(tmpPos2);
+    for (const rec of this.records.values()) {
+      if (rec.local || !rec.placed || !rec.pull) continue;
+      const gap = rec.ball.position(tmpPos).distanceTo(c) - main.radius - rec.ball.radius;
+      // Um pouco mais de folga que o de quem puxa: o aviso não pisca com o atraso da rede.
+      if (gap > MERGE_REACH + PULL_KEEP_SLACK + 0.4) continue;
+      if (pullBlock(this.facts(rec, now), mine, rec.owner, now, rules, teams) === 'ok') return rec;
+    }
+    return null;
+  }
+
+  /**
+   * Segurando fundir (`give`) ou puxar (`pull`): depois do tempo de cada um
+   * encostado na MESMA bola, funde (a sua entra na outra) ou puxa (a do rival
+   * entra na sua). Trocou de bola ou desencostou: recomeça do zero. Os dois
+   * botões juntos: puxar ganha (quem aperta os dois quer levar, não dar).
+   */
+  updateMerge(give: boolean, pull: boolean, dt: number): MergeView {
+    const view = this.mergeView;
+    view.give = this.mergeTarget();
+    view.pull = this.pullTarget();
+    // Soltou o botão do que acabou de fazer: ele volta a valer.
+    if (this.holdSpent && !(this.holdSpent === 'give' ? give : pull)) this.holdSpent = null;
+    const kind: MergeMode | null =
+      this.holdKind === 'pull' && pull ? 'pull' : this.holdKind === 'give' && give ? 'give' : pull && view.pull ? 'pull' : give && view.give ? 'give' : null;
+    const target = kind === 'pull' ? view.pull : kind === 'give' ? view.give : null;
+    if (!kind || !target || kind === this.holdSpent) {
+      this.holdKind = null;
+      this.holdTime = 0;
+      view.holding = null;
+      view.progress = 0;
+      return view;
+    }
+    if (this.holdKind !== kind || this.holdTarget !== target.id) {
+      this.holdKind = kind;
+      this.holdTarget = target.id;
+      this.holdTime = 0;
+    }
+    this.holdTime += dt;
+    const need = kind === 'pull' ? PULL_HOLD_SECONDS : MERGE_HOLD_SECONDS;
+    view.holding = kind;
+    view.progress = Math.min(1, this.holdTime / need);
+    if (this.holdTime < need) return view;
+    this.holdSpent = kind;
+    this.holdKind = null;
+    this.holdTime = 0;
     const main = this.byBall.get(this.game.ball)!;
-    if (target.local) this.mergeOwn(target, main);
+    if (kind === 'pull') this.room.request({ t: 'pull', b: main.id, target: target.id });
+    else if (target.local) this.mergeOwn(target, main);
     else this.room.request({ t: 'merge', b: main.id, target: target.id });
-    return { target, progress: 1 };
+    return view;
+  }
+
+  /** Ninguém segurando fundir/puxar (a sala acabou, largada da Disputa). */
+  private releaseHold(): void {
+    this.holdKind = null;
+    this.holdTarget = 0;
+    this.holdTime = 0;
+    this.holdSpent = null;
   }
 
   /** Juntou duas bolas suas (a largada entra na principal): sem dono da sala, é tudo seu. */
@@ -659,6 +777,14 @@ export class BallSync {
         const [prey, into] = mergeDirection({ rec: ball, owner: ball.owner, radius: this.facts(ball, now).radius }, { rec: target, owner: target.owner, radius: this.facts(target, now).radius }, from, teams);
         return { t: 'merged', b: prey.rec.id, into: into.rec.id, by: from };
       }
+      case 'pull': {
+        const ball = this.records.get(event.b);
+        const target = this.records.get(event.target);
+        if (!ball || !target || this.tombstones.has(event.b) || this.tombstones.has(event.target)) return null;
+        const distance = this.centerOf(ball, tmpPos).distanceTo(this.centerOf(target, tmpPos2));
+        if (judgePull(this.facts(ball, now), this.facts(target, now), from, now, rules, distance, this.room.teams()) !== 'ok') return null;
+        return { t: 'pulled', b: target.id, into: ball.id, by: from };
+      }
       default:
         return null;
     }
@@ -708,6 +834,9 @@ export class BallSync {
         return;
       case 'merged':
         this.applyAbsorb(event.b, event.into, event.by, 'gift');
+        return;
+      case 'pulled':
+        this.applyAbsorb(event.b, event.into, event.by, 'pull');
         return;
       case 'gone':
         this.applyGone(event.b, event.why, from);
@@ -789,8 +918,8 @@ export class BallSync {
     this.game.happened('taken', this.room.nick(to), ball.position(tmpPos));
   }
 
-  /** Engolida (`swallow`) ou doada (`gift`): `preyId` entra em `intoId`. */
-  private applyAbsorb(preyId: number, intoId: number, by: string, kind: 'swallow' | 'gift'): void {
+  /** Engolida (`swallow`), doada (`gift`) ou puxada (`pull`): `preyId` entra em `intoId`. */
+  private applyAbsorb(preyId: number, intoId: number, by: string, kind: AbsorbKind): void {
     const prey = this.records.get(preyId);
     const into = this.records.get(intoId);
     if (!prey || this.tombstones.has(preyId)) return;
@@ -809,6 +938,12 @@ export class BallSync {
         this.game.happened('swallowed', this.room.nick(preyOwner), at);
         this.game.achieve('mpSwallow');
       } else if (preyOwner === self) this.game.happened('eaten', this.room.nick(by), at);
+    } else if (kind === 'pull') {
+      // Puxar é roubo: vale a mesma conquista de pegar a bola de alguém.
+      if (by === self) {
+        this.game.happened('pulled', this.room.nick(preyOwner), at);
+        this.game.achieve('mpSteal');
+      } else if (preyOwner === self) this.game.happened('pulledMine', this.room.nick(by), at);
     } else if (preyOwner === self) {
       // A sua bola entrou na de outro (você doou, ou o parceiro puxou a sua menor pra dele).
       this.game.happened('gave', into ? this.room.nick(into.owner) : '', at);
@@ -818,14 +953,14 @@ export class BallSync {
 
   /**
    * Soma a bola `prey` na sua bola `into`: volume (o que passar dos 30 cm vira
-   * Sol excedente), contagens e conteúdo. Parte de cada um: engolida é toda sua;
-   * doada, quem doou continua com a parte dele.
+   * Sol excedente), contagens e conteúdo. Parte de cada um: engolida ou puxada
+   * é toda sua; doada, quem doou continua com a parte dele.
    */
-  private absorbContent(into: BallRecord, prey: BallRecord, kind: 'swallow' | 'gift'): void {
+  private absorbContent(into: BallRecord, prey: BallRecord, kind: AbsorbKind): void {
     const self = this.room.selfId;
     const volume = prey.ball.totalVolume;
     settleShares(into.shares, self, into.ball.totalVolume);
-    if (kind === 'swallow') into.shares.set(self, (into.shares.get(self) ?? 0) + volume);
+    if (kind !== 'gift') into.shares.set(self, (into.shares.get(self) ?? 0) + volume);
     else {
       const donated = new Map(prey.shares);
       settleShares(donated, prey.owner, volume);
@@ -889,6 +1024,7 @@ export class BallSync {
       immune: false,
       burying: false,
       gift: false,
+      pull: false,
       assists: new Map(),
       sentVersion: 0,
       sentCounts: 0,
@@ -1012,7 +1148,12 @@ export class BallSync {
 
   /** Você está doando essa bola (segurando "fundir" encostado noutra)? Enquanto isso, ninguém engole ela. */
   private isGifting(rec: BallRecord): boolean {
-    return rec.ball === this.game.ball && this.mergeHold > 0;
+    return rec.ball === this.game.ball && this.holdKind === 'give' && this.holdTime > 0;
+  }
+
+  /** Você está puxando uma bola de rival com essa (segurando "puxar" encostado nela)? Vai no retrato: o rival vê o aviso. */
+  private isPulling(rec: BallRecord): boolean {
+    return rec.ball === this.game.ball && this.holdKind === 'pull' && this.holdTime > 0;
   }
 
   /** O besouro está empurrando (ou em cima de) essa bola sua? */

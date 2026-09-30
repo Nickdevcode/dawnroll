@@ -17,7 +17,7 @@ import { OnlineHud } from './OnlineHud';
 import type { EmoteWheel } from './EmoteWheel';
 import type { NameplateSource, OnlinePlay } from '../net/OnlinePlay';
 import type * as THREE from 'three';
-import { actionLabel, withCaps, type PromptContext } from './prompts';
+import { actionCaps, actionLabel, withCaps, type PromptContext } from './prompts';
 import { TutorialCard, type HoldModes } from './TutorialCard';
 import type { TutorialView } from '../tutorial/Tutorial';
 
@@ -43,11 +43,15 @@ export type HintKind =
   | 'ability'
   | 'abilityFar'
   | 'riding'
-  // Online: tonto da trombada, broto chegando, fundir (doar / juntar as suas), empurrando junto, bola solta pra pegar.
+  // Online: tonto da trombada, broto chegando, fundir (doar / juntar as suas), puxar a bola do rival,
+  // as duas escolhas juntas, um rival puxando a sua, empurrando junto, bola solta pra pegar.
   | 'dizzy'
   | 'sprout'
   | 'merge'
   | 'mergeOwn'
+  | 'pull'
+  | 'mergeOrPull'
+  | 'pulled'
   | 'coPush'
   | 'steal';
 
@@ -275,9 +279,9 @@ export class Hud {
     return this.onlineHud?.wheel ?? null;
   }
 
-  /** Online: dá pra fundir agora (o botão de fundir aparece no toque). */
-  setMergeAvailable(available: boolean): void {
-    this.onlineHud?.setMergeAvailable(available);
+  /** Online: dá pra fundir / puxar agora (os botões de fundir e de puxar aparecem no toque). */
+  setMergeAvailable(give: boolean, pull: boolean): void {
+    this.onlineHud?.setMergeAvailable(give, pull);
   }
 
   /** Pódio da Disputa: o HUD da rodada (bola, pedidos, dicas, controles) sai de cena; ficam o cartão e os botões do topo. */
@@ -421,12 +425,29 @@ export class Hud {
         if (value > 0) html += `<span class="hint-progress" style="--p:${Math.min(1, value).toFixed(3)}"></span>`;
         break;
       }
+      case 'pull':
+        html = withCaps(t(value > 0 ? 'hint.pulling' : 'hint.pull', { name: label, key: '{key}' }), 'pull', this.ctx);
+        if (value > 0) html += `<span class="hint-progress hint-progress--pull" style="--p:${Math.min(1, value).toFixed(3)}"></span>`;
+        break;
+      case 'mergeOrPull':
+        // No toque os dois botões aparecem do lado: a dica só conta que dá pra escolher.
+        html =
+          this.device === 'touch'
+            ? escapeHtml(t('hint.mergeOrPull.touch', { name: label }))
+            : escapeHtml(t('hint.mergeOrPull', { name: label, give: '{give}', pull: '{pull}' }))
+                .replace('{give}', actionCaps('merge', this.ctx))
+                .replace('{pull}', actionCaps('pull', this.ctx));
+        break;
+      case 'pulled':
+        html = escapeHtml(t('hint.pulled', { name: label }));
+        break;
       case 'none':
         break;
     }
     // Com o cartão de resultado na tela, dica nenhuma disputa o espaço com ele.
     if (html && this.resultTimer <= 0) {
-      this.hint.innerHTML = `<span class="chip${kind === 'dissolving' ? ' chip--warn' : ''}">${html}</span>`;
+      const warn = kind === 'dissolving' || kind === 'pulled';
+      this.hint.innerHTML = `<span class="chip${warn ? ' chip--warn' : ''}">${html}</span>`;
       this.hint.classList.add('is-visible');
     } else {
       this.hint.classList.remove('is-visible');

@@ -56,7 +56,7 @@ const SOLVER_OFF = interactionGroups(Groups.PLAYER, 0);
 
 const UP = new THREE.Vector3(0, 1, 0);
 /** O que o besouro tonto "recebe" de comando: nada. */
-const STUNNED_INPUT: InputState = { moveX: 0, moveY: 0, run: false, grab: false, jumpPressed: false, resetPressed: false, abilityPressed: false, merge: false, emotePressed: false };
+const STUNNED_INPUT: InputState = { moveX: 0, moveY: 0, run: false, grab: false, jumpPressed: false, resetPressed: false, abilityPressed: false, merge: false, pull: false, emotePressed: false };
 const tmpA = new THREE.Vector3();
 const tmpB = new THREE.Vector3();
 const tmpC = new THREE.Vector3();

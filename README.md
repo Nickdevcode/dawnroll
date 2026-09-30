@@ -55,7 +55,8 @@ Um besouro rola-bosta de massinha num jardim em miniatura. Você rola uma bola d
 | Pular | `Espaço` | `A` · `✕` · `B` (o botão de baixo) | Botão de seta |
 | Correr | Segurar `Shift` | Segurar `LT` · `L2` (ou `B` · `○`); **clicar `L3` liga até você parar** | Botão de correr |
 | Trazer a bola de volta | `R` | `Y` · `△` | Botão circular no topo |
-| Poder de apertar (Equilibrista) | `Q` ou botão direito do mouse | `X` · `□` (ou direcional ↑) | Botão azul da bola, do lado dos outros |
+| Poder de apertar (Equilibrista) | `Q` ou botão direito do mouse | `X` · `□` (ou direcional ↑ fora do online) | Botão azul da bola, do lado dos outros |
+| Online: fundir (doar) / puxar (roubar) a bola encostada | Segurar `F` / segurar `C` | Segurar direcional ← / segurar direcional ↑ | Botão das duas bolas / botão do ímã |
 | **Abrir / fechar a toca** | `T` (a mesma tecla fecha) | **`View` · `Create`/`Share` · `−`** (o mesmo botão fecha) | Botão da toca no topo |
 | Câmera de volta atrás do besouro | Botão do meio do mouse | Clicar `R3` | Volta sozinha |
 | Escolher poder | `1` `2` `3` (ou setas + `Enter`, ou clique) | Direcional + `A` · `✕` | Tocar na carta |
@@ -259,10 +260,11 @@ Conta é **opcional**: sem ela o jogo continua igualzinho, salvando no aparelho.
 | 🟤 **Engolir** | A sua bola rola por cima da bola de um rival que tenha **até 70%** do tamanho dela e engole, estilo Katamari (tudo que tinha dentro vem junto) | Rolar por cima |
 | 🤝 **Empurrar junto** | Agarre a bola que outro está empurrando: **a força soma** e a bola anda até ~35% mais rápido por ajudante. Se o dono largar, ela vira sua | Agarrar a bola dele |
 | 🔗 **Fundir (doar)** | Encoste a sua bola noutra e **segure 0,7 s**: a sua entra na dele. Quando ele enterrar, **a comida é dividida pela parte de cada um** (a sua vem pra sua despensa). Encostando duas bolas suas, junta as duas | **F** / ← no controle / botão das duas bolas no toque |
-| ☀️ **Sol excedente** | Bola nos 30 cm não cresce mais: o que entra **acumula sol** (ela brilha mais forte) e vira **comida extra** no enterro, contada como se fosse outra bola | Juntar bola gigante |
-| 🛡️ **Proteções** | **Broto novo fica 5 s imune** (brilhinho em volta); bola afundando na toca não se rouba; perdeu a bola, **ganha um broto em 3 s**; segurando "fundir", ninguém engole a sua | — |
+| 🧲 **Puxar (roubar)** | O contrário de doar: encoste a sua bola na de um rival e **segure 1,5 s**: a dele entra **inteira** na sua (sem dividir no enterro). Bola que o dono está empurrando só se for **do seu tamanho pra baixo**; bola solta (ou depois da trombada), **de qualquer tamanho**. Quem está sendo puxado vê o aviso **"Fulano está puxando a sua bola! Foge com ela!"** (e o controle treme): afastou, a puxada zera. Parceiro de time não se puxa | **C** / ↑ no controle / botão do ímã no toque |
+| ☀️ **Sol excedente** | Bola nos 30 cm não cresce mais: o que entra (bosta, fusão, bola engolida ou **puxada**) **acumula sol** (ela brilha mais forte) e vira **comida extra** no enterro, contada como se fosse outra bola. O que tinha dentro da bola puxada também vem junto | Juntar bola gigante |
+| 🛡️ **Proteções** | **Broto novo fica 5 s imune** (brilhinho em volta); bola afundando na toca não se rouba; perdeu a bola, **ganha um broto em 3 s**; segurando "fundir", ninguém engole nem puxa a sua | — |
 | 💬 **Reações** | Uma roda com 8 frases (Bora!, Me ajuda!, Rouba!, Valeu!, Haha, Ops, GG e **Aqui!**, que marca o chão pra todo mundo). Sem chat livre, de propósito | **G** (e 1–8 ou mouse) / ↓ no controle / balão no toque |
-| 🚦 **Roubo liga/desliga** | O dono da sala escolhe na placa da sala. Desligado, só dá pra ajudar (empurrar junto e doar) | Chave "Roubo de bola" |
+| 🚦 **Roubo liga/desliga** | O dono da sala escolhe na placa da sala. Desligado, só dá pra ajudar (empurrar junto e doar): nada de pegar bola solta, trombar, engolir ou puxar | Chave "Roubo de bola" |
 
 #### ⚔️ Disputa: times, relógio e pódio
 
@@ -271,7 +273,7 @@ Na placa da sala o dono escolhe o **modo** (Jardim livre ou Disputa), o **tempo*
 | | |
 |---|---|
 | 👥 **Times** | Quem chega cai no time com menos gente (4 em duplas = 2v2, não 2+1+1). Cada time é um cartão (um embaixo do outro, com as **vagas livres** tracejadas); troca de time com **Entrar** no cartão dele e o dono pode **Embaralhar**. Apelido comprido ganha reticências (o nome inteiro aparece passando o mouse). Times também valem no Jardim livre |
-| 🤝 **Parceiro** | Parceiro **não rouba, não engole e não tromba** o outro. **Fundir** com parceiro põe a **bola menor dentro da maior**, tanto faz quem apertou (quem está com a grande continua empurrando), e cada um guarda a sua parte |
+| 🤝 **Parceiro** | Parceiro **não rouba, não engole, não puxa e não tromba** o outro. **Fundir** com parceiro põe a **bola menor dentro da maior**, tanto faz quem apertou (quem está com a grande continua empurrando), e cada um guarda a sua parte |
 | ⏱️ **Contagem** | "Começar disputa" → **3, 2, 1, Já!**: jardim novo (o mesmo pra todo mundo), bola de todo mundo zerada e os besouros lado a lado no nascimento (parceiros juntos). Até o "Já!" ninguém anda |
 | ⚖️ **Justo** | Na Disputa o **nível não dá força nem velocidade** (todo mundo igual) e o **roubo vale sempre**. Rival não ajuda rival: nada de empurrar junto ou doar pro outro time |
 | 🧮 **Placar** | Cada bola enterrada vale **os cm dela + o Sol excedente**, dividido pela **parte de cada um** na bola (fundiu com o parceiro, os dois pontuam). O time soma. A barra no alto mostra o relógio e os pontos de cada time |
@@ -570,8 +572,8 @@ src/
 │   ├── protocol.ts         # o que viaja: retrato binário (besouro + até 4 bolas, 20/s), pedidos e decisões validados
 │   ├── NetSession.ts       # a sala viva: dono, vagas, repasse, relógio, ponto, troca de dono, reconexão
 │   ├── OnlinePlay.ts       # o online dentro do jogo: besouros remotos, mundo compartilhado, clima, rebrota, trombada, reações
-│   ├── BallSync.ts         # as bolas da sala: dono de cada uma, fantasmas, conteúdo espelhado, pegar/engolir/fundir, broto
-│   ├── rules.ts            # regras da bagunça (puras): bola solta, trombada, engolir, fundir (parceiro: menor na maior), parte de cada um
+│   ├── BallSync.ts         # as bolas da sala: dono de cada uma, fantasmas, conteúdo espelhado, pegar/engolir/fundir/puxar, broto
+│   ├── rules.ts            # regras da bagunça (puras): bola solta, trombada, engolir, fundir (parceiro: menor na maior), puxar, parte de cada um
 │   ├── teams.ts            # times (puros): distribuir, trocar, embaralhar, quantos times abrir
 │   ├── match.ts            # a Disputa (pura): fases, relógio, pôr do sol, pontos, placar, quem ganhou, destaques, largada
 │   ├── MatchDirector.ts    # times e Disputa na sala viva: o dono conduz as fases e soma os pontos; todo mundo reage

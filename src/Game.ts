@@ -75,7 +75,7 @@ import { clamp, createRng, mixSeed, randomSeed } from './utils/math';
 import { OnlinePlay, type NameplateSource, type OnlineBridge } from './net/OnlinePlay';
 import type { NetLook } from './net/protocol';
 import type { CloseReason } from './net/NetSession';
-import type { Happening } from './net/BallSync';
+import type { BallRecord, Happening, MergeMode } from './net/BallSync';
 import type { RoundLedger } from './progression/food';
 import type { InputState } from './core/Input';
 import { DizzyStars } from './fx/DizzyStars';
@@ -114,6 +114,8 @@ const SPROUT_GOLD = new THREE.Color('#e6c46a');
 const SPROUT_SHIMMER = new THREE.Color('#fff4c8');
 /** Online: as cartas de poder ficam por cima do jogo; sem escolher, pega a selecionada depois disso. */
 const ONLINE_PERK_SECONDS = 12;
+/** Online, puxando (ou sendo puxado): um punhado de fiapos de bosta a cada tanto. */
+const PULL_FX_SECONDS = 0.12;
 /** Quanto tempo as dicas do Equilibrista (como usar / em cima da bola) ficam na tela. */
 const ABILITY_HINT_SECONDS = 6;
 const RIDING_HINT_SECONDS = 3;
@@ -225,8 +227,19 @@ export class Game {
   private onlineLayoutSeed: number | null = null;
   /** Estrelinhas de tonto do seu besouro (trombada no online). */
   private readonly dizzyStars = new DizzyStars();
-  /** Online: segurando o botão de fundir (0..1) e em cima de quem (pra dica). */
-  private mergeHint: { progress: number; nick: string } | null = null;
+  /**
+   * Online: a bola encostada na sua (pra dica e pros botões do toque). `give` =
+   * dá pra fundir (apelido do dono; '' = uma sua largada), `pull` = dá pra puxar
+   * a de quem; `holding`/`progress` = segurando qual e quanto (0..1).
+   */
+  private mergeHint: { give: string | null; pull: string | null; holding: MergeMode | null; progress: number } | null = null;
+  /** Online: rival puxando a sua bola agora (apelido, pro aviso), e a bola dele (pro efeito). */
+  private pulledBy: { nick: string; ball: DungBall } | null = null;
+  /** Segundos até o próximo fiapo do efeito de puxar. */
+  private pullFxTimer = 0;
+  private readonly tmpPullFrom = new THREE.Vector3();
+  private readonly tmpPullTo = new THREE.Vector3();
+  private readonly tmpPullDir = new THREE.Vector3();
   /** Roda de reações aberta: o clique que já estava apertado ao abrir não manda nada. */
   private wheelGrabHeld = false;
   /** Desenvolvimento (`?bots=5`): besouros de mentira pra medir o custo de uma sala cheia. */
@@ -861,6 +874,35 @@ export class Game {
     } else if (beetle.currentBall !== this.ball) beetle.attachBall(this.ball);
   }
 
+  /**
+   * Online: segurar fundir (F / ← / botão das duas bolas) ou puxar (C / ↑ /
+   * botão do ímã) com a sua bola encostada noutra. Também confere se um rival
+   * está puxando a SUA (aviso + tranco no controle: dá tempo de fugir) e solta
+   * os fiapos do efeito de puxar (quem puxa e quem é puxado veem).
+   */
+  private updateMergeAndPull(state: InputState): void {
+    const balls = this.net.balls;
+    const free = !this.beetle.dizzy && !this.burrow.isBusy && !this.hud.perkPicker.visible;
+    const view = balls.updateMerge(free && state.merge, free && state.pull, FIXED_DT);
+    const nick = (rec: BallRecord): string => (rec.local ? '' : this.net.nickOf(rec.owner));
+    this.mergeHint =
+      view.give || view.pull ? { give: view.give ? nick(view.give) : null, pull: view.pull ? nick(view.pull) : null, holding: view.holding, progress: view.progress } : null;
+    const puller = balls.pulledBy();
+    const wasPulled = this.pulledBy !== null;
+    this.pulledBy = puller ? { nick: this.net.nickOf(puller.owner), ball: puller.ball } : null;
+    if (this.pulledBy && !wasPulled) this.rumble(0.5, 0.4, 260);
+    const prey = view.holding === 'pull' ? (view.pull?.ball ?? null) : this.pulledBy ? this.ball : null;
+    this.pullFxTimer -= FIXED_DT;
+    if (!prey || this.pullFxTimer > 0) return;
+    this.pullFxTimer = PULL_FX_SECONDS;
+    const pullerBall = prey === this.ball ? this.pulledBy!.ball : this.ball;
+    const to = pullerBall.position(this.tmpPullTo);
+    const from = prey.position(this.tmpPullFrom);
+    // Sai do ponto em que a bola puxada encosta na outra.
+    from.add(this.tmpPullDir.subVectors(to, from).setLength(prey.radius));
+    this.effects.pullStreak(from, to);
+  }
+
   /** Arrancou algo do chão (flor, pedra, brinquedo, bola de tênis...). */
   private onPick(event: PickEvent): void {
     this.audio.pluck(event);
@@ -1443,6 +1485,8 @@ export class Game {
     this.lastTime = time;
     this.elapsed += frameTime;
 
+    // Online, o direcional ↑ do controle é "puxar" (o poder de apertar fica no X).
+    this.input.gamepad.upIsPull = this.net.active;
     this.input.update();
     const look = this.input.consumeLook();
     this.handleGamepadMenu();
@@ -1522,10 +1566,11 @@ export class Game {
     this.applyWorldPerks(FIXED_DT);
     if (this.net.active) {
       this.onlineGrab(state);
-      const holding = state.merge && !this.beetle.dizzy && !this.burrow.isBusy && !this.hud.perkPicker.visible;
-      const merge = this.net.balls.updateMerge(holding, FIXED_DT);
-      this.mergeHint = merge.target ? { progress: merge.progress, nick: merge.target.local ? '' : this.net.nickOf(merge.target.owner) } : null;
-    } else this.mergeHint = null;
+      this.updateMergeAndPull(state);
+    } else {
+      this.mergeHint = null;
+      this.pulledBy = null;
+    }
     const beforeX = this.beetle.center.x;
     const beforeZ = this.beetle.center.z;
     this.beetle.fixedUpdate(FIXED_DT, state, this.cameraRig.yaw);
@@ -1817,7 +1862,7 @@ export class Game {
     this.updateNameplates();
     this.hud.updateMatch();
     this.updateMatchTicks();
-    this.hud.setMergeAvailable(this.mergeHint !== null && !this.paused);
+    this.hud.setMergeAvailable(this.mergeHint?.give != null && !this.paused, this.mergeHint?.pull != null && !this.paused);
     this.hud.update(dt);
     this.updateAudio(dt, player);
 
@@ -2232,6 +2277,17 @@ export class Game {
         this.audio.requestDone();
         if (at) this.effects.sparkle(at, SPROUT_GOLD);
         break;
+      case 'pulled':
+        this.hud.notify(t('mp.pulled', { name }));
+        if (at) this.effects.splat(at, 1);
+        this.audio.impact(at ?? this.beetle.center, 0.6, this.ball.radius);
+        this.cameraRig.shake(0.06);
+        break;
+      case 'pulledMine':
+        this.hud.notify(t('mp.pulledMine', { name }));
+        this.audio.release(this.beetle.center);
+        this.rumble(0.6, 0.8, 300);
+        break;
       case 'crumbled':
         this.hud.notify(t('mp.crumbled'));
         break;
@@ -2454,7 +2510,7 @@ export class Game {
   private clearInput(): void {
     const state = this.input.state;
     state.moveX = state.moveY = 0;
-    state.grab = state.run = state.merge = false;
+    state.grab = state.run = state.merge = state.pull = false;
     state.jumpPressed = state.resetPressed = state.abilityPressed = state.emotePressed = false;
   }
 
@@ -2846,7 +2902,7 @@ export class Game {
     return { kind: dist < 1.4 && !this.tutorialGuide.tutorial.teachingGrab ? 'grab' : 'none', value: 0 };
   }
 
-  /** Dicas do online (na frente das de sempre): tonto, broto chegando, fundir, empurrando junto, bola solta. */
+  /** Dicas do online (na frente das de sempre): tonto, broto chegando, puxando a sua, fundir/puxar, empurrando junto, bola solta. */
   private onlineHint(): { kind: HintKind; value: number; label?: string } | null {
     const balls = this.net.balls;
     if (this.beetle.dizzy) return { kind: 'dizzy', value: 0 };
@@ -2854,7 +2910,15 @@ export class Game {
     if (sprout > 0) return { kind: 'sprout', value: Math.ceil(sprout) };
     if (this.burrow.isBusy) return null;
     const merge = this.mergeHint;
-    if (merge) return { kind: merge.nick ? 'merge' : 'mergeOwn', value: merge.progress, label: merge.nick };
+    // Segurando: a dica do que está fazendo, com a barrinha enchendo.
+    if (merge?.holding === 'pull') return { kind: 'pull', value: merge.progress, label: merge.pull ?? '' };
+    if (merge?.holding === 'give') return { kind: merge.give ? 'merge' : 'mergeOwn', value: merge.progress, label: merge.give ?? '' };
+    // Um rival puxando a sua: o aviso passa na frente (é hora de fugir).
+    if (this.pulledBy) return { kind: 'pulled', value: 0, label: this.pulledBy.nick };
+    // A mesma bola dá pra doar e pra puxar (rival no Jardim livre): as duas escolhas na dica.
+    if (merge?.give && merge.give === merge.pull) return { kind: 'mergeOrPull', value: 0, label: merge.pull };
+    if (merge?.pull) return { kind: 'pull', value: 0, label: merge.pull };
+    if (merge) return { kind: merge.give ? 'merge' : 'mergeOwn', value: 0, label: merge.give ?? '' };
     const helping = balls.assistingOwner();
     if (helping) return { kind: 'coPush', value: 0, label: this.net.nickOf(helping) };
     if (!this.beetle.pushing) {

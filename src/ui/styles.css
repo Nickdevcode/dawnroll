@@ -12,6 +12,8 @@
   --color-accent: #f4a73b;
   --color-accent-deep: #d9822b;
   --color-leaf: #7cbf5b;
+  /* Roubo no online (puxar a bola do rival): coral, longe do dourado de doar. */
+  --color-steal: #e2714f;
   --color-overlay: rgba(58, 42, 34, 0.42);
 
   --font-display: ui-rounded, 'SF Pro Rounded', 'Nunito', 'Varela Round', 'Segoe UI', system-ui, sans-serif;

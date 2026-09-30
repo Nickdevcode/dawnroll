@@ -269,14 +269,14 @@ export class MatchDirector {
     this.sendMatch();
   }
 
-  /** Dono: uma decisão dele (roubo, engolida, fusão) conta pros destaques. */
+  /** Dono: uma decisão dele (roubo, engolida, puxada, fusão) conta pros destaques. */
   noteDecision(event: NetEvent): void {
     const m = this._match;
     if (!this.room.isHost || !scoringOpen(m, this.room.now())) return;
     let who: string | null = null;
     let field: 'steals' | 'gifts' = 'steals';
     if (event.t === 'own' && relation(event.to, event.prev, this._teams) === 'rival') who = event.to;
-    else if (event.t === 'swallowed') who = event.by;
+    else if (event.t === 'swallowed' || event.t === 'pulled') who = event.by;
     else if (event.t === 'merged') {
       who = event.by;
       field = 'gifts';

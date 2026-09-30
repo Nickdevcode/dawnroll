@@ -10,12 +10,12 @@
  *   A · ✕               pular
  *   RT · R2             segurar a bola
  *   LT · L2  (ou B · ○) correr, segurando
- *   X · □   (ou ↑)      poder de apertar (Equilibrista)
+ *   X · □   (ou ↑)      poder de apertar (Equilibrista); no online o ↑ é puxar
  *   Y · △               trazer a bola
  *   LB / RB · L1 / R1   zoom
  *   View · Create/Share abrir/fechar a toca
  *   Start · Options     pausar
- *   direcional ↓ ← →    online: reações, fundir (segurar), entrar no convite
+ *   direcional ↓ ← ↑ →  online: reações, fundir (segurar), puxar (segurar), entrar no convite
  * No menu: direcional ou analógico navegam, A escolhe, B volta, LB/RB trocam de aba e o
  * analógico direito rola a placa aberta.
  */
@@ -128,9 +128,15 @@ export class GamepadInput {
   recenterPressed = false;
   /** Poder de apertar (X / □, ou direcional pra cima). */
   abilityPressed = false;
-  /** Online: direcional ← segurado (fundir a bola) e ↓ apertado (roda de reações). */
+  /** Online: direcional ← segurado (fundir a bola), ↑ segurado (puxar a do rival) e ↓ apertado (roda de reações). */
   mergeHeld = false;
+  pullHeld = false;
   emotePressed = false;
+  /**
+   * Online: o direcional ↑ vira "puxar" e o poder de apertar fica só no X (o ↑
+   * era um atalho repetido do X; segurar pra puxar não pode soltar o poder junto).
+   */
+  upIsPull = false;
   /** Algo foi mexido no controle neste quadro (qualquer entrada, até leve). */
   active = false;
   /**
@@ -172,7 +178,7 @@ export class GamepadInput {
     this.jumpPressed = this.recallPressed = this.startPressed = this.abilityPressed = this.emotePressed = false;
     this.burrowPressed = this.recenterPressed = this.sprintTogglePressed = false;
     this.moveX = this.moveY = this.lookX = this.lookY = this.zoom = this.menuScroll = 0;
-    this.grab = this.run = this.active = this.intent = this.mergeHeld = false;
+    this.grab = this.run = this.active = this.intent = this.mergeHeld = this.pullHeld = false;
 
     const pad = this.pad();
     if (!pad) return;
@@ -192,7 +198,7 @@ export class GamepadInput {
     this.sprintTogglePressed = edge(Button.L3);
     this.jumpPressed = edge(Button.A);
     this.recallPressed = edge(Button.Y);
-    this.abilityPressed = edge(Button.X) || edge(Button.Up);
+    this.abilityPressed = edge(Button.X) || (edge(Button.Up) && !this.upIsPull);
     this.startPressed = edge(Button.Start);
     this.burrowPressed = edge(Button.View);
     this.recenterPressed = edge(Button.R3);
@@ -203,6 +209,7 @@ export class GamepadInput {
     this.dpadPressed.right = edge(Button.Right);
     this.dpadPressed.down = edge(Button.Down);
     this.mergeHeld = down(Button.Left);
+    this.pullHeld = this.upIsPull && down(Button.Up);
     this.emotePressed = this.dpadPressed.down;
 
     // Menu: A escolhe, B volta, LB/RB trocam de aba; direções com repetição ao segurar.

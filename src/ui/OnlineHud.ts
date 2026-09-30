@@ -6,7 +6,7 @@ import { onLocaleChange, t, type MessageKey } from '../i18n';
 import { clanTagHtml } from './clanText';
 import { escapeHtml } from './html';
 import { Icons } from './icons';
-import { EMOTE_ICONS, EmoteButtonIcon, MergeIcon } from './emoteIcons';
+import { EMOTE_ICONS, EmoteButtonIcon, MergeIcon, PullIcon } from './emoteIcons';
 import { EmoteWheel } from './EmoteWheel';
 import { MatchHud } from './MatchHud';
 import { TEAM_ICONS } from './matchIcons';
@@ -19,6 +19,30 @@ const PLATE_NEAR = 1.2;
 const BUBBLE_FAR = 70;
 /** Folga (px) entre duas placas empilhadas. */
 const PLATE_GAP = 3;
+/** Botão de fundir/puxar do toque: fica na tela mais isso depois que o encosto acaba (ms). */
+const HOLD_BUTTON_LINGER_MS = 400;
+
+/** Botão de segurar do toque (fundir, puxar): o botão, como largar e até quando fica na tela. */
+interface HoldButton {
+  button: HTMLButtonElement;
+  release: () => void;
+  hideAt: number;
+}
+
+/** Liga um botão de segurar: apertou = ativo; soltou, cancelou ou o dedo saiu = larga. */
+function holdButton(button: HTMLButtonElement, set: (active: boolean) => void): HoldButton {
+  const toggle = (active: boolean) => {
+    button.classList.toggle('is-active', active);
+    set(active);
+  };
+  button.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    toggle(true);
+  });
+  for (const type of ['pointerup', 'pointercancel', 'pointerleave'] as const) button.addEventListener(type, () => toggle(false));
+  return { button, release: () => toggle(false), hideAt: 0 };
+}
 
 const tmp = new THREE.Vector3();
 
@@ -64,7 +88,7 @@ export function spreadPlates(placed: PlacedPlate[]): void {
  * "reconectando"), a placa com o apelido em cima de cada besouro remoto (na
  * cor da vaga dele: a cor nunca vem sozinha, tem o apelido e, no dono, a
  * coroa), o balão das reações, o marcador "Aqui!" no chão, a roda de reações
- * e, no toque, os botões de reagir e de fundir.
+ * e, no toque, os botões de reagir, de fundir e de puxar.
  */
 export class OnlineHud {
   private readonly chip: HTMLElement;
@@ -80,8 +104,8 @@ export class OnlineHud {
   /** Disputa: relógio, placar, contagem e o cartão do resultado. */
   readonly match: MatchHud;
   private readonly touchBar: HTMLElement | null = null;
-  private readonly mergeButton: HTMLButtonElement | null = null;
-  private mergeAvailable = false;
+  /** Toque: segurar pra fundir / pra puxar (cada um aparece só quando dá). Soltar o botão (ou ele sumir) larga. */
+  private readonly holdButtons: HoldButton[] = [];
 
   constructor(
     parent: HTMLElement,
@@ -121,35 +145,26 @@ export class OnlineHud {
     this.match = new MatchHud(parent, net);
 
     if (isTouch) {
-      // Toque: reagir (abre a roda) e fundir (aparece só encostando noutra bola; segurar).
+      // Toque: reagir (abre a roda), puxar e fundir (aparecem só encostando noutra bola; segurar).
       const bar = document.createElement('div');
       bar.className = 'online-touch';
       bar.hidden = true;
       bar.innerHTML = /* html */ `
+        <button class="btn touch-btn online-touch__pull" type="button" data-touch-pull hidden>${PullIcon}</button>
         <button class="btn touch-btn online-touch__merge" type="button" data-touch-merge hidden>${MergeIcon}</button>
         <button class="btn touch-btn online-touch__emote" type="button" data-touch-emote>${EmoteButtonIcon}</button>`;
-      const merge = bar.querySelector('[data-touch-merge]') as HTMLButtonElement;
       const emote = bar.querySelector('[data-touch-emote]') as HTMLButtonElement;
       emote.addEventListener('pointerdown', (e) => {
         e.preventDefault();
         e.stopPropagation();
         input.queueEmote();
       });
-      const setMerge = (active: boolean) => {
-        merge.classList.toggle('is-active', active);
-        input.setTouchMerge(active);
-      };
-      merge.addEventListener('pointerdown', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        setMerge(true);
-      });
-      merge.addEventListener('pointerup', () => setMerge(false));
-      merge.addEventListener('pointercancel', () => setMerge(false));
-      merge.addEventListener('pointerleave', () => setMerge(false));
+      this.holdButtons.push(
+        holdButton(bar.querySelector('[data-touch-merge]') as HTMLButtonElement, (active) => input.setTouchMerge(active)),
+        holdButton(bar.querySelector('[data-touch-pull]') as HTMLButtonElement, (active) => input.setTouchPull(active)),
+      );
       parent.append(bar);
       this.touchBar = bar;
-      this.mergeButton = merge;
     }
 
     net.subscribe(() => this.renderChip());
@@ -167,17 +182,34 @@ export class OnlineHud {
     }, 2000);
   }
 
-  /** Dá pra fundir agora (encostando noutra bola): o botão de fundir do toque aparece. */
-  setMergeAvailable(available: boolean): void {
-    if (available === this.mergeAvailable || !this.mergeButton) return;
-    this.mergeAvailable = available;
-    this.mergeButton.hidden = !available;
+  /**
+   * Dá pra fundir / puxar agora (encostando noutra bola): os botões do toque
+   * aparecem. Somem um instante depois de não dar mais (o quique das bolas na
+   * beira do encosto não faz o botão piscar debaixo do dedo).
+   */
+  setMergeAvailable(give: boolean, pull: boolean): void {
+    const [merge, pullButton] = this.holdButtons;
+    if (!merge || !pullButton) return;
+    const now = performance.now();
+    for (const [entry, available] of [
+      [merge, give],
+      [pullButton, pull],
+    ] as const) {
+      if (available) entry.hideAt = now + HOLD_BUTTON_LINGER_MS;
+      const visible = available || now < entry.hideAt;
+      if (visible === !entry.button.hidden) continue;
+      entry.button.hidden = !visible;
+      // Sumiu com o dedo em cima: larga (sem isso, o próximo encosto fundiria/puxaria sozinho).
+      if (!visible) entry.release();
+    }
   }
 
   private renderTouchLabels(): void {
     if (!this.touchBar) return;
     this.touchBar.querySelector('[data-touch-emote]')?.setAttribute('aria-label', t('emote.open'));
-    this.mergeButton?.setAttribute('aria-label', t('mp.mergeButton'));
+    const [merge, pull] = this.holdButtons;
+    merge?.button.setAttribute('aria-label', t('mp.mergeButton'));
+    pull?.button.setAttribute('aria-label', t('mp.pullButton'));
   }
 
   private renderChip(): void {

@@ -747,6 +747,7 @@ export class OnlinePlay {
       case 'claim':
       case 'swallow':
       case 'merge':
+      case 'pull':
       case 'tackle':
         if (this.session?.isHost) this.judge(event, from);
         return;
@@ -763,6 +764,7 @@ export class OnlinePlay {
       case 'own':
       case 'swallowed':
       case 'merged':
+      case 'pulled':
       case 'gone':
       case 'ball':
         this.balls.onEvent(event, from);

@@ -196,7 +196,7 @@ export const beetleOps: PoseOps<RemoteBeetlePose> = {
 };
 
 export const ballOps: PoseOps<BallPose> = {
-  create: () => ({ id: 0, x: 0, y: 0, z: 0, qx: 0, qy: 0, qz: 0, qw: 1, vx: 0, vy: 0, vz: 0, radius: 0.5, burying: false, pushed: false, immune: false, gift: false, glow: 0 }),
+  create: () => ({ id: 0, x: 0, y: 0, z: 0, qx: 0, qy: 0, qz: 0, qw: 1, vx: 0, vy: 0, vz: 0, radius: 0.5, burying: false, pushed: false, immune: false, gift: false, pull: false, glow: 0 }),
   copy(out, from) {
     Object.assign(out, from);
   },
@@ -231,6 +231,7 @@ export const ballOps: PoseOps<BallPose> = {
     out.pushed = late.pushed;
     out.immune = late.immune;
     out.gift = late.gift;
+    out.pull = late.pull;
   },
   teleported: (a, b, span) => isTeleport(a.x, a.y, a.z, b.x, b.y, b.z, span, TELEPORT_BALL_DISTANCE),
   // A bola tem inércia: continua rolando um pouco (o besouro, não: fica onde estava).

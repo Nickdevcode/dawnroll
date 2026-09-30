@@ -25,6 +25,8 @@ export interface InputState {
   abilityPressed: boolean;
   /** Online: segurando o botão de fundir (doar a sua bola pra outro, juntar as suas). */
   merge: boolean;
+  /** Online: segurando o botão de puxar (a bola do rival encostada entra na sua). */
+  pull: boolean;
   /** Online: abrir a roda de reações (pegajoso como o pulo). */
   emotePressed: boolean;
 }
@@ -73,6 +75,7 @@ export class Input {
     resetPressed: false,
     abilityPressed: false,
     merge: false,
+    pull: false,
     emotePressed: false,
   };
 
@@ -130,6 +133,7 @@ export class Input {
   private touchGrab = false;
   private touchRun = false;
   private touchMerge = false;
+  private touchPull = false;
 
   constructor(private readonly target: HTMLElement) {
     document.documentElement.dataset.input = this._device;
@@ -234,6 +238,7 @@ export class Input {
     this.grabRawBefore = grabRaw;
     s.grab = this.touchGrab || (this.grabMode === 'toggle' ? this.grabLatched : grabRaw);
     s.merge = this.keys.has('KeyF') || this.touchMerge || pad.mergeHeld;
+    s.pull = this.keys.has('KeyC') || this.touchPull || pad.pullHeld;
     this.lookX += pad.lookX;
     this.lookY += pad.lookY;
     this.zoomDelta += pad.zoom;
@@ -292,6 +297,9 @@ export class Input {
   }
   setTouchMerge(active: boolean): void {
     this.touchMerge = active;
+  }
+  setTouchPull(active: boolean): void {
+    this.touchPull = active;
   }
   queueEmote(): void {
     this.emoteQueued = true;

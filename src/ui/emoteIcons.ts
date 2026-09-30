@@ -25,6 +25,10 @@ export const EMOTE_ICONS: readonly string[] = [
   stroke('<path d="M12 21.2s-6.4-5.8-6.4-10.6a6.4 6.4 0 0 1 12.8 0c0 4.8-6.4 10.6-6.4 10.6z"/><circle cx="12" cy="10.4" r="2.3"/>'),
 ];
 
-/** Ícone do botão da roda (balão de fala) e do botão de fundir (duas bolas virando uma). */
+/**
+ * Ícone do botão da roda (balão de fala), do botão de fundir (duas bolas virando
+ * uma) e do botão de puxar (ímã puxando a bolinha do rival).
+ */
 export const EmoteButtonIcon = stroke('<path d="M4.5 5.5h15a1.8 1.8 0 0 1 1.8 1.8v8.4a1.8 1.8 0 0 1-1.8 1.8H11l-4.6 3.3v-3.3H4.5a1.8 1.8 0 0 1-1.8-1.8V7.3a1.8 1.8 0 0 1 1.8-1.8z"/><circle cx="8" cy="11.5" r="0.5" fill="currentColor"/><circle cx="12" cy="11.5" r="0.5" fill="currentColor"/><circle cx="16" cy="11.5" r="0.5" fill="currentColor"/>');
 export const MergeIcon = stroke('<circle cx="6.5" cy="12" r="3.3"/><circle cx="17" cy="12" r="5"/><path d="M10.2 12h1.6"/><path d="M9.3 9.3l1.6 1.2M9.3 14.7l1.6-1.2"/>');
+export const PullIcon = stroke('<path d="M13 4.5H8.8a7.5 7.5 0 0 0 0 15H13V15H8.8a3 3 0 0 1 0-6H13z"/><path d="M10.6 4.5V9M10.6 15v4.5"/><circle cx="19" cy="12" r="2.4"/>');

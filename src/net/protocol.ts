@@ -13,9 +13,9 @@ import { isTeamSize, type TeamSize } from './teams';
  *   - `event`: confiável e em ordem. Tudo que não pode se perder (alguém engoliu
  *     a flor 12, o montinho 3 renasceu, fulano pegou a bola de ciclano), em JSON pequeno.
  *
- * Cada bola tem um número (`id`) e um dono: quem simula ela. Roubar, engolir e
- * fundir são PEDIDOS ao dono da sala, que confere as regras (`rules.ts`) e
- * anuncia a decisão pra todo mundo.
+ * Cada bola tem um número (`id`) e um dono: quem simula ela. Roubar, engolir,
+ * fundir e puxar são PEDIDOS ao dono da sala, que confere as regras (`rules.ts`)
+ * e anuncia a decisão pra todo mundo.
  *
  * Tudo que chega da rede é validado aqui antes de tocar no jogo: tipo, faixa e
  * tamanho. Mensagem torta é descartada em silêncio (um cliente modificado não
@@ -23,7 +23,7 @@ import { isTeamSize, type TeamSize } from './teams';
  */
 
 /** Sobe quando o formato muda de um jeito que página velha não entende (a sala recusa quem difere). */
-export const NET_PROTOCOL = 3;
+export const NET_PROTOCOL = 4;
 
 /** Jogadores por sala (o banco confere o mesmo teto). */
 export const MAX_PLAYERS = 6;
@@ -74,6 +74,8 @@ export interface BallPose {
   immune: boolean;
   /** O dono está segurando "fundir" encostado noutra bola: não pode ser engolida (a doação vem em menos de 1 s). */
   gift: boolean;
+  /** O dono está segurando "puxar" encostado na bola de um rival (o rival vê o aviso e pode fugir). */
+  pull: boolean;
   /** 0..1: Sol excedente (o brilho a mais). */
   glow: number;
 }
@@ -110,6 +112,7 @@ const BALL_BURYING = 1;
 const BALL_PUSHED = 2;
 const BALL_IMMUNE = 4;
 const BALL_GIFT = 8;
+const BALL_PULL = 16;
 
 const i16 = (value: number, scale: number) => Math.max(-32767, Math.min(32767, Math.round(value * scale)));
 const u8 = (value01: number) => Math.max(0, Math.min(255, Math.round(value01 * 255)));
@@ -155,7 +158,10 @@ export function encodeSnapshot(s: PlayerSnapshot): ArrayBuffer {
     v.setInt16(o + 26, i16(ball.vy, 100));
     v.setInt16(o + 28, i16(ball.vz, 100));
     v.setUint16(o + 30, Math.max(0, Math.min(65535, Math.round(ball.radius * 4000))));
-    v.setUint8(o + 32, (ball.burying ? BALL_BURYING : 0) | (ball.pushed ? BALL_PUSHED : 0) | (ball.immune ? BALL_IMMUNE : 0) | (ball.gift ? BALL_GIFT : 0));
+    v.setUint8(
+      o + 32,
+      (ball.burying ? BALL_BURYING : 0) | (ball.pushed ? BALL_PUSHED : 0) | (ball.immune ? BALL_IMMUNE : 0) | (ball.gift ? BALL_GIFT : 0) | (ball.pull ? BALL_PULL : 0),
+    );
     v.setUint8(o + 33, u8(ball.glow));
   }
   return out;
@@ -210,6 +216,7 @@ export function decodeSnapshot(data: ArrayBuffer): PlayerSnapshot | null {
       pushed: (ballFlags & BALL_PUSHED) !== 0,
       immune: (ballFlags & BALL_IMMUNE) !== 0,
       gift: (ballFlags & BALL_GIFT) !== 0,
+      pull: (ballFlags & BALL_PULL) !== 0,
       glow: v.getUint8(o + 33) / 255,
     };
     if (ball.id === 0 || !inWorld(ball.x, ball.y, ball.z)) return null;
@@ -369,11 +376,13 @@ export type NetEvent =
   | { t: 'tackle'; target: string; from?: string }
   | { t: 'swallow'; b: number; target: number; from?: string }
   | { t: 'merge'; b: number; target: number; from?: string }
+  | { t: 'pull'; b: number; target: number; from?: string }
   // Decisões do dono da sala.
   | { t: 'own'; b: number; to: string; prev: string; why: OwnReason }
   | { t: 'tackled'; by: string; target: string; b: number }
   | { t: 'swallowed'; b: number; into: number; by: string }
   | { t: 'merged'; b: number; into: number; by: string }
+  | { t: 'pulled'; b: number; into: number; by: string }
   | { t: 'rules'; rules: NetRules }
   | { t: 'teams'; m: Array<[string, number]> }
   | { t: 'match'; m: NetMatch }
@@ -602,6 +611,7 @@ export function parseEvent(text: string): NetEvent | null {
       return isUid(e.target) ? { t: 'tackle', target: e.target, from } : null;
     case 'swallow':
     case 'merge':
+    case 'pull':
       return isBallId(e.b) && isBallId(e.target) && e.b !== e.target ? { t: e.t, b: e.b, target: e.target, from } : null;
     case 'own':
       return isBallId(e.b) && isUid(e.to) && isUid(e.prev) && (e.why === 'grab' || e.why === 'tackle') ? { t: 'own', b: e.b, to: e.to, prev: e.prev, why: e.why } : null;
@@ -609,6 +619,7 @@ export function parseEvent(text: string): NetEvent | null {
       return isUid(e.by) && isUid(e.target) && isInt(e.b, 0, 0xffffffff) ? { t: 'tackled', by: e.by, target: e.target, b: e.b } : null;
     case 'swallowed':
     case 'merged':
+    case 'pulled':
       return isBallId(e.b) && isBallId(e.into) && isUid(e.by) ? { t: e.t, b: e.b, into: e.into, by: e.by } : null;
     case 'rules':
       return isRules(e.rules) ? { t: 'rules', rules: cleanRules(e.rules) } : null;
@@ -647,6 +658,7 @@ export const CLIENT_EVENTS: ReadonlySet<NetEventType> = new Set<NetEventType>([
   'tackle',
   'swallow',
   'merge',
+  'pull',
   'emote',
   'look',
   'team',

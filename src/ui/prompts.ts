@@ -27,6 +27,7 @@ export type PromptAction =
   | 'ability'
   | 'emote'
   | 'merge'
+  | 'pull'
   | 'invite'
   | 'zoom'
   | 'recenter'
@@ -47,6 +48,7 @@ const KEYBOARD: Record<PromptAction, KeyCap[]> = {
   ability: [{ text: 'Q' }],
   emote: [{ text: 'G' }],
   merge: [{ text: 'F' }],
+  pull: [{ text: 'C' }],
   invite: [{ text: 'J' }],
   zoom: [{ key: 'key.wheel' }],
   recenter: [{ key: 'key.middleClick' }],
@@ -65,6 +67,7 @@ const GAMEPAD: Record<PromptAction, PadButton[]> = {
   ability: ['x'],
   emote: ['down'],
   merge: ['left'],
+  pull: ['up'],
   invite: ['right'],
   zoom: ['lb', 'rb'],
   recenter: ['r3'],

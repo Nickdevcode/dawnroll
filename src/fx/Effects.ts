@@ -422,6 +422,33 @@ export class Effects {
     this.puffRing(at, 5, 0.25, 1.2, tmpColor.copy(color).lerp(Dust.grass, 0.5), 0.35);
   }
 
+  /**
+   * Online, puxando: fiapos de bosta saem de `from` (a bola que está sendo
+   * puxada, no ponto de encosto) voando pra `to` (a bola que puxa). Chamado a
+   * cada tanto enquanto alguém segura "puxar": mostra de longe quem leva o quê.
+   */
+  pullStreak(from: THREE.Vector3, to: THREE.Vector3): void {
+    const dir = tmp.subVectors(to, from);
+    const len = dir.length() || 1;
+    dir.multiplyScalar(1 / len);
+    for (let i = 0; i < 4; i++) {
+      const speed = this.rng.range(2.5, 4.5);
+      this.chunks.spawn({
+        x: from.x + this.rng.range(-0.15, 0.15),
+        y: from.y + this.rng.range(-0.1, 0.2),
+        z: from.z + this.rng.range(-0.15, 0.15),
+        vx: dir.x * speed + this.rng.range(-0.4, 0.4),
+        vy: dir.y * speed + this.rng.range(0.6, 1.6),
+        vz: dir.z * speed + this.rng.range(-0.4, 0.4),
+        color: this.rng.pick(DungChunks),
+        size: this.rng.range(0.04, 0.09),
+        life: this.rng.range(0.35, 0.6),
+        bounce: 0.1,
+        spin: this.rng.range(4, 10),
+      });
+    }
+  }
+
   /** Bola caiu/bateu forte no chão. */
   impact(ballPosition: THREE.Vector3, radius: number, strength: number): void {
     const feet = tmp.set(ballPosition.x, terrainHeight(ballPosition.x, ballPosition.z), ballPosition.z);

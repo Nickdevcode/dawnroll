@@ -630,7 +630,7 @@
   }
 }
 
-/* --- Botões do online no toque (reagir; fundir aparece só encostando noutra bola) -- */
+/* --- Botões do online no toque (reagir; fundir/puxar aparecem só encostando noutra bola) -- */
 .online-touch {
   position: absolute;
   right: calc(max(var(--space-5), env(safe-area-inset-right)) + 76px + var(--space-4));
@@ -653,9 +653,29 @@
   width: 26px;
   height: 26px;
 }
+/* Celular deitado: com puxar + fundir + reações empilhados, a coluna não sobe até os botões do topo. */
+@media (max-height: 400px) {
+  .online-touch {
+    gap: var(--space-2);
+  }
+  .online-touch .touch-btn {
+    width: 52px;
+    height: 52px;
+  }
+  .online-touch .touch-btn svg {
+    width: 23px;
+    height: 23px;
+  }
+}
 .online-touch__merge {
   background: linear-gradient(180deg, #ffe39a 0%, var(--color-accent) 100%);
   color: #5a3a12;
+  animation: bubble-pop var(--dur-med) var(--ease-spring);
+}
+/* Puxar é roubo: coral, pra nunca confundir com o dourado de doar. */
+.online-touch__pull {
+  background: linear-gradient(180deg, #ffc9b0 0%, var(--color-steal) 100%);
+  color: #4a1a0c;
   animation: bubble-pop var(--dur-med) var(--ease-spring);
 }
 
@@ -679,6 +699,9 @@
   background: var(--color-accent);
   transform-origin: left center;
   transform: scaleX(var(--p, 0));
+}
+.hint-progress--pull::after {
+  background: var(--color-steal);
 }
 
 /* --- Regra da sala (roubo liga/desliga) ------------------------------------------ */
@@ -726,7 +749,8 @@
   .nameplate__bubble,
   .ping-marker__pin,
   .emote-wheel__ring,
-  .online-touch__merge {
+  .online-touch__merge,
+  .online-touch__pull {
     animation: none;
   }
   .emote-wheel__item {
