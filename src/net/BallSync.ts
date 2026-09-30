@@ -112,6 +112,11 @@ export interface BallRoom {
   nick(uid: string): string;
   /** Pés do besouro de alguém no retrato mais novo (o dono da sala confere distância). */
   beetleAt(uid: string, out: THREE.Vector3): THREE.Vector3 | null;
+  /**
+   * Dono da sala: `uid` está sem conexão, esperando voltar. As bolas dele ficam
+   * intocáveis até lá (ele nem ficaria sabendo que perdeu, e voltaria com ela).
+   */
+  away(uid: string): boolean;
 }
 
 /** Uma bola da sala, sua ou de outro. */
@@ -140,6 +145,8 @@ export interface BallRecord {
   bornAt: number;
   /** Fantasma: quando apareceu pra este aparelho (o dono da sala limita a imunidade por aqui). */
   firstSeen: number;
+  /** Fantasma: quando chegou a pose mais nova dela (ou quando mudou de mão). */
+  heardAt: number;
   /** Fantasma: bandeiras do retrato mais novo. */
   immune: boolean;
   burying: boolean;
@@ -167,6 +174,16 @@ const CLAIM_RETRY = 0.8;
 const GULP_SECONDS = 0.35;
 /** Número de bola que saiu do jogo fica ignorado por isso (retrato atrasado não ressuscita). */
 const TOMBSTONE_SECONDS = 15;
+/**
+ * Fantasma sem pose há tanto tempo enquanto o dono continua mandando retrato:
+ * ele não tem mais essa bola (o "sumiu" se perdeu numa queda de conexão). Bem
+ * acima de qualquer sumiço de verdade do retrato (broto guardado ~3 s).
+ */
+const ORPHAN_SECONDS = 6;
+/** O dono "continua mandando" se o último retrato dele chegou há menos disso. */
+const OWNER_STREAMING_SECONDS = 1;
+/** Procura fantasma órfão a cada tanto (não precisa ser todo passo). */
+const ORPHAN_CHECK_SECONDS = 1;
 /** Brilhinho do broto imune: de quanto em quanto tempo. */
 const SHIMMER_SECONDS = 0.7;
 
@@ -188,6 +205,11 @@ export class BallSync {
   readonly records = new Map<number, BallRecord>();
   private readonly byBall = new Map<DungBall, BallRecord>();
   private readonly tombstones = new Map<number, number>();
+  /** Último retrato de cada jogador (relógio da sala): quem está mandando agora. */
+  private readonly ownerHeard = new Map<string, number>();
+  /** Números das bolas de quem saiu (se ele voltar, elas podem aparecer de novo na hora, ver `forgive`). */
+  private readonly leftBalls = new Map<string, number[]>();
+  private orphanCheckAt = 0;
   private readonly gulps: Gulp[] = [];
   private readonly poses: BallPose[] = [];
   /** Broto esperando pra nascer (perdeu a bola). */
@@ -285,6 +307,7 @@ export class BallSync {
       looseUntil: 0,
       bornAt: now,
       firstSeen: now,
+      heardAt: now,
       immune: false,
       burying: false,
       gift: false,
@@ -355,19 +378,35 @@ export class BallSync {
     }
     this.gulps.length = 0;
     this.tombstones.clear();
+    this.ownerHeard.clear();
+    this.leftBalls.clear();
     this.releaseHold();
     this.teamPush = 0;
   }
 
   /** Um jogador saiu: as bolas dele saem junto. */
   removeOwner(uid: string): void {
+    const ids: number[] = [];
     for (const rec of [...this.records.values()]) {
       if (rec.local || rec.owner !== uid) continue;
       this.forget(rec);
       this.tombstone(rec.id);
+      ids.push(rec.id);
       this.releaseIfHeld(rec.ball);
       this.dispose(rec.ball);
     }
+    this.ownerHeard.delete(uid);
+    if (ids.length > 0) this.leftBalls.set(uid, ids);
+  }
+
+  /**
+   * Quem tinha saído voltou pra sala: as bolas que ele tinha (a sessão dele
+   * continuou, os números são os mesmos) podem aparecer de novo já, sem
+   * esperar a lápide de quando ele saiu vencer.
+   */
+  forgive(uid: string): void {
+    for (const id of this.leftBalls.get(uid) ?? []) this.tombstones.delete(id);
+    this.leftBalls.delete(uid);
   }
 
   /** Alguém chegou: o conteúdo das suas bolas vai de novo (ele precisa pra roubar/fundir certo). */
@@ -423,12 +462,14 @@ export class BallSync {
 
   /** Chegou o retrato de `owner`: as bolas dele (fantasmas) e a ajuda dele numa bola (se for sua, a força vale aqui). */
   receive(owner: string, snapshot: PlayerSnapshot, arrival: number): void {
+    this.ownerHeard.set(owner, arrival);
     for (const pose of snapshot.balls) {
       if (this.tombstones.has(pose.id)) continue;
       let rec = this.records.get(pose.id);
       if (!rec) rec = this.createProxy(pose.id, owner);
       // Retrato atrasado do dono antigo (a bola já mudou de mão): não vale.
       if (rec.local || rec.owner !== owner) continue;
+      rec.heardAt = arrival;
       const buffer = rec.buffer!;
       const newest = !buffer.latest || snapshot.time > buffer.latest.time;
       buffer.push(snapshot.time, pose, arrival, INTERVAL);
@@ -533,6 +574,26 @@ export class BallSync {
     this.detectSwallow(now);
     this.sendInfos(now);
     for (const [id, until] of this.tombstones) if (now > until) this.tombstones.delete(id);
+    if (now >= this.orphanCheckAt) {
+      this.orphanCheckAt = now + ORPHAN_CHECK_SECONDS;
+      this.reapOrphans(now);
+    }
+  }
+
+  /**
+   * Fantasma que o dono parou de mandar enquanto manda o resto: a bola já não
+   * existe pra ele (enterrou ou esfarelou durante uma queda de conexão, e o
+   * "sumiu" se perdeu). Sai sem lápide: se for engano, o próximo retrato traz de volta.
+   */
+  private reapOrphans(now: number): void {
+    for (const rec of [...this.records.values()]) {
+      if (rec.local || now - rec.heardAt < ORPHAN_SECONDS) continue;
+      if (now - (this.ownerHeard.get(rec.owner) ?? -Infinity) > OWNER_STREAMING_SECONDS) continue;
+      if (import.meta.env.DEV) console.warn(`[net] bola ${rec.id} de ${this.room.nick(rec.owner)} sumiu dos retratos: saiu do jogo`);
+      this.forget(rec);
+      this.releaseIfHeld(rec.ball);
+      this.dispose(rec.ball);
+    }
   }
 
   /** Quadro: desenho dos fantasmas e das suas bolas largadas, bolas sendo engolidas, brilho dos brotos. */
@@ -751,7 +812,7 @@ export class BallSync {
     switch (event.t) {
       case 'claim': {
         const rec = this.records.get(event.b);
-        if (!rec || this.tombstones.has(event.b)) return null;
+        if (!rec || this.tombstones.has(event.b) || this.room.away(rec.owner)) return null;
         const at = this.room.beetleAt(from, tmpPos2);
         const gap = at ? this.centerOf(rec, tmpPos).distanceTo(at) - this.facts(rec, now).radius : Infinity;
         if (judgeClaim(this.facts(rec, now), from, now, rules, gap, this.room.teams()) !== 'ok') return null;
@@ -761,7 +822,7 @@ export class BallSync {
       case 'swallow': {
         const ball = this.records.get(event.b);
         const prey = this.records.get(event.target);
-        if (!ball || !prey || this.tombstones.has(event.b) || this.tombstones.has(event.target)) return null;
+        if (!ball || !prey || this.tombstones.has(event.b) || this.tombstones.has(event.target) || this.eitherAway(ball, prey)) return null;
         const distance = this.centerOf(ball, tmpPos).distanceTo(this.centerOf(prey, tmpPos2));
         if (judgeSwallow(this.facts(ball, now), this.facts(prey, now), from, rules, distance, this.room.teams()) !== 'ok') return null;
         return { t: 'swallowed', b: prey.id, into: ball.id, by: from };
@@ -769,7 +830,7 @@ export class BallSync {
       case 'merge': {
         const ball = this.records.get(event.b);
         const target = this.records.get(event.target);
-        if (!ball || !target || this.tombstones.has(event.b) || this.tombstones.has(event.target)) return null;
+        if (!ball || !target || this.tombstones.has(event.b) || this.tombstones.has(event.target) || this.eitherAway(ball, target)) return null;
         const distance = this.centerOf(ball, tmpPos).distanceTo(this.centerOf(target, tmpPos2));
         const teams = this.room.teams();
         if (judgeMerge(this.facts(ball, now), this.facts(target, now), from, distance, teams, rules) !== 'ok') return null;
@@ -780,7 +841,7 @@ export class BallSync {
       case 'pull': {
         const ball = this.records.get(event.b);
         const target = this.records.get(event.target);
-        if (!ball || !target || this.tombstones.has(event.b) || this.tombstones.has(event.target)) return null;
+        if (!ball || !target || this.tombstones.has(event.b) || this.tombstones.has(event.target) || this.eitherAway(ball, target)) return null;
         const distance = this.centerOf(ball, tmpPos).distanceTo(this.centerOf(target, tmpPos2));
         if (judgePull(this.facts(ball, now), this.facts(target, now), from, now, rules, distance, this.room.teams()) !== 'ok') return null;
         return { t: 'pulled', b: target.id, into: ball.id, by: from };
@@ -788,6 +849,11 @@ export class BallSync {
       default:
         return null;
     }
+  }
+
+  /** O dono de alguma das duas bolas está sem conexão (esperando voltar)? */
+  private eitherAway(a: BallRecord, b: BallRecord): boolean {
+    return this.room.away(a.owner) || this.room.away(b.owner);
   }
 
   /** O que o dono da sala sabe da bola agora (a pose mais nova que chegou, não a desenhada). */
@@ -866,6 +932,7 @@ export class BallSync {
     else if (!rec.local) {
       rec.prevOwner = rec.owner;
       rec.owner = to;
+      rec.heardAt = this.room.now();
     }
   }
 
@@ -910,6 +977,7 @@ export class BallSync {
     rec.buffer = new PoseBuffer(ballOps);
     rec.placed = true;
     rec.firstSeen = now;
+    rec.heardAt = now;
     rec.assists.clear();
     ball.overflow = false;
     ball.setProxy(true);
@@ -1021,6 +1089,7 @@ export class BallSync {
       looseUntil: 0,
       bornAt: now,
       firstSeen: now,
+      heardAt: now,
       immune: false,
       burying: false,
       gift: false,

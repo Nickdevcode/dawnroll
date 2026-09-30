@@ -1054,6 +1054,7 @@ export const en: Messages = {
   'online.hudRoom': 'Room {code}',
   'online.joined': '{name} joined the room',
   'online.left': '{name} left the room',
+  'online.away': 'no signal',
   'online.youHost': 'You are now the room host',
   'online.buried': '{name} buried a {cm} ball!',
   'online.lost': 'Room lost: back to your own garden',

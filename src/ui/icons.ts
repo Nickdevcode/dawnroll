@@ -52,6 +52,7 @@ export const Icons = {
   share: stroke('<circle cx="18" cy="5.5" r="2.5"/><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="18.5" r="2.5"/><path d="M8.3 10.8l7.4-4M8.3 13.2l7.4 4"/>'),
   crown: stroke('<path d="M3.5 8l4.2 3.6L12 5l4.3 6.6L20.5 8l-1.8 10H5.3z"/><path d="M5.5 21h13"/>'),
   signal: stroke('<path d="M4 20v-3M9.3 20v-6.5M14.7 20V10M20 20V6"/>', 2.6),
+  signalOff: stroke('<path d="M4 20v-3M9.3 20v-6.5M14.7 20v-4M20 20v-2"/><path d="M3.5 4.5l17 15"/>', 2.4),
   enter: stroke('<path d="M10 4.5H6.5a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2H10"/><path d="M14 16.5 18.5 12 14 7.5M18.5 12H9"/>'),
   trash: stroke('<path d="M4.5 7h15M9.5 7V4.5h5V7M6.5 7l.9 12a2 2 0 0 0 2 1.8h5.2a2 2 0 0 0 2-1.8l.9-12"/><path d="M10 11v6M14 11v6"/>'),
   // Amigos

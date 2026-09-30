@@ -53,6 +53,11 @@ export interface SessionHandlers {
    */
   onWelcome(info: { slot: number; members: NetMember[]; world: NetWorld | null; isHost: boolean }): void;
   onMemberJoin(member: NetMember): void;
+  /**
+   * Quem já estava na sala se apresentou de novo (a conexão dele piscou, ou
+   * todo mundo reconectou num dono novo): mesma vaga, nada de "entrou".
+   */
+  onMemberReturn(member: NetMember): void;
   onMemberLeave(uid: string): void;
   onSnapshot(snapshot: PlayerSnapshot): void;
   /** Evento do mundo; `from` = quem causou (o dono, nos eventos do dono). */
@@ -68,6 +73,23 @@ const CLIENT_BEAT_MS = 5000;
 const HOST_SILENCE_S = 8;
 /** Sem ouvir um jogador por isso, o dono fecha a conexão dele. */
 const PEER_SILENCE_S = 12;
+/**
+ * A conexão com um jogador caiu sem ele dizer tchau (a rede piscou, o celular
+ * foi pro segundo plano, o aparelho travou): a vaga, o besouro e as bolas dele
+ * esperam isso antes de virar "saiu". Quem volta nesse meio tempo reconecta na
+ * mesma vaga, sem aviso nenhum. Quem sai de verdade diz tchau (aviso na hora).
+ */
+const AWAY_GRACE_S = 20;
+/** Buraco entre dois tiques maior que isso = esta página ficou congelada (celular em segundo plano, travada longa). */
+const STALL_S = 2;
+/**
+ * Voltou de um congelamento há menos disso: quem sumiu fui eu, o dono
+ * provavelmente continua lá (a queda aparece logo depois de acordar; mais que
+ * isso, tentar no dono antigo só atrasaria a troca, se ele morreu mesmo).
+ */
+const STALL_MEMORY_S = 10;
+/** Depois de congelar: fôlego pra fila de mensagens parada chegar antes de achar que alguém sumiu. */
+const THAW_GRACE_S = 1.5;
 /** Tempo pra chegar o "welcome" depois de conectar. */
 const WELCOME_TIMEOUT_MS = 10000;
 /** Recuperação (dono caiu): tentativas rápidas no começo (1 s), depois a cada 2 s; ~40 s no total. */
@@ -110,6 +132,14 @@ export class NetSession {
   private hostHint: string | null = null;
   /** Saindo de propósito: a conexão que cai nesse meio tempo (o dono respondeu ao "tchau") não é queda. */
   private leaving = false;
+  /** Dono: quem está sem conexão e até quando a vaga dele fica guardada (relógio local). */
+  private readonly away = new Map<string, number>();
+  /** Jogador: o dono disse tchau antes de a conexão cair (saiu de verdade, não foi a rede). */
+  private hostSaidBye: string | null = null;
+  /** Último tique (relógio local): um buraco grande entre dois = a página congelou. */
+  private lastTickAt = 0;
+  /** Quando esta página voltou do último congelamento. */
+  private thawedAt = -Infinity;
 
   private constructor(
     private readonly client: SupabaseClient,
@@ -158,6 +188,11 @@ export class NetSession {
 
   member(uid: string): NetMember | undefined {
     return this.members.get(uid);
+  }
+
+  /** Dono: `uid` está sem conexão (a vaga está guardada esperando ele voltar). */
+  isAway(uid: string): boolean {
+    return this._isHost && this.away.has(uid);
   }
 
   /** Ping até o dono (ms); 0 pro próprio dono. */
@@ -254,18 +289,29 @@ export class NetSession {
     this.scheduleBeat();
   }
 
-  private becomeHost(fresh: boolean): void {
+  /**
+   * Viro o dono. `fresh` = sala nova (só eu). Assumindo no meio, `departed` é o
+   * dono antigo quando se sabe que ele saiu de verdade (o banco passou a sala
+   * pelo botão "Sair"); se ele só sumiu, fica esperando voltar como todo mundo.
+   */
+  private becomeHost(fresh: boolean, departed: string | null = null): void {
     const wasHost = this._isHost;
     this._isHost = true;
     this.hostId = this.selfId;
     this.star.becomeHost();
     this.clock.becomeReference();
     this.budgets.clear();
+    this.away.clear();
     if (fresh) {
       this.members.clear();
       const { nick, look } = this.handlers.profile();
       this._slot = 0;
       this.members.set(this.selfId, { uid: this.selfId, slot: 0, nick, look, joinedAt: this.clock.now() });
+    } else {
+      if (departed && departed !== this.selfId && this.members.delete(departed)) this.handlers.onMemberLeave(departed);
+      // Todo mundo precisa reconectar em mim: a vaga de cada um fica guardada até lá (quem não voltar, saiu).
+      const deadline = RoomClock.local() + AWAY_GRACE_S;
+      for (const uid of this.members.keys()) if (uid !== this.selfId) this.away.set(uid, deadline);
     }
     if (!wasHost) this.handlers.onRoleChange(true);
     if (fresh) this.handlers.onWelcome({ slot: 0, members: this.memberList, world: null, isHost: true });
@@ -280,6 +326,8 @@ export class NetSession {
     const wasHost = this._isHost;
     this._isHost = false;
     this.hostId = hostId;
+    // Quem espera quem voltar agora é o dono novo.
+    this.away.clear();
     if (wasHost) this.handlers.onRoleChange(false);
     try {
       await this.star.connectTo(hostId);
@@ -302,6 +350,7 @@ export class NetSession {
       this.star.drop(hostId);
       return false;
     }
+    this.hostSaidBye = null;
     this.setStatus('online');
     this.scheduleBeat();
     if (!this.reported) {
@@ -330,7 +379,10 @@ export class NetSession {
     this.recovering = true;
     this.hostHint = null;
     this.setStatus('reconnecting');
-    if (this.members.delete(lostHost)) this.handlers.onMemberLeave(lostHost);
+    // Disse tchau: saiu mesmo, avisa já. Senão pode ser só a conexão piscando (a minha ou a dele): o
+    // besouro dele fica parado onde estava até saber — o "welcome" de quem for o dono diz quem continua.
+    if (this.hostSaidBye === lostHost && this.members.delete(lostHost)) this.handlers.onMemberLeave(lostHost);
+    let triedSameHost = false;
     try {
       for (let attempt = 0; attempt < RECOVERY_TRIES && !this.isClosed(); attempt++) {
         if (attempt > 0) await this.waitForHint(attempt < RECOVERY_FAST_TRIES ? 1000 : 2000);
@@ -352,12 +404,20 @@ export class NetSession {
         }
         let host = hb.hostId;
         if (import.meta.env.DEV) console.warn(`[net] recuperação ${attempt}: banco diz dono=${host === this.selfId ? 'eu' : host === lostHost ? 'o que sumiu' : 'outro'} (${(performance.now() / 1000).toFixed(2)} s)`);
+        // Fui eu que congelei (celular em segundo plano): o dono provavelmente está bem; tenta nele logo de cara, uma vez.
+        if (host === lostHost && !triedSameHost && this.justThawed()) {
+          triedSameHost = true;
+          if (await this.connectToHost(host)) return;
+          continue;
+        }
+        // O banco já me passou a sala (o dono saiu pelo botão): ele saiu de verdade.
+        const passedToMe = host === this.selfId;
         // Ordem de chegada: o primeiro da fila tenta assumir já; os outros esperam a vez dele.
         const queue = this.memberList.filter((m) => m.uid !== lostHost).map((m) => m.uid);
         const myTurn = queue.indexOf(this.selfId) <= Math.floor(attempt / 3);
         if (host === lostHost && myTurn) host = (await claimHost(this.client, this.room.id).catch(() => null)) ?? host;
         if (host === this.selfId) {
-          this.becomeHost(false);
+          this.becomeHost(false, passedToMe ? lostHost : null);
           return;
         }
         // O mesmo dono de antes: só tenta reconectar nele depois de um tempo (se ele tivesse
@@ -380,9 +440,10 @@ export class NetSession {
     if (this.isClosed() || this.leaving) return;
     if (this._isHost) {
       this.budgets.delete(peer);
-      if (this.members.delete(peer)) {
-        this.star.broadcast('event', JSON.stringify({ t: 'leave', uid: peer } satisfies NetEvent));
-        this.handlers.onMemberLeave(peer);
+      // Caiu sem tchau: pode ser só a rede piscando. A vaga espera ele voltar (ver `AWAY_GRACE_S`).
+      if (this.members.has(peer) && !this.away.has(peer)) {
+        if (import.meta.env.DEV) console.warn(`[net] conexão com ${this.members.get(peer)?.nick} caiu: vaga guardada`);
+        this.away.set(peer, RoomClock.local() + AWAY_GRACE_S);
       }
     } else if (peer === this.hostId && this._status === 'online') {
       void this.recover(peer);
@@ -409,8 +470,8 @@ export class NetSession {
     }
     if (!hb.hostId || hb.hostId === this.hostId) return;
     if (hb.hostId === this.selfId) {
-      if (this.members.delete(this.hostId)) this.handlers.onMemberLeave(this.hostId);
-      this.becomeHost(false);
+      // O banco me passou a sala sem eu pedir: o dono saiu pelo botão (e o tchau se perdeu).
+      this.becomeHost(false, this.hostId);
     } else {
       // Outro virou dono (eu inclusive posso ter caído e voltado): vou pra ele.
       const target = hb.hostId;
@@ -423,6 +484,9 @@ export class NetSession {
     if (this.isClosed()) return;
     this.clock.update(TICK_MS / 1000);
     const now = RoomClock.local();
+    const gap = this.lastTickAt > 0 ? now - this.lastTickAt : 0;
+    this.lastTickAt = now;
+    if (gap > STALL_S) this.thaw(gap - TICK_MS / 1000, now);
     if (this._isHost) {
       // Recarrega o limite de cada um e derruba quem ficou mudo demais.
       const refill = TICK_MS / 1000;
@@ -431,6 +495,8 @@ export class NetSession {
         budget.event = Math.min(EVENT_RATE * 2, budget.event + EVENT_RATE * refill);
         if (now - budget.lastSeen > PEER_SILENCE_S) this.star.drop(peer);
       }
+      // Quem caiu e não voltou a tempo: agora sim, saiu.
+      for (const [uid, deadline] of this.away) if (now > deadline) this.dropMember(uid);
       return;
     }
     if (this._status !== 'online') return;
@@ -445,6 +511,31 @@ export class NetSession {
       this.nextPingAt = now + (this.pingCount < 6 ? 0.25 : 2);
       this.say({ t: 'ping', c: now });
     }
+  }
+
+  /**
+   * Esta página ficou congelada `frozen` segundos (celular com o jogo em
+   * segundo plano, travada longa): quem sumiu fui eu, não os outros. O que
+   * ficou parado na fila ainda vai chegar: o silêncio de cada um ganha um
+   * fôlego curto antes de contar (se a conexão morreu mesmo, a queda aparece
+   * logo). E a vaga guardada de quem caiu não gasta o tempo em que eu não
+   * podia receber ninguém.
+   */
+  /**
+   * Esta página acabou de voltar de um congelamento? Vale também quando o
+   * tique ainda nem rodou (a queda da conexão às vezes chega antes dele).
+   */
+  private justThawed(): boolean {
+    const now = RoomClock.local();
+    return now - this.thawedAt < STALL_MEMORY_S || (this.lastTickAt > 0 && now - this.lastTickAt > STALL_S);
+  }
+
+  private thaw(frozen: number, now: number): void {
+    if (import.meta.env.DEV) console.warn(`[net] página congelou ${frozen.toFixed(1)} s`);
+    this.thawedAt = now;
+    this.lastHostMessage = Math.max(this.lastHostMessage, now - HOST_SILENCE_S + THAW_GRACE_S);
+    for (const budget of this.budgets.values()) budget.lastSeen = Math.max(budget.lastSeen, now - PEER_SILENCE_S + THAW_GRACE_S);
+    for (const [uid, deadline] of this.away) this.away.set(uid, deadline + frozen);
   }
 
   // --- Receber ------------------------------------------------------------------------
@@ -479,6 +570,8 @@ export class NetSession {
         this.star.send(peer, 'event', JSON.stringify({ t: 'pong', c: event.c, h: this.clock.now() } satisfies NetEvent));
         return;
       case 'bye':
+        // Saiu de verdade (botão "Sair", fechou a aba): avisa já, sem guardar a vaga.
+        this.dropMember(peer);
         this.star.drop(peer);
         return;
       default: {
@@ -513,9 +606,22 @@ export class NetSession {
     }
     const member: NetMember = { uid: peer, slot, nick: hello.nick.slice(0, 16), look: hello.look, joinedAt: known?.joinedAt ?? this.clock.now() };
     this.members.set(peer, member);
+    this.away.delete(peer);
     this.star.send(peer, 'event', JSON.stringify({ t: 'welcome', slot, hostTime: this.clock.now(), members: this.memberList, world: this.handlers.world() } satisfies NetEvent));
     this.star.broadcast('event', JSON.stringify({ t: 'join', member } satisfies NetEvent), peer);
-    if (!known) this.handlers.onMemberJoin(member);
+    if (known) this.handlers.onMemberReturn(member);
+    else this.handlers.onMemberJoin(member);
+  }
+
+  /** Dono: `uid` saiu de vez (disse tchau, ou não voltou a tempo). A vaga libera e a sala fica sabendo. */
+  private dropMember(uid: string): void {
+    this.away.delete(uid);
+    const member = this.members.get(uid);
+    if (!member) return;
+    if (import.meta.env.DEV) console.warn(`[net] ${member.nick} saiu da sala`);
+    this.members.delete(uid);
+    this.star.broadcast('event', JSON.stringify({ t: 'leave', uid } satisfies NetEvent));
+    this.handlers.onMemberLeave(uid);
   }
 
   /** Jogador: tudo vem do dono. */
@@ -543,13 +649,14 @@ export class NetSession {
         this.welcomeWaiter?.(true);
         return;
       }
-      case 'join':
+      case 'join': {
         if (event.member.uid === this.selfId) return;
-        if (!this.members.has(event.member.uid)) {
-          this.members.set(event.member.uid, event.member);
-          this.handlers.onMemberJoin(event.member);
-        } else this.members.set(event.member.uid, event.member);
+        const known = this.members.has(event.member.uid);
+        this.members.set(event.member.uid, event.member);
+        if (known) this.handlers.onMemberReturn(event.member);
+        else this.handlers.onMemberJoin(event.member);
         return;
+      }
       case 'leave':
         if (this.members.delete(event.uid)) this.handlers.onMemberLeave(event.uid);
         return;
@@ -557,7 +664,8 @@ export class NetSession {
         this.clock.addSample(event.c, event.h);
         return;
       case 'bye':
-        // O dono avisou que está saindo: já parte pra recuperação (sem esperar o silêncio).
+        // O dono avisou que está saindo: já parte pra recuperação (sem esperar o silêncio), e ele sai da lista na hora.
+        this.hostSaidBye = this.hostId;
         this.star.drop(this.hostId);
         return;
       default:

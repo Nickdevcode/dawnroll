@@ -1196,14 +1196,7 @@ export class Game {
     this.hud.setVisible(true);
     this.hud.perkPicker.setSuspended(false);
     this.started = true;
-    if (this.tutorialStart && !this.net.active) {
-      this.tutorialGuide.tutorial.begin(this.tutorialStart);
-      this.tutorialAuto = true;
-      this.tutorialStart = null;
-      // "Chegou a Feirinha! O que você já tinha virou presente" é o aviso de quem jogava antes
-      // das moedas: pra quem está chegando agora (o primeiro enterro já dá conquista) não faz sentido.
-      this.progression.markWelcomed();
-    }
+    this.beginPendingTutorial();
     // Pros amigos: "jogando" (numa sala, o banco já sabe pelo ponto dela).
     this.social.setActivity('solo');
     this.announceGolden();
@@ -1357,6 +1350,20 @@ export class Game {
       }
     }
     if (input.recenterPressed && this.started && !this.paused && !this.choosing) this.cameraRig.recenter(this.beetle.facing);
+  }
+
+  /**
+   * Primeira vez neste aparelho: o tutorial começa (no "Jogar", ou — pra quem foi
+   * direto pro online, onde não tem tutorial — quando volta pro próprio jardim).
+   */
+  private beginPendingTutorial(): void {
+    if (!this.tutorialStart || this.net.active) return;
+    this.tutorialGuide.tutorial.begin(this.tutorialStart);
+    this.tutorialAuto = true;
+    this.tutorialStart = null;
+    // "Chegou a Feirinha! O que você já tinha virou presente" é o aviso de quem jogava antes
+    // das moedas: pra quem está chegando agora (o primeiro enterro já dá conquista) não faz sentido.
+    this.progression.markWelcomed();
   }
 
   /** "Jogar o tutorial" (Como jogar): recomeça do primeiro passo e volta pro jardim. */
@@ -2356,6 +2363,9 @@ export class Game {
     if (this.podiumView || this.podium?.visible) this.leavePodium(true);
     if (this.hud.perkPicker.visible) this.hud.perkPicker.pickSelected();
     if (reason !== 'left') this.hud.notify(t(reason === 'full' ? 'online.error.room_full' : 'online.lost'));
+    // Novo aqui e foi direto pro online: de volta ao próprio jardim, o tutorial começa agora (e não
+    // "do nada" depois de uma pausa). Com o menu aberto, começa no "Continuar".
+    if (this.started && !this.paused) this.beginPendingTutorial();
   }
 
   // --- Disputa ------------------------------------------------------------------------------

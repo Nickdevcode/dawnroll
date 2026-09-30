@@ -478,6 +478,50 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/*
+ * Sem sinal: a conexão dele caiu (a vaga está guardada) ou o jogo dele está em segundo plano.
+ * O ícone mora DENTRO da placa (o aviso de cima pode ficar atrás do chip da sala quando o
+ * besouro está perto); o fundo não muda (contraste), só o apelido apaga um pouco.
+ */
+.nameplate.is-away .nameplate__tag {
+  box-shadow: inset 0 -3px 0 rgba(255, 255, 255, 0.22);
+}
+.nameplate.is-away .nameplate__nick {
+  opacity: 0.72;
+}
+.nameplate__signal svg {
+  display: block;
+  width: 14px;
+  height: 14px;
+  color: var(--color-steal);
+  animation: away-blink 1.6s ease-in-out infinite;
+}
+.nameplate__away {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px 3px 6px;
+  border-radius: var(--radius-pill);
+  background: rgba(27, 26, 68, 0.72);
+  color: var(--color-cream);
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  animation: bubble-pop var(--dur-med) var(--ease-spring);
+}
+.nameplate__away svg {
+  width: 14px;
+  height: 14px;
+  color: var(--color-steal);
+  animation: away-blink 1.6s ease-in-out infinite;
+}
+@keyframes away-blink {
+  50% {
+    opacity: 0.35;
+  }
+}
 
 /* --- Marcador "Aqui!" (reação que marca o chão) --------------------------------- */
 .ping-layer {
@@ -769,6 +813,9 @@
   .online__status,
   .online-chip[data-state='reconnecting'] .online-chip__text span,
   .nameplate__bubble,
+  .nameplate__away,
+  .nameplate__away svg,
+  .nameplate__signal svg,
   .ping-marker__pin,
   .emote-wheel__ring,
   .online-touch__merge,

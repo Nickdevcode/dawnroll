@@ -91,6 +91,8 @@ interface Remote {
   beetle: RemoteBeetle;
   buffer: PoseBuffer<RemoteBeetlePose>;
   placed: boolean;
+  /** Quando chegou o último retrato dele (relógio da sala). */
+  heardAt: number;
 }
 
 export interface OnlinePlayer {
@@ -124,6 +126,8 @@ export interface NameplateSource {
   dizzy: boolean;
   /** Time (−1 = cada um por si): a placa ganha a cor e o ícone dele. */
   team: number;
+  /** Parou de chegar retrato dele (a conexão caiu, ou o jogo dele está em segundo plano): o besouro está parado esperando. */
+  away: boolean;
 }
 
 /** Marcador "Aqui!" no chão: de quem (a vaga dá a cor) e até quando. */
@@ -155,6 +159,8 @@ const MATCH_TICK_MS = 250;
  * sombra (no celular, a sala cheia dobrava os draw calls). De longe ninguém vê.
  */
 const REMOTE_SHADOW_DISTANCE = 14;
+/** Sem retrato de alguém por isso (com a minha conexão boa), a placa dele avisa "sem sinal". */
+const AWAY_PLATE_SECONDS = 2;
 
 const tmpPos = new THREE.Vector3();
 
@@ -181,6 +187,8 @@ export class OnlinePlay {
   private _status: SessionStatus | 'off' = 'off';
   /** A sessão atual chegou a ficar online (fechar antes disso é "não deu pra entrar", não "a sala caiu"). */
   private everOnline = false;
+  /** Quando a sessão ficou online (de novo): antes do primeiro retrato de cada um, ninguém está "sem sinal". */
+  private onlineAt = 0;
   private lastLook = '';
   private _rules: NetRules = { ...DEFAULT_RULES };
   /** Trombada: quando você pode dar a próxima (relógio da sala), e o dono da sala anota a de cada um. */
@@ -220,6 +228,7 @@ export class OnlinePlay {
       request: (event) => this.request(event),
       nick: (uid) => this.nick(uid),
       beetleAt: (uid, out) => this.beetleAt(uid, out),
+      away: (uid) => (this.session ?? this.opening)?.isAway(uid) ?? false,
     });
     this.director = new MatchDirector(
       {
@@ -435,6 +444,7 @@ export class OnlinePlay {
         world: () => this.worldState(),
         onWelcome: (info) => this.welcome(info.members, info.world, info.isHost, info.slot),
         onMemberJoin: (member) => this.memberJoined(member),
+        onMemberReturn: (member) => this.memberReturned(member),
         onMemberLeave: (uid) => this.memberLeft(uid),
         onSnapshot: (snapshot) => this.receiveSnapshot(snapshot),
         onEvent: (event, from) => this.receiveEvent(event, from),
@@ -521,6 +531,9 @@ export class OnlinePlay {
     out.length = 0;
     const session = this.session;
     if (!session) return out;
+    const now = session.clock.now();
+    // Reconectando, ninguém chega: não é que os outros sumiram (o aviso da sala já diz "reconectando").
+    const online = session.status === 'online';
     for (const remote of this.remotes.values()) {
       if (!remote.placed) continue;
       const p = remote.beetle.position;
@@ -535,13 +548,14 @@ export class OnlinePlay {
         emote: this.emotes.get(uid)?.e ?? -1,
         dizzy: remote.buffer.latest?.pose.beetle.dizzy ?? false,
         team: this.teamOf(uid),
+        away: online && now - Math.max(remote.heardAt, this.onlineAt) > AWAY_PLATE_SECONDS,
       });
     }
     // O seu balão também aparece (em cima do seu besouro, sem placa de nome).
     const mine = this.emotes.get(session.selfId);
     if (mine) {
       const p = this.bridge.beetle.renderPosition(1, tmpPos);
-      out.push({ uid: session.selfId, slot: session.slot, nick: '', tag: null, position: new THREE.Vector3(p.x, p.y + 1.4, p.z), isHost: false, emote: mine.e, dizzy: false, team: this.teamOf(session.selfId) });
+      out.push({ uid: session.selfId, slot: session.slot, nick: '', tag: null, position: new THREE.Vector3(p.x, p.y + 1.4, p.z), isHost: false, emote: mine.e, dizzy: false, team: this.teamOf(session.selfId), away: false });
     }
     return out;
   }
@@ -665,10 +679,24 @@ export class OnlinePlay {
   private memberJoined(member: NetMember): void {
     if (member.uid === this.selfUid) return;
     this.ensureRemote(member);
+    // Voltou depois de a vaga expirar: as bolas dele (mesmos números) podem aparecer de novo já.
+    this.balls.forgive(member.uid);
     this.balls.resendInfo();
     this.director.memberJoined(member);
     this.bridge.notify(member.nick, 'join');
     // O dono conta as regras da sala pra quem chegou (o "welcome" já leva, mas quem já estava na sala pode ter perdido).
+    this.changed();
+  }
+
+  /**
+   * A conexão dele piscou e voltou (ou todo mundo reconectou num dono novo):
+   * mesma vaga, mesmo besouro, sem aviso. Ele pode ter perdido o conteúdo das
+   * nossas bolas nesse meio tempo: vai de novo.
+   */
+  private memberReturned(member: NetMember): void {
+    if (member.uid === this.selfUid) return;
+    this.ensureRemote(member);
+    this.balls.resendInfo();
     this.changed();
   }
 
@@ -686,6 +714,7 @@ export class OnlinePlay {
     const now = session.clock.now();
     for (const remote of this.remotes.values()) {
       if (remote.member.slot !== snapshot.slot) continue;
+      remote.heardAt = now;
       remote.buffer.push(snapshot.time, snapshot, now, SNAPSHOT_INTERVAL);
       this.balls.receive(remote.member.uid, snapshot, now);
       return;
@@ -817,7 +846,10 @@ export class OnlinePlay {
   }
 
   private sessionStatus(status: SessionStatus, reason?: CloseReason): void {
-    if (status === 'online') this.everOnline = true;
+    if (status === 'online') {
+      this.everOnline = true;
+      this.onlineAt = this.now();
+    }
     this.setStatus(status);
     if (status !== 'closed') return;
     this.session = null;
@@ -860,6 +892,8 @@ export class OnlinePlay {
 
   /** Dono da sala: confere a trombada com o que ele sabe dos dois besouros. */
   private judgeTackle(target: string, from: string): NetEvent | null {
+    // Sem conexão, ele não fica sabendo que levou (e a bola dele está guardada até ele voltar).
+    if (this.session?.isAway(target)) return null;
     const now = this.now();
     const by = this.beetleFacts(from, now);
     const victim = this.beetleFacts(target, now);
@@ -1013,7 +1047,7 @@ export class OnlinePlay {
     // Invisível até o primeiro retrato chegar (senão aparece no meio do mapa por um instante).
     beetle.model.root.visible = false;
     b.scene.add(beetle.model.root, beetle.stars.group);
-    this.remotes.set(member.uid, { member, beetle, buffer: new PoseBuffer(beetleOps), placed: false });
+    this.remotes.set(member.uid, { member, beetle, buffer: new PoseBuffer(beetleOps), placed: false, heardAt: this.now() });
   }
 
   private removeRemote(uid: string): void {

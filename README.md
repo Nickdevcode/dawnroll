@@ -89,6 +89,7 @@ Quem abre o jogo pela primeira vez **neste aparelho** (sem precisar de conta: o 
 - 🔁 **Refazer:** em **Como jogar → Jogar o tutorial**.
 - 💾 Parou no meio (fechou a aba)? Volta do passo em que estava. Quem **já jogava antes** (tem progresso no save) não vê o tutorial sozinho; e se entrar numa conta que já tem progresso no meio do tutorial, ele sai de cena.
 - 🎁 Quem está chegando agora não vê o aviso "Chegou a Feirinha! O que você já tinha virou presente" (é o aviso de quem jogava antes das moedas).
+- 🌐 Foi **direto pro online**? Na sala não tem tutorial (a sala não para por ninguém); ele começa assim que você volta pro seu próprio jardim.
 
 ### 🟤 A mecânica
 - **Empurrar:** chega perto da bola e segura `E`. O besouro vira de costas, apoia a cabeça no chão e empurra com as patas traseiras, de ré, igualzinho ao rola-bosta de verdade. Você só aponta a direção.
@@ -221,7 +222,7 @@ Conta é **opcional**: sem ela o jogo continua igualzinho, salvando no aparelho.
 | 🔄 **Dois aparelhos** | Se dois aparelhos gravarem ao mesmo tempo, o jogo **junta os dois** sem perder nada: contadores e recordes ficam com o maior, figurinhas, conquistas e achados viram a soma das listas |
 | 📴 **Sem internet** | Tudo continua salvando no aparelho; o save e os enterros ficam numa fila e sobem quando a conexão voltar (mesmo fechando o jogo no meio) |
 | 🚪 **Sair** | O que faltava sobe antes; o progresso fica guardado na conta e o aparelho volta pro começo até entrar de novo. **Sem internet com coisa por subir, ele avisa e não sai** (nada se perde) |
-| 🗑️ **Excluir conta** | Na placa da conta, com confirmação: apaga a conta, o save da nuvem e o lugar no ranking. O progresso do aparelho continua ali, como convidado |
+| 🗑️ **Excluir conta** | Na placa da conta, com confirmação: apaga a conta, o save da nuvem, o lugar no ranking, amigos, pedidos, bloqueios, convites e a vaga na turma (sendo o líder, a liderança passa pro mais antigo). Estando numa sala, sai dela antes (sendo o dono, a sala passa pro próximo em vez de cair pra todo mundo). O apelido fica livre de novo, e outro aparelho que ainda estava logado não consegue recriar nada. O progresso do aparelho continua ali, como convidado. ⚠️ Entrar de novo **com o Google** depois de excluir cria uma conta nova, do zero |
 | ⚠️ **Senha esquecida** | Ainda **não tem recuperação** (o projeto não tem serviço de e-mail próprio). O cadastro avisa e recomenda o Google |
 
 **O ranking** mostra o pódio com os 3 primeiros (com o besourinho de cada um, no casco que a pessoa usa), a lista até o 50º e, se você estiver fora do top 50, a sua linha no fim. O rodapé diz a sua posição (ou convida a entrar).
@@ -247,9 +248,9 @@ Conta é **opcional**: sem ela o jogo continua igualzinho, salvando no aparelho.
 | 🔑 **Entrar com código** | Digita o código (ou cola o link inteiro) e pronto. O link `dawnroll.vercel.app/?sala=CÓDIGO` já abre o jogo entrando na sala |
 | 🪲 **Na sala** | Até **6 besouros**, cada um com o seu casco e acessórios, e o **apelido em cima** (na cor da vaga, e com coroa no dono da sala). Um chip no alto mostra a sala, quantos estão nela e o ping |
 | 🌿 **Jardim livre** | Cada um rola a sua bola e enterra na toca quando quiser (conta XP, passe, conquistas e ranking igualzinho ao solo). O jardim **não recomeça** a cada enterro: quem enterrou ganha uma bola nova e o que foi arrancado **rebrota** sozinho depois de uns minutos |
-| 🌍 **Um mundo só** | O que a bola de um engole (flor, pedra, montinho, tralha, bola de tênis) some pra todo mundo e aparece grudado na bola dele. A chuva é a mesma pra sala inteira (o poder Cheiro de chuva chama chuva pra todo mundo!) |
+| 🌍 **Um mundo só** | O que a bola de um engole (flor, pedra, montinho, tralha, bola de tênis) some pra todo mundo e aparece grudado na bola dele. A chuva é a mesma pra sala inteira (o poder Cheiro de chuva chama chuva pra todo mundo!), com raio e trovão juntos. Os **bichinhos** (borboletas, joaninhas, lesmas, aranhas...) são de cada aparelho: cada um vê e pega os seus (só os formigueiros, que têm colisão, ficam no mesmo lugar pra todos) |
 | ⏸️ **Sem pausa** | A sala não para por ninguém: o menu abre por cima do jogo rodando, e as cartas de poder aparecem sem congelar (teclas 1/2/3, toque, ou ←/→ e ↓ no direcional; se ninguém escolher, pega sozinho em 12 s). Bola que passa de vários marcos de uma vez (roubo, fusão, tronco) ganha **uma escolha de cada vez**, sem perder nenhuma; cartas abertas quando a bola é enterrada somem junto com a rodada. Baús abrem fora da sala |
-| 🔌 **Caiu?** | Se o dono da sala sai (ou cai), **outro assume** e todo mundo reconecta nele em poucos segundos, sem travar o jogo de ninguém. Se a sua internet piscar, você volta pro seu lugar |
+| 🔌 **Caiu?** | Se o dono da sala sai (ou cai), **outro assume** e todo mundo reconecta nele em poucos segundos, sem travar o jogo de ninguém. Se a internet de alguém piscar (ou o celular for pro segundo plano), a **vaga fica guardada por 20 s**: o besouro dele fica parado com **"sem sinal"** na placa, a bola dele fica protegida, e ele volta pro mesmo lugar sem nenhum aviso de "saiu"/"entrou". "Saiu da sala" só aparece quando sai de verdade (botão Sair ou fechou o jogo: na hora) ou quando não volta a tempo |
 
 #### 🤹 A bagunça boa (as interações)
 

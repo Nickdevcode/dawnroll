@@ -257,7 +257,7 @@ export class OnlineHud {
         plate.hidden = true;
         continue;
       }
-      const key = `${source.slot}|${source.nick}|${source.tag}|${source.isHost}|${source.emote}|${source.dizzy}|${source.team}`;
+      const key = `${source.slot}|${source.nick}|${source.tag}|${source.isHost}|${source.emote}|${source.dizzy}|${source.team}|${source.away}`;
       const changed = this.shown.get(plate) !== key;
       if (changed) {
         this.shown.set(plate, key);
@@ -266,11 +266,15 @@ export class OnlineHud {
         if (source.team >= 0) plate.dataset.team = String(source.team);
         else delete plate.dataset.team;
         plate.classList.toggle('is-self', !source.nick);
+        plate.classList.toggle('is-away', source.away);
+        // Sem sinal: o besouro fica parado esperando ele voltar (a vaga está guardada), não "saiu".
         const bubble = talking
           ? `<span class="nameplate__bubble">${EMOTE_ICONS[source.emote] ?? ''}<span>${escapeHtml(t(`emote.${source.emote}` as MessageKey))}</span></span>`
-          : '';
+          : source.away && source.nick
+            ? `<span class="nameplate__away">${Icons.signalOff}<span>${escapeHtml(t('online.away'))}</span></span>`
+            : '';
         const name = source.nick
-          ? `<span class="nameplate__tag">${source.team >= 0 ? `<span class="nameplate__team">${TEAM_ICONS[source.team] ?? ''}</span>` : ''}${source.isHost ? `<span class="nameplate__crown">${Icons.crown}</span>` : ''}${clanTagHtml(source.tag, 'clan-tag--plate')}<span class="nameplate__nick">${escapeHtml(source.nick)}</span></span>`
+          ? `<span class="nameplate__tag">${source.away ? `<span class="nameplate__signal">${Icons.signalOff}</span>` : ''}${source.team >= 0 ? `<span class="nameplate__team">${TEAM_ICONS[source.team] ?? ''}</span>` : ''}${source.isHost ? `<span class="nameplate__crown">${Icons.crown}</span>` : ''}${clanTagHtml(source.tag, 'clan-tag--plate')}<span class="nameplate__nick">${escapeHtml(source.nick)}</span></span>`
           : '';
         plate.innerHTML = bubble + name;
       }

@@ -1058,6 +1058,7 @@ export const ptBR = {
   'online.hudRoom': 'Sala {code}',
   'online.joined': '{name} entrou na sala',
   'online.left': '{name} saiu da sala',
+  'online.away': 'sem sinal',
   'online.youHost': 'Agora você é o dono da sala',
   'online.buried': '{name} enterrou uma bola de {cm}!',
   'online.lost': 'A sala caiu: você voltou pro seu jardim',
