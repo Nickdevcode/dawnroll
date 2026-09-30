@@ -259,6 +259,28 @@
   width: 16px;
   height: 16px;
 }
+/* Pediu troca de time: na cor do time que ele quer não dá (a linha já está no time dele), então tom de aviso neutro. */
+.online__badge--swap {
+  padding: 3px 9px 3px 7px;
+  background: color-mix(in srgb, var(--dawn-sun-deep) 22%, transparent);
+  color: var(--color-ink);
+}
+.online__badge--swap svg {
+  width: 14px;
+  height: 14px;
+}
+/* Linha estreita (duas colunas no celular): o selo vira só o ícone, pro apelido não sumir (o texto fica no title e pro leitor de tela). */
+.online__team .online__player {
+  container-type: inline-size;
+}
+@container (max-width: 300px) {
+  .online__badge--swap {
+    padding: 3px 6px;
+  }
+  .online__badge--swap > span[aria-hidden] {
+    display: none;
+  }
+}
 .online__ping {
   display: inline-flex;
   align-items: center;
@@ -1002,7 +1024,10 @@
   font-variant-numeric: tabular-nums;
 }
 .online__team-join {
+  display: inline-flex;
   flex-shrink: 0;
+  align-items: center;
+  gap: 6px;
   min-height: 32px;
   padding: 4px 14px;
   border: 0;
@@ -1013,7 +1038,42 @@
   font-size: 13px;
   font-weight: 800;
   cursor: pointer;
-  transition: transform var(--dur-fast) var(--ease-out);
+  transition:
+    transform var(--dur-fast) var(--ease-out),
+    background-color var(--dur-fast) var(--ease-out);
+}
+.online__team-join svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+/* Time cheio: pedir troca (contorno na cor do time), trocar (alguém de lá topou) e cancelar o pedido. */
+.online__team-join--ask {
+  background: color-mix(in srgb, var(--team) 14%, #fffdf8);
+  box-shadow: inset 0 0 0 2px var(--team);
+  color: var(--color-ink);
+}
+.online__team-join--ready {
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--team) 60%, transparent);
+  animation: online-swap-ready 1.6s var(--ease-out) infinite;
+}
+.online__team-join--pending {
+  background: rgba(43, 42, 94, 0.1);
+  color: var(--color-ink);
+}
+@keyframes online-swap-ready {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--team) 60%, transparent);
+  }
+  70%,
+  100% {
+    box-shadow: 0 0 0 8px color-mix(in srgb, var(--team) 0%, transparent);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .online__team-join--ready {
+    animation: none;
+  }
 }
 .online__team-join:hover:not(:disabled) {
   transform: translateY(-1px);

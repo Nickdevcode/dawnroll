@@ -770,9 +770,12 @@ export class OnlineSheet {
 
   private playerRow(p: OnlinePlayer, selfId: string): string {
     const look = skin(isSkinId(p.look.skin) ? p.look.skin : DEFAULT_SKIN);
+    const wants = p.swapTo !== null ? t('online.swapWants', { team: teamName(p.swapTo) }) : '';
     const badges = [
       p.isHost ? `<span class="online__badge online__badge--host" title="${escapeHtml(t('online.host'))}">${Icons.crown}<span class="sr-only">${escapeHtml(t('online.host'))}</span></span>` : '',
       p.uid === selfId ? `<span class="online__badge">${escapeHtml(t('online.you'))}</span>` : '',
+      // Pediu pra trocar pra um time cheio: quem está lá vê e pode topar.
+      wants ? `<span class="online__badge online__badge--swap" title="${escapeHtml(wants)}">${MatchIcons.swap}<span aria-hidden="true">${escapeHtml(t('online.swapBadge'))}</span><span class="sr-only">${escapeHtml(wants)}</span></span>` : '',
     ].join('');
     return /* html */ `
       <li class="online__player" data-slot="${p.slot}" tabindex="0" data-focusable>
@@ -804,9 +807,7 @@ export class OnlineSheet {
       const members = players.filter((p) => p.team === team);
       const mine = me?.team === team;
       const full = members.length >= size;
-      const join = mine
-        ? ''
-        : `<button class="online__team-join" type="button" data-team-join="${team}" ${full || running ? 'disabled' : ''}>${escapeHtml(t(full ? 'online.teamFull' : 'online.teamJoin'))}</button>`;
+      const join = mine ? '' : this.teamJoinButton(team, full, running, me, members);
       const rows = members.map((p) => this.playerRow(p, selfId)).join('');
       const slots = `<li class="online__team-slot">${escapeHtml(t('online.teamSlot'))}</li>`.repeat(Math.max(0, size - members.length));
       columns.push(/* html */ `
@@ -821,9 +822,27 @@ export class OnlineSheet {
         </section>`);
     }
     const shuffle = net.isHost && !net.isPublic && !running ? `<button class="account-secondary online__shuffle" type="button" data-shuffle>${MatchIcons.shuffle}<span>${escapeHtml(t('online.shuffle'))}</span></button>` : '';
+    const pending = !running && me?.swapTo != null ? `<p class="online__note" role="status">${escapeHtml(t('online.swapPending', { team: teamName(me.swapTo) }))}</p>` : '';
     return /* html */ `
       <div class="online__teams" data-size="${size}">${columns.join('')}</div>
-      ${running ? `<p class="online__note">${escapeHtml(t('online.teamLocked'))}</p>` : shuffle}`;
+      ${running ? `<p class="online__note">${escapeHtml(t('online.teamLocked'))}</p>` : pending + shuffle}`;
+  }
+
+  /**
+   * O botão de um time que não é o seu. "Trocar" se alguém de lá já pediu o seu
+   * time (a troca sai na hora, com vaga ou não). Senão, com vaga: "Entrar"; cheio:
+   * "Pedir troca", ou "Cancelar pedido" se o pedido é seu. Sem time (ou partida
+   * rolando), só avisa.
+   */
+  private teamJoinButton(team: number, full: boolean, running: boolean, me: OnlinePlayer | undefined, members: readonly OnlinePlayer[]): string {
+    const button = (label: string, variant = '', extra = '') =>
+      `<button class="online__team-join${variant ? ` online__team-join--${variant}` : ''}" type="button" data-team-join="${team}" ${extra}>${variant ? MatchIcons.swap : ''}<span>${escapeHtml(label)}</span></button>`;
+    if (running) return button(t(full ? 'online.teamFull' : 'online.teamJoin'), '', 'disabled');
+    const mine = me && me.team >= 0 ? me.team : null;
+    if (mine !== null && members.some((p) => p.swapTo === mine)) return button(t('online.teamSwapAccept'), 'ready');
+    if (!full) return button(t('online.teamJoin'));
+    if (mine === null) return button(t('online.teamFull'), '', 'disabled');
+    return me?.swapTo === team ? button(t('online.teamSwapCancel'), 'pending') : button(t('online.teamSwapAsk'), 'ask');
   }
 
   /** "Disputa rolando · 3:12" (ou "começando…"); vazio fora da Disputa. */

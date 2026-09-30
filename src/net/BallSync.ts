@@ -1179,7 +1179,7 @@ export class BallSync {
 
   /** A bola some encolhendo pra dentro de outra (ou no lugar), e depois sai do mundo. */
   private retire(ball: DungBall, into: DungBall | null): void {
-    this.game.physics.world.removeRigidBody(ball.body);
+    ball.leaveWorld(this.game.physics);
     this.gulps.push({ ball, into, t: 0, from: ball.root.position.clone(), scale: ball.root.scale.x });
   }
 
@@ -1199,7 +1199,7 @@ export class BallSync {
   }
 
   private dispose(ball: DungBall): void {
-    this.game.physics.world.removeRigidBody(ball.body);
+    ball.leaveWorld(this.game.physics);
     ball.root.removeFromParent();
     ball.disposeMaterial();
   }

@@ -105,6 +105,12 @@ export class DungBall {
   /** Fora de jogo (broto esperando, fantasma guardado): invisível, sem colisão, longe do jardim. */
   private parked = false;
   /**
+   * Saiu da física de vez (`leaveWorld`). Quem ainda segura a bola por um instante
+   * (montinho escorregando pra dentro dela, bola sendo engolida) lê a última pose:
+   * mexer num corpo já removido derruba o Rapier da página inteira.
+   */
+  private removed = false;
+  /**
    * Fantasma que pode engolir a sua bola (ou ser engolido por ela): as suas
    * bolas passam por ele, pra uma rolar por cima da outra (online). O besouro
    * e a câmera continuam batendo nele.
@@ -249,11 +255,13 @@ export class DungBall {
   }
 
   position(target = new THREE.Vector3()): THREE.Vector3 {
+    if (this.removed) return target.copy(this.currPos);
     const t = this.body.translation();
     return target.set(t.x, t.y, t.z);
   }
 
   velocity(target = new THREE.Vector3()): THREE.Vector3 {
+    if (this.removed) return target.set(0, 0, 0);
     if (this.proxy) return target.copy(this.proxyVelocity);
     const v = this.body.linvel();
     return target.set(v.x, v.y, v.z);
@@ -346,6 +354,7 @@ export class DungBall {
 
   /** Rotação atual do corpo (a toca continua girando a bola de onde ela estava). */
   rotation(target = new THREE.Quaternion()): THREE.Quaternion {
+    if (this.removed) return target.copy(this.currRot);
     const r = this.body.rotation();
     return target.set(r.x, r.y, r.z, r.w);
   }
@@ -607,6 +616,13 @@ export class DungBall {
     (this.halo.material as THREE.SpriteMaterial).opacity = 0.18 + extra * 0.5 + pulse * 0.1 * extra;
   }
 
+  /** Tira o corpo da física (uma vez só). Depois disso a bola é só desenho: pose e velocidade ficam congeladas. */
+  leaveWorld(physics: Physics): void {
+    if (this.removed) return;
+    this.removed = true;
+    physics.world.removeRigidBody(this.body);
+  }
+
   /** Libera o material próprio da bola (a malha é compartilhada: fica). */
   disposeMaterial(): void {
     (this.core.material as THREE.Material).dispose();
@@ -651,7 +667,7 @@ export class DungBall {
 
 /** Tira uma bola do mundo de vez (o jogador saiu da sala, a bola foi engolida). */
 export function disposeBall(ball: DungBall, physics: Physics): void {
-  physics.world.removeRigidBody(ball.body);
+  ball.leaveWorld(physics);
   ball.root.removeFromParent();
   ball.disposeMaterial();
 }

@@ -62,6 +62,8 @@ const tmpB = new THREE.Vector3();
 const tmpC = new THREE.Vector3();
 const tmpAxis = new THREE.Vector3();
 
+const isFiniteVector = (v: { x: number; y: number; z: number }): boolean => Number.isFinite(v.x) && Number.isFinite(v.y) && Number.isFinite(v.z);
+
 /** Entre dois pontos em volta de um centro: gira a direção e interpola a distância. */
 function orbitLerp(from: THREE.Vector3, to: THREE.Vector3, t: number, target: THREE.Vector3): THREE.Vector3 {
   const fromLength = from.length();
@@ -279,6 +281,8 @@ export class Beetle {
     this.position.copy(feet).add(tmpA.set(0, COLLIDER_RADIUS + 0.05, 0));
     this.prevPosition.copy(this.position);
     this.velocity.set(0, 0, 0);
+    // Chão novo: a inclinação recomeça de pé (a do lugar de antes não vale aqui).
+    this.groundUp.copy(UP);
     this.body.setNextKinematicTranslation(this.position);
     this.body.setTranslation(this.position, true);
     this.releaseBall();
@@ -567,6 +571,7 @@ export class Beetle {
     const wobble = Math.sin(this.ridePhase * 6) * 0.06;
     this.balance.set(-needed.x * 0.012 + Math.cos(this.yaw) * wobble, 1, -needed.z * 0.012 - Math.sin(this.yaw) * wobble).normalize();
     this.groundUp.lerp(this.balance, 1 - Math.exp(-8 * dt)).normalize();
+    this.keepUpFinite();
   }
 
   private canGrab(): boolean {
@@ -692,17 +697,27 @@ export class Beetle {
 
   private updateGroundAlignment(dt: number): void {
     const ray = new RAPIER.Ray({ x: this.position.x, y: this.position.y, z: this.position.z }, { x: 0, y: -1, z: 0 });
+    // Só o chão de verdade inclina o besouro: os outros besouros e as bolas-fantasma do online
+    // (corpos cinemáticos) ficam de fora — com dois besouros no mesmo ponto o raio nascia dentro do outro.
     const hit = this.physics.world.castRayAndGetNormal(
       ray,
       COLLIDER_RADIUS + 0.6,
       true,
-      undefined,
+      RAPIER.QueryFilterFlags.EXCLUDE_KINEMATIC,
       interactionGroups(Groups.PLAYER, Groups.WORLD),
       this.collider,
     );
-    const target = hit && this.grounded ? tmpA.set(hit.normal.x, hit.normal.y, hit.normal.z) : tmpA.copy(UP);
+    // Raio saindo de dentro de um sólido (distância 0): a normal não diz nada (no centro exato de uma esfera vem NaN).
+    const usable = hit !== null && this.grounded && hit.timeOfImpact > 0 && isFiniteVector(hit.normal);
+    const target = usable ? tmpA.set(hit.normal.x, hit.normal.y, hit.normal.z) : tmpA.copy(UP);
     // Limita a inclinação visual para ele não "deitar" em paredes.
     if (target.y < 0.6) target.lerp(UP, 0.5).normalize();
     this.groundUp.lerp(target, 1 - Math.exp(-10 * dt)).normalize();
+    this.keepUpFinite();
+  }
+
+  /** Rede de segurança: a inclinação é só visual, mas NaN nela sumia com o besouro da tela pra sempre. */
+  private keepUpFinite(): void {
+    if (!isFiniteVector(this.groundUp)) this.groundUp.copy(UP);
   }
 }

@@ -50,6 +50,8 @@ export const MatchIcons = {
   match: stroke('<path d="M5.5 21V3.5"/><path d="M5.5 4.5h11.8l-2.6 4 2.6 4H5.5"/>'),
   /** Embaralhar os times. */
   shuffle: stroke('<path d="M3.5 7h3.2c3.5 0 4.6 10 8.1 10h5.7M17.5 14l3 3-3 3"/><path d="M3.5 17h3.2c1.4 0 2.4-1.6 3.2-3.4M13.2 10.4C14 8.6 15 7 16.5 7h4M17.5 4l3 3-3 3"/>'),
+  /** Trocar de time (duas setas, uma pra cada lado). */
+  swap: stroke('<path d="M4 8.5h14.5M15 5l3.5 3.5L15 12"/><path d="M20 15.5H5.5M9 12l-3.5 3.5L9 19"/>'),
   /** Maior bola (destaque). */
   biggest: stroke('<circle cx="12" cy="13" r="7.5"/><path d="M8.2 10.6a4.6 4.6 0 0 1 3.2-2.4"/><path d="M12 2.5v2"/>'),
 };

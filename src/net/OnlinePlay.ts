@@ -60,8 +60,11 @@ export interface OnlineBridge extends BallGame {
   mainLedger(): RoundLedger;
   /** Apelido e visual pra se apresentar. */
   profile(): { nick: string; look: NetLook };
-  /** Deixa o jardim na semente da sala (troca se for outro) e os montinhos no arranjo do online. */
-  useGarden(seed: number): void;
+  /**
+   * Deixa o jardim na semente da sala (troca se for outro) e os montinhos no arranjo do online.
+   * `slot` = a sua vaga na sala: trocando de jardim, cada vaga nasce num ponto (ninguém em cima de ninguém).
+   */
+  useGarden(seed: number, slot: number): void;
   /** Compila o material de um modelo novo em segundo plano (sem engasgo ao aparecer). */
   compile(object: THREE.Object3D): Promise<void>;
   /** Avisos do online: alguém entrou/saiu (`text` = apelido) ou você virou o dono da sala. */
@@ -101,6 +104,8 @@ export interface OnlinePlayer {
   isSelf: boolean;
   /** Time (−1 = cada um por si). */
   team: number;
+  /** Pediu pra trocar pra esse time (cheio) e espera alguém de lá topar; null = sem pedido. */
+  swapTo: number | null;
 }
 
 /** Placa de apelido: onde desenhar cada um (atualizado a cada quadro). */
@@ -300,6 +305,11 @@ export class OnlinePlay {
     return this.active && this._rules.mode === 'match' && this.director.running;
   }
 
+  /** A sua vaga na sala (0 = quem criou; cada um tem a sua enquanto estiver lá). */
+  get slot(): number {
+    return this.session?.slot ?? 0;
+  }
+
   get players(): OnlinePlayer[] {
     const session = this.session;
     if (!session) return [];
@@ -312,6 +322,7 @@ export class OnlinePlay {
       isHost: m.uid === session.host,
       isSelf: m.uid === session.selfId,
       team: this.teamOf(m.uid),
+      swapTo: this._rules.teamSize > 1 ? (this.director.swapWishes.get(m.uid) ?? null) : null,
     }));
   }
 
@@ -385,7 +396,7 @@ export class OnlinePlay {
     return this.director.start();
   }
 
-  /** Pedir pra ir pro time `team`. */
+  /** Pedir pra ir pro time `team` (cheio = pedido de troca; de novo = desiste). */
   chooseTeam(team: number): void {
     if (this.active) this.director.chooseTeam(team);
   }
@@ -422,7 +433,7 @@ export class OnlinePlay {
         },
         profile: () => this.bridge.profile(),
         world: () => this.worldState(),
-        onWelcome: (info) => this.welcome(info.members, info.world, info.isHost),
+        onWelcome: (info) => this.welcome(info.members, info.world, info.isHost, info.slot),
         onMemberJoin: (member) => this.memberJoined(member),
         onMemberLeave: (uid) => this.memberLeft(uid),
         onSnapshot: (snapshot) => this.receiveSnapshot(snapshot),
@@ -636,11 +647,11 @@ export class OnlinePlay {
 
   // --- Recebendo -------------------------------------------------------------------------
 
-  private welcome(members: NetMember[], world: NetWorld | null, isHost: boolean): void {
+  private welcome(members: NetMember[], world: NetWorld | null, isHost: boolean, slot: number): void {
     const selfId = this.selfUid;
     this.applyAuthority(isHost);
-    if (world) this.applyWorld(world);
-    else this.bridge.useGarden(this.bridge.scenery.seed);
+    if (world) this.applyWorld(world, slot);
+    else this.bridge.useGarden(this.bridge.scenery.seed, slot);
     const present = new Set(members.map((m) => m.uid));
     for (const uid of [...this.remotes.keys()]) if (!present.has(uid)) this.removeRemote(uid);
     for (const member of members) if (member.uid !== selfId) this.ensureRemote(member);
@@ -717,7 +728,7 @@ export class OnlinePlay {
         if (!this.session?.isHost) b.weather.remoteThunder(event.d);
         return;
       case 'garden':
-        if (!this.session?.isHost) b.useGarden(event.seed);
+        if (!this.session?.isHost) b.useGarden(event.seed, this.slot);
         return;
       case 'rain':
         if (this.session?.isHost) this.requestRain(event.long);
@@ -933,9 +944,9 @@ export class OnlinePlay {
   }
 
   /** O mundo do dono da sala → o meu (quem chegou ou reconectou). */
-  private applyWorld(world: NetWorld): void {
+  private applyWorld(world: NetWorld, slot: number): void {
     const b = this.bridge;
-    b.useGarden(world.seed);
+    b.useGarden(world.seed, slot);
     const gone = new Set(world.gone);
     for (const id of b.pickables.pickedIds()) if (!gone.has(id)) b.pickables.regrow(id);
     for (const id of world.gone) b.pickables.absorbRemote(id, null);

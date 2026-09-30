@@ -18,7 +18,7 @@ import {
   type MatchView,
   type NetMatch,
 } from './match';
-import { arrangeTeams, autoTeamSize, canJoinTeam, pickTeam, shuffleTeams, type TeamMap } from './teams';
+import { arrangeTeams, autoTeamSize, pickTeam, pruneWishes, requestTeam, shuffleTeams, type SwapWishes, type TeamMap } from './teams';
 import { newBallId, relation } from './rules';
 
 /**
@@ -67,6 +67,8 @@ export interface MatchGame {
 
 export class MatchDirector {
   private _teams: TeamMap = new Map();
+  /** Pedidos de troca pendentes (time cheio): quem pediu → time que quer. */
+  private _wishes: SwapWishes = new Map();
   private _match: NetMatch = idleMatch();
   private _view: MatchView = 'idle';
   private setupRound = -1;
@@ -83,6 +85,11 @@ export class MatchDirector {
 
   get teams(): ReadonlyMap<string, number> {
     return this._teams;
+  }
+
+  /** Quem pediu pra trocar pra um time cheio (uid → time que quer). */
+  get swapWishes(): ReadonlyMap<string, number> {
+    return this._wishes;
   }
 
   get match(): Readonly<NetMatch> {
@@ -140,6 +147,7 @@ export class MatchDirector {
       if (size !== rules.teamSize) room.setRules({ ...rules, teamSize: size });
     }
     this._teams = arrangeTeams(order, size, this._teams);
+    this._wishes.clear();
     this.sendTeams();
     const now = room.now();
     const board: MatchEntry[] = members.map((mem) => this.entryFor(mem, size));
@@ -150,7 +158,10 @@ export class MatchDirector {
     return true;
   }
 
-  /** Pedir pra ir pro time `team` (o dono decide na hora; os outros pedem pra ele). */
+  /**
+   * Pedir pra ir pro time `team` (o dono decide na hora; os outros pedem pra ele).
+   * Time cheio = pedido de troca (ver `requestTeam`); pedir de novo desiste.
+   */
   chooseTeam(team: number): void {
     if (this.room.isHost) this.applyTeamRequest(this.room.selfId, team);
     else this.room.send({ t: 'team', team });
@@ -164,6 +175,7 @@ export class MatchDirector {
       this.room.members().map((m) => m.uid),
       rules.teamSize,
     );
+    this._wishes.clear();
     this.sendTeams();
   }
 
@@ -176,6 +188,7 @@ export class MatchDirector {
         next.teamSize,
         this._teams,
       );
+      this._wishes.clear();
       this.sendTeams();
     }
     if (prev.mode !== next.mode) {
@@ -192,6 +205,7 @@ export class MatchDirector {
   /** Saiu da sala: tudo volta ao começo. */
   reset(): void {
     this._teams = new Map();
+    this._wishes = new Map();
     this._match = idleMatch();
     this._view = 'idle';
     this.setupRound = -1;
@@ -206,6 +220,7 @@ export class MatchDirector {
       return;
     }
     this._teams = new Map(world.teams);
+    this._wishes = new Map();
     this._match = world.match;
     this.game.matchChanged();
   }
@@ -246,6 +261,7 @@ export class MatchDirector {
       case 'teams':
         if (!this.room.isHost) {
           this._teams = new Map(event.m);
+          this._wishes = new Map(event.w ?? []);
           this.game.matchChanged();
         }
         return true;
@@ -366,8 +382,11 @@ export class MatchDirector {
 
   private applyTeamRequest(uid: string, team: number): void {
     const size = this.room.rules().teamSize;
-    if (this.running || !canJoinTeam(this._teams, uid, team, size) || !this.room.members().some((m) => m.uid === uid)) return;
-    this._teams.set(uid, team);
+    if (this.running || size === 1 || !this.room.members().some((m) => m.uid === uid)) return;
+    const next = requestTeam(this._teams, this._wishes, uid, team, size);
+    if (next.result === 'invalid') return;
+    this._teams = next.teams;
+    this._wishes = next.wishes;
     this.sendTeams();
   }
 
@@ -377,7 +396,10 @@ export class MatchDirector {
   }
 
   private sendTeams(): void {
-    this.room.send({ t: 'teams', m: [...this._teams] });
+    // Pedido que perdeu o sentido (quem pediu saiu, abriu vaga, mudou de time) some junto.
+    const members = new Set(this.room.members().map((m) => m.uid));
+    this._wishes = pruneWishes(this._wishes, this._teams, this.room.rules().teamSize, members);
+    this.room.send({ t: 'teams', m: [...this._teams], w: [...this._wishes] });
     this.game.matchChanged();
   }
 

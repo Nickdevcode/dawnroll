@@ -384,9 +384,10 @@ export type NetEvent =
   | { t: 'merged'; b: number; into: number; by: string }
   | { t: 'pulled'; b: number; into: number; by: string }
   | { t: 'rules'; rules: NetRules }
-  | { t: 'teams'; m: Array<[string, number]> }
+  // `w` = pedidos de troca pendentes (uid → time cheio que ele quer); páginas antigas ignoram.
+  | { t: 'teams'; m: Array<[string, number]>; w?: Array<[string, number]> }
   | { t: 'match'; m: NetMatch }
-  // Times: pedir pra trocar (o dono confere a vaga e anuncia `teams`).
+  // Times: pedir pra trocar (o dono confere a vaga, ou troca com quem pediu o contrário, e anuncia `teams`).
   | { t: 'team'; team: number; from?: string }
   // Social.
   | { t: 'emote'; e: number; x?: number; z?: number; from?: string }
@@ -624,7 +625,8 @@ export function parseEvent(text: string): NetEvent | null {
     case 'rules':
       return isRules(e.rules) ? { t: 'rules', rules: cleanRules(e.rules) } : null;
     case 'teams':
-      return isTeamList(e.m) ? { t: 'teams', m: e.m } : null;
+      if (!isTeamList(e.m) || (e.w !== undefined && !isTeamList(e.w))) return null;
+      return e.w === undefined ? { t: 'teams', m: e.m } : { t: 'teams', m: e.m, w: e.w };
     case 'match':
       return isMatch(e.m) ? { t: 'match', m: cleanMatch(e.m) } : null;
     case 'team':

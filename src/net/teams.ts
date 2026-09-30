@@ -63,6 +63,71 @@ export function canJoinTeam(teams: ReadonlyMap<string, number>, uid: string, tea
   return teamCounts(teams, size, uid)[team] < size;
 }
 
+/** uid → time pra onde ele quer trocar (pediu um time cheio e espera alguém de lá topar). */
+export type SwapWishes = Map<string, number>;
+
+export type TeamRequestResult = 'joined' | 'swapped' | 'wished' | 'cancelled' | 'invalid';
+
+/**
+ * Dono: `uid` pediu o time `team`. Se alguém de lá já tinha pedido o time de `uid`,
+ * os dois trocam na hora (ninguém muda de time sem ter pedido). Senão: com vaga,
+ * entra; cheio, vira pedido de troca. Pedir de novo o mesmo time cheio desiste, e
+ * pedir o próprio time também. Não mexe nos mapas recebidos: devolve cópias.
+ */
+export function requestTeam(
+  teams: ReadonlyMap<string, number>,
+  wishes: ReadonlyMap<string, number>,
+  uid: string,
+  team: number,
+  size: TeamSize,
+): { teams: TeamMap; wishes: SwapWishes; result: TeamRequestResult } {
+  const nextTeams: TeamMap = new Map(teams);
+  const nextWishes: SwapWishes = new Map(wishes);
+  const current = teams.get(uid);
+  if (!Number.isInteger(team) || team < 0 || team >= teamCount(size)) return { teams: nextTeams, wishes: nextWishes, result: 'invalid' };
+  if (current === team) {
+    const had = nextWishes.delete(uid);
+    return { teams: nextTeams, wishes: nextWishes, result: had ? 'cancelled' : 'invalid' };
+  }
+  // O mais antigo de lá que pediu o time de `uid` (a ordem do Map é a dos pedidos). Um sai e outro
+  // entra em cada time: vale com o time cheio ou não (com vaga, entrar sozinho deixaria o outro esperando).
+  const partner = current === undefined ? undefined : [...wishes].find(([other, want]) => other !== uid && teams.get(other) === team && want === current)?.[0];
+  if (partner !== undefined && current !== undefined) {
+    nextTeams.set(uid, team);
+    nextTeams.set(partner, current);
+    nextWishes.delete(uid);
+    nextWishes.delete(partner);
+    return { teams: nextTeams, wishes: nextWishes, result: 'swapped' };
+  }
+  if (canJoinTeam(teams, uid, team, size)) {
+    nextTeams.set(uid, team);
+    nextWishes.delete(uid);
+    return { teams: nextTeams, wishes: nextWishes, result: 'joined' };
+  }
+  // Sem time (acabou de mudar o tamanho): não tem lugar pra oferecer em troca.
+  if (current === undefined) return { teams: nextTeams, wishes: nextWishes, result: 'invalid' };
+  if (wishes.get(uid) === team) {
+    nextWishes.delete(uid);
+    return { teams: nextTeams, wishes: nextWishes, result: 'cancelled' };
+  }
+  nextWishes.set(uid, team);
+  return { teams: nextTeams, wishes: nextWishes, result: 'wished' };
+}
+
+/**
+ * Pedidos de troca que ainda valem: quem pediu segue na sala e num time, e o time
+ * pedido continua cheio (com vaga aberta, o botão volta a ser "Entrar").
+ */
+export function pruneWishes(wishes: ReadonlyMap<string, number>, teams: ReadonlyMap<string, number>, size: TeamSize, members: ReadonlySet<string>): SwapWishes {
+  const kept: SwapWishes = new Map();
+  for (const [uid, team] of wishes) {
+    const current = teams.get(uid);
+    if (!members.has(uid) || current === undefined || current === team) continue;
+    if (!canJoinTeam(teams, uid, team, size)) kept.set(uid, team);
+  }
+  return kept;
+}
+
 /**
  * Times de todo mundo (`order` = ordem de chegada): quem já tem um time
  * válido fica nele; os outros vão pro time com menos gente. Se ficar

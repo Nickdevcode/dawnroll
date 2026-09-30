@@ -73,7 +73,7 @@ import { quality } from './core/device';
 import { GRAVITY } from './core/Physics';
 import { clamp, createRng, mixSeed, randomSeed } from './utils/math';
 import { OnlinePlay, type NameplateSource, type OnlineBridge } from './net/OnlinePlay';
-import type { NetLook } from './net/protocol';
+import { MAX_PLAYERS, type NetLook } from './net/protocol';
 import type { CloseReason } from './net/NetSession';
 import type { BallRecord, Happening, MergeMode } from './net/BallSync';
 import type { RoundLedger } from './progression/food';
@@ -2202,7 +2202,7 @@ export class Game {
       },
       achieve: (id) => this.progression.achieve(id),
       profile: () => ({ nick: this.online.state.profile?.nickname ?? '?', look: this.currentLook() }),
-      useGarden: (seed) => this.useOnlineGarden(seed),
+      useGarden: (seed, slot) => this.useOnlineGarden(seed, slot),
       compile: (object) => this.graphics.renderer.compileAsync(object, this.graphics.camera, this.graphics.scene).then(() => undefined),
       notify: (text, kind) => {
         this.hud.notify(kind === 'host' ? t('online.youHost') : t(kind === 'join' ? 'online.joined' : 'online.left', { name: text }));
@@ -2321,16 +2321,24 @@ export class Game {
    * Deixa o jardim na semente da sala. Se for outro jardim, troca na hora (e o
    * besouro e a bola vão pro começo, a bola do mesmo tamanho). Montinhos e
    * tralha vão pro arranjo do online (sem desviar do besouro: todo mundo igual).
+   * O começo de cada um é a sua vaga no círculo do nascimento (o da largada da
+   * Disputa): no mesmo ponto, os besouros nasciam um dentro do outro.
    */
-  private useOnlineGarden(seed: number): void {
+  private useOnlineGarden(seed: number, slot: number): void {
     if (this.scenery.seed !== seed) {
       this.prepareNextGarden(seed);
       this.swapGarden();
       this.pickables.reset();
       this.placeRareFind();
-      this.beetle.teleport(this.spawn);
+      const spot = startSpot(slot, MAX_PLAYERS);
+      this.beetle.teleport(this.tmpMarker.set(spot.x, terrainHeight(spot.x, spot.z), spot.z), spot.yaw);
+      this.cameraRig.yaw = spot.yaw + Math.PI;
+      this.cameraRig.reset();
+      // A bola na frente do besouro (olhando pra fora do círculo), a 1,6 da superfície como antes.
       const r = this.ball.radius;
-      this.ball.teleport(new THREE.Vector3(0, terrainHeight(0, 1.6 + r) + r + 0.05, 1.6 + r));
+      const bx = spot.x + Math.sin(spot.yaw) * (1.6 + r);
+      const bz = spot.z + Math.cos(spot.yaw) * (1.6 + r);
+      this.ball.teleport(new THREE.Vector3(bx, terrainHeight(bx, bz) + r + 0.05, bz));
     }
     // Reconectando no mesmo jardim, o arranjo já está certo (o mundo do dono ajusta só o que mudou).
     if (this.onlineLayoutSeed === seed) return;
@@ -2360,7 +2368,7 @@ export class Game {
   private matchSetup(seed: number, spot: { x: number; z: number; yaw: number }): void {
     this.leavePodium(false);
     this.burrow.cancel();
-    this.useOnlineGarden(seed);
+    this.useOnlineGarden(seed, this.net.slot);
     this.net.balls.clearForMatch();
     this.beetle.teleport(this.tmpMarker.set(spot.x, terrainHeight(spot.x, spot.z), spot.z), spot.yaw);
     // A câmera atrás do besouro, olhando pra onde ele olha (nasce lá, sem deslizar pelo jardim).
