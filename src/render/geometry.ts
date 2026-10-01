@@ -1,12 +1,12 @@
 import * as THREE from 'three';
-import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { mergePositions } from './mergePositions';
 import { noise3 } from '../utils/noise';
 
 /**
  * Deforma uma geometria com ruído ao longo da normal — tira a cara de
  * "primitiva perfeita" e deixa tudo com jeito de modelado à mão.
  *
- * Os vértices são fundidos antes (mergeVertices) para a deformação não abrir
+ * Os vértices são fundidos antes (mergePositions) para a deformação não abrir
  * rachaduras nas costuras da UV.
  */
 export function lumpify(geometry: THREE.BufferGeometry, amount: number, frequency: number, seed = 0): THREE.BufferGeometry {
@@ -19,12 +19,12 @@ export function lumpify(geometry: THREE.BufferGeometry, amount: number, frequenc
  */
 export function displace(geometry: THREE.BufferGeometry, fn: (x: number, y: number, z: number) => number): THREE.BufferGeometry {
   const hadUv = !!geometry.getAttribute('uv');
-  // Guarda a UV num atributo à parte: mergeVertices só funde vértices idênticos em TODOS os atributos.
+  // Guarda a UV num atributo à parte: a fusão só junta vértices idênticos em TODOS os atributos.
   const bare = geometry.clone();
   for (const name of Object.keys(bare.attributes)) {
     if (name !== 'position') bare.deleteAttribute(name);
   }
-  const merged = mergeVertices(bare, 1e-4);
+  const merged = mergePositions(bare, 1e-4);
   merged.computeVertexNormals();
 
   const pos = merged.getAttribute('position') as THREE.BufferAttribute;

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { RAPIER, Groups, interactionGroups, type Physics } from '../../core/Physics';
 import { StaticBatch, type RemovableParts } from '../../render/StaticBatch';
+import { budget } from '../../core/budget';
 import type { Rng } from '../../utils/math';
 import type { ContactShade } from '../Terrain';
 import type { CoverArea, PickableSpec, SceneryContext } from './context';
@@ -58,7 +59,7 @@ export class SceneryLayer {
 
   private readonly solids: Placement[] = [];
   private readonly covers: Cover[] = [];
-  private readonly batch = new StaticBatch();
+  private readonly batch = new StaticBatch(budget.sceneryCell);
   private readonly body: RAPIER.RigidBody;
   private readonly colliders: RAPIER.Collider[] = [];
   private removables: RemovableParts | null = null;

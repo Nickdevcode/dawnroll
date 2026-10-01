@@ -4,6 +4,7 @@ import { DEFAULT_CLUB, DEFAULT_SKIN, skin, type SkinDef } from '../progression/s
 import type { Outfit } from '../progression/accessories';
 import { claySphere, clayCapsule, displace, paintVertices, taperedTube } from '../render/geometry';
 import { mergeStaticTree } from '../render/mergeStatic';
+import { RigBatch } from '../render/RigBatch';
 import { SkinPart, applySkinUniforms, createSkinUniforms, installSkinShader, type SkinPartId, type SkinUniforms } from '../render/skinShader';
 import { noise3 } from '../utils/noise';
 import { clamp, damp, lerp, smoothstep } from '../utils/math';
@@ -173,6 +174,13 @@ export class BeetleModel {
     this.bakeSkinPositions();
     // ~150 peças viram ~45 draw calls: enfeites presos na mesma junta são fundidos.
     mergeStaticTree(this.root);
+    // As 24 peças das patas (juntas diferentes, mesmo material) viram um desenho só por passe.
+    const legParts: THREE.Mesh[] = [];
+    this.root.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      if (mesh.isMesh && mesh.material === this.legMat) legParts.push(mesh);
+    });
+    new RigBatch(this.root, legParts, 'beetle-legs');
 
     this.anchors = this.buildAnchors();
     this.outfit = new BeetleOutfit(this.anchors, (visible) => (this.horn.visible = visible));

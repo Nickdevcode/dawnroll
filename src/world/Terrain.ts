@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { RAPIER, Groups, interactionGroups, type Physics } from '../core/Physics';
 import { getClayNormalMapRepeated } from '../render/clayMaterial';
 import { globalUniforms } from '../render/shaderChunks';
+import { TERRAIN_RENDER_ORDER } from '../render/Graphics';
 import { getNoiseTexture, noiseTextureGLSL } from '../render/noiseTexture';
 import { fbm2 } from '../utils/noise';
 import { lerp, smoothstep } from '../utils/math';
@@ -204,6 +205,8 @@ export class Terrain {
     this.mesh.receiveShadow = true;
     this.mesh.name = 'terrain';
     this.mesh.matrixAutoUpdate = false;
+    // O chão tem o shader mais caro por pixel: desenhado depois do resto, só roda onde aparece.
+    this.mesh.renderOrder = TERRAIN_RENDER_ORDER;
 
     this.createCollider(physics);
   }

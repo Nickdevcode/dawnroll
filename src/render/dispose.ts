@@ -28,6 +28,12 @@ export function disposeReplaced(old: THREE.Object3D, replacement: THREE.Object3D
       if (keepMaterial.has(material) || disposed.has(material)) continue;
       disposed.add(material);
       material.dispose();
+      // O material não leva as texturas junto; as que são só dele (marcadas) vão aqui.
+      const map = (material as THREE.MeshBasicMaterial).map;
+      if (map?.userData.ownedByMaterial === true && !disposed.has(map)) {
+        disposed.add(map);
+        map.dispose();
+      }
     }
     // Instâncias (matrizes e cores) moram na malha, não na geometria.
     if ((mesh as THREE.InstancedMesh).isInstancedMesh) (mesh as THREE.InstancedMesh).dispose();

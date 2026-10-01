@@ -53,8 +53,14 @@ export interface AddObjectOptions {
   removableId?: number;
 }
 
-/** Tamanho da célula espacial: o lote é fatiado nela para o frustum culling ainda funcionar. */
-const CELL_SIZE = 44;
+/**
+ * Tamanho padrão da célula espacial: o lote é fatiado nela para o frustum culling ainda
+ * funcionar. Com 22 (antes 44) a sombra, a cena e o AO deixam de desenhar ~0,5 mi de
+ * triângulos por quadro (célula grande entrava inteira no mapa de sombra por um cantinho),
+ * a troco de ~30 draw calls a mais por passe. Sem sombra do sol (qualidade Mínima), a
+ * conta vira: célula grande, menos desenhos.
+ */
+const CELL_SIZE = 22;
 
 interface Bucket {
   profile: SurfaceProfile;
@@ -114,6 +120,10 @@ export class RemovableParts {
  */
 export class StaticBatch {
   private readonly buckets = new Map<string, Bucket>();
+
+  /** @param cellSize lado das fatias do mapa (unidades) */
+  constructor(private readonly cellSize = CELL_SIZE) {}
+
   private vertexCount = 0;
   /** Onde cada objeto removível foi parar (preenchido no `build`). */
   readonly removables = new RemovableParts();
@@ -132,7 +142,7 @@ export class StaticBatch {
       height = Math.max(box.max.y - box.min.y, 1e-3);
     }
     const origin = new THREE.Vector3().setFromMatrixPosition(root.matrixWorld);
-    const cell = `${Math.floor(origin.x / CELL_SIZE)},${Math.floor(origin.z / CELL_SIZE)}`;
+    const cell = `${Math.floor(origin.x / this.cellSize)},${Math.floor(origin.z / this.cellSize)}`;
 
     root.traverse((object) => {
       const mesh = object as THREE.Mesh;

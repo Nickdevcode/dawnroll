@@ -10,6 +10,7 @@ import { SoftParticles } from './SoftParticles';
 import { ChunkParticles } from './ChunkParticles';
 import { BallTrail } from './BallTrail';
 import { AmbientMotes } from './AmbientMotes';
+import { setCastShadows } from '../render/shadowCasting';
 import { Rain, type SurfaceProbe } from './Rain';
 import {
   Critters,
@@ -110,8 +111,11 @@ export class Effects {
   private readonly trail = new BallTrail();
   private readonly motes: AmbientMotes;
   private critters: Critters;
-  private readonly critterCount: number;
+  /** Orçamento de bichos do PRÓXIMO jardim (a qualidade pode ter mudado desde o último). */
+  critterCount: number;
   private readonly critterSounds: CritterSounds | undefined;
+  /** Bichos projetam sombra? (no nível de sombra baixo não: são pequenos e cada parte é um desenho no passe de sombra.) */
+  private critterShadows = true;
   /** Estado dos bichos que passa de um jardim para o outro. */
   private menuNight = true;
   private attract: AttractLevel = 0;
@@ -203,6 +207,13 @@ export class Effects {
     return new Critters(this.critterCount, landingSpots, isGroundFree, picnic, this.critterSounds, seed);
   }
 
+  /** Liga/desliga a sombra dos bichos (o jogo desliga com a sombra no nível baixo). */
+  setCritterShadows(on: boolean): void {
+    if (on === this.critterShadows) return;
+    this.critterShadows = on;
+    setCastShadows(this.critters.group, on);
+  }
+
   /** Troca os bichos pelos do jardim novo; devolve os antigos (já fora da cena) para serem descartados. */
   swapCritters(next: Critters): Critters {
     const old = this.critters;
@@ -213,6 +224,7 @@ export class Effects {
     next.setAttract(this.attract);
     this.critters = next;
     this.group.add(next.group);
+    if (!this.critterShadows) setCastShadows(next.group, false);
     return old;
   }
 

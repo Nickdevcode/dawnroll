@@ -562,6 +562,19 @@
   padding-inline: 4px;
   white-space: nowrap;
 }
+/* Tela estreita: seis opções não cabem numa linha; viram duas de três. */
+@media (max-width: 520px) {
+  .setting--wide .segmented {
+    grid-auto-flow: row;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+.setting__now[hidden] {
+  display: none;
+}
+.setting__now {
+  color: var(--dawn-indigo);
+}
 
 /* Lista de escolhas grandes (idioma) */
 .choices {
@@ -1487,6 +1500,15 @@
   }
   .setting:has(.slider) .slider {
     width: 100%;
+  }
+  /* Quatro opções ou mais (sombras) também não cabem ao lado do rótulo: descem e dividem a largura. */
+  .setting:not(.setting--wide):has(.segmented__option:nth-child(4)) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .setting:not(.setting--wide):has(.segmented__option:nth-child(4)) .segmented {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
   }
 }
 

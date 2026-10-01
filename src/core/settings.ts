@@ -1,4 +1,5 @@
-import { isTouchDevice, quality as deviceProfile } from './device';
+import { isTouchDevice, QUALITY_TIERS, type QualityTier } from './device';
+import { autoStartTier } from './autoTier';
 import type { LanguagePreference } from '../i18n';
 import type { HoldMode } from './Input';
 
@@ -11,14 +12,22 @@ import type { HoldMode } from './Input';
  * ajustes gráficos; mexer num ajuste solto vira "personalizada".
  */
 
-export type QualityPreset = 'auto' | 'low' | 'medium' | 'high' | 'ultra';
+export type QualityPreset = 'auto' | QualityTier;
 export type QualityLevel = QualityPreset | 'custom';
-export type ShadowQuality = 'off' | 'low' | 'high';
+export type ShadowQuality = 'off' | 'low' | 'high' | 'ultra';
+/** Amostras de MSAA na cena (0 = só o FXAA do acabamento). */
+export type MsaaSamples = 0 | 2 | 4;
 
 export interface GraphicsSettings {
   /** Fração da resolução nativa da tela (0,35 a 1). */
   resolution: number;
   shadows: ShadowQuality;
+  msaa: MsaaSamples;
+  /**
+   * Reflexo do céu nos materiais (brilho do casco, da bosta molhada). Trocar
+   * recompila os shaders todos: no Auto só muda na abertura do jogo.
+   */
+  reflections: boolean;
   ambientOcclusion: boolean;
   depthOfField: boolean;
   bloom: boolean;
@@ -51,9 +60,11 @@ export interface GameSettings extends GraphicsSettings {
   gamepadVibration: boolean;
 }
 
-export const QUALITY_PRESETS: readonly QualityPreset[] = ['auto', 'low', 'medium', 'high', 'ultra'];
+export const QUALITY_PRESETS: readonly QualityPreset[] = ['auto', ...QUALITY_TIERS];
+export const SHADOW_LEVELS: readonly ShadowQuality[] = ['off', 'low', 'high', 'ultra'];
+export const MSAA_LEVELS: readonly MsaaSamples[] = [0, 2, 4];
 export const HOLD_MODES: readonly HoldMode[] = ['hold', 'toggle'];
-const GRAPHICS_KEYS: ReadonlyArray<keyof GraphicsSettings> = ['resolution', 'shadows', 'ambientOcclusion', 'depthOfField', 'bloom', 'grassDensity'];
+export const GRAPHICS_KEYS: ReadonlyArray<keyof GraphicsSettings> = ['resolution', 'shadows', 'msaa', 'reflections', 'ambientOcclusion', 'depthOfField', 'bloom', 'grassDensity'];
 
 /** Densidade de pixels nativa da tela, com teto (acima de 2x o ganho não paga o custo). */
 export function nativePixelRatio(): number {
@@ -65,27 +76,55 @@ function resolutionFor(targetPixelRatio: number): number {
   return Math.min(1, Math.max(0.35, targetPixelRatio / nativePixelRatio()));
 }
 
-/** O que cada predefinição liga. Auto = o perfil do aparelho (e o jogo ainda pode baixar sozinho). */
-export function presetGraphics(preset: QualityPreset): GraphicsSettings {
-  switch (preset) {
+/**
+ * Densidade de pixels que cada degrau mira. No toque a tela é pequena e densa:
+ * abaixo de 1 pixel por ponto o texto do mundo vira borrão, então a escada começa mais alto.
+ */
+const TIER_PIXEL_RATIO: Record<QualityTier, { desktop: number; touch: number }> = {
+  minimum: { desktop: 0.6, touch: 0.75 },
+  low: { desktop: 0.8, touch: 1 },
+  medium: { desktop: 1, touch: 1.25 },
+  high: { desktop: 1.25, touch: 1.5 },
+  ultra: { desktop: 2, touch: 2 },
+};
+
+/**
+ * O que cada degrau liga. Do mais caro pro mais barato, o que sai primeiro é o
+ * que menos aparece pelo que custa: resolução acima da tela, MSAA 4x e sombra
+ * 4096 (Alta); oclusão e desfoque (Média); brilho, MSAA e reflexo do céu
+ * (Baixa); sombra de verdade e mais resolução (Mínima, que ganha sombra "de
+ * mancha" sob o besouro e a bola). O Ultra é o jogo como ele foi desenhado, sem corte nenhum.
+ */
+export function tierGraphics(tier: QualityTier): GraphicsSettings {
+  const ratio = TIER_PIXEL_RATIO[tier][isTouchDevice ? 'touch' : 'desktop'];
+  const resolution = resolutionFor(ratio);
+  switch (tier) {
+    case 'minimum':
+      return { resolution, shadows: 'off', msaa: 0, reflections: false, ambientOcclusion: false, depthOfField: false, bloom: false, grassDensity: 0.3 };
     case 'low':
-      return { resolution: resolutionFor(0.75), shadows: 'low', ambientOcclusion: false, depthOfField: false, bloom: false, grassDensity: 0.45 };
+      return { resolution, shadows: 'low', msaa: 0, reflections: false, ambientOcclusion: false, depthOfField: false, bloom: false, grassDensity: 0.5 };
     case 'medium':
-      return { resolution: resolutionFor(1), shadows: 'low', ambientOcclusion: false, depthOfField: false, bloom: true, grassDensity: 0.7 };
+      return { resolution, shadows: 'low', msaa: 2, reflections: true, ambientOcclusion: false, depthOfField: false, bloom: true, grassDensity: 0.75 };
     case 'high':
-      return { resolution: resolutionFor(1.5), shadows: 'high', ambientOcclusion: true, depthOfField: true, bloom: true, grassDensity: 1 };
+      return { resolution, shadows: 'high', msaa: 2, reflections: true, ambientOcclusion: true, depthOfField: true, bloom: true, grassDensity: 1 };
     case 'ultra':
-      return { resolution: resolutionFor(2), shadows: 'high', ambientOcclusion: true, depthOfField: true, bloom: true, grassDensity: 1 };
-    case 'auto':
-      return {
-        resolution: resolutionFor(deviceProfile.maxPixelRatio),
-        shadows: isTouchDevice ? 'low' : 'high',
-        ambientOcclusion: deviceProfile.ambientOcclusion,
-        depthOfField: deviceProfile.depthOfField,
-        bloom: deviceProfile.bloom,
-        grassDensity: 1,
-      };
+      return { resolution, shadows: 'ultra', msaa: 4, reflections: true, ambientOcclusion: true, depthOfField: true, bloom: true, grassDensity: 1 };
   }
+}
+
+/**
+ * Degrau que o "Auto" está usando agora. Começa no que o aparelho aprendeu
+ * (ou no palpite pela placa de vídeo) e a adaptação do jogo muda com `setAutoTier`.
+ */
+let autoTier: QualityTier = autoStartTier();
+
+export function currentAutoTier(): QualityTier {
+  return autoTier;
+}
+
+/** O que cada predefinição liga. Auto = o degrau que a adaptação escolheu. */
+export function presetGraphics(preset: QualityPreset): GraphicsSettings {
+  return tierGraphics(preset === 'auto' ? autoTier : preset);
 }
 
 function defaults(): GameSettings {
@@ -123,9 +162,11 @@ function sanitize(raw: unknown): GameSettings {
   const r = raw as Record<string, unknown>;
   const out: GameSettings = { ...base };
   if (oneOf(r.language, ['auto', 'pt-BR', 'en'] as const)) out.language = r.language;
-  if (oneOf(r.quality, ['auto', 'low', 'medium', 'high', 'ultra', 'custom'] as const)) out.quality = r.quality;
+  if (oneOf(r.quality, [...QUALITY_PRESETS, 'custom'] as const)) out.quality = r.quality;
   if (inRange(r.resolution, 0.35, 1)) out.resolution = r.resolution;
-  if (oneOf(r.shadows, ['off', 'low', 'high'] as const)) out.shadows = r.shadows;
+  if (oneOf(r.shadows, SHADOW_LEVELS)) out.shadows = r.shadows;
+  if ((MSAA_LEVELS as readonly unknown[]).includes(r.msaa)) out.msaa = r.msaa as MsaaSamples;
+  if (isBool(r.reflections)) out.reflections = r.reflections;
   if (isBool(r.ambientOcclusion)) out.ambientOcclusion = r.ambientOcclusion;
   if (isBool(r.depthOfField)) out.depthOfField = r.depthOfField;
   if (isBool(r.bloom)) out.bloom = r.bloom;
@@ -174,6 +215,15 @@ export class SettingsStore {
 
   applyPreset(preset: QualityPreset): void {
     this.commit({ ...this.value, ...presetGraphics(preset), quality: preset });
+  }
+
+  /**
+   * A adaptação do "Auto" trocou de degrau: os gráficos passam a ser os dele
+   * (sem virar "personalizada"). Fora do Auto só guarda o degrau pra quando ele voltar.
+   */
+  setAutoTier(tier: QualityTier): void {
+    autoTier = tier;
+    if (this.value.quality === 'auto') this.commit({ ...this.value, ...tierGraphics(tier) });
   }
 
   /** Tudo volta ao padrão, menos o idioma (quem escolheu um idioma não quer perdê-lo num reset). */

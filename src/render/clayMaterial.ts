@@ -198,6 +198,9 @@ function installClayShader(material: THREE.MeshPhysicalMaterial, mottle: number,
         #ifdef USE_INSTANCING
           flexModel = modelMatrix * instanceMatrix;
         #endif
+        #ifdef USE_BATCHING
+          flexModel = modelMatrix * batchingMatrix;
+        #endif
         vec3 flexWorld = (flexModel * vec4(transformed, 1.0)).xyz;
         float flexH = clamp(position.y / uFlexHeight, 0.0, 1.0);
         vec2 flexWind = windOffset(flexWorld) * 0.12 * flexH * flexH;
@@ -222,6 +225,8 @@ function installClayShader(material: THREE.MeshPhysicalMaterial, mottle: number,
         #ifdef USE_INSTANCING
           clayP = instanceMatrix * clayP;
         #endif
+        // Lote de modelos (BatchedMesh) fica no espaço do próprio modelo, como um Mesh solto:
+        // a pata que se mexe não "escorrega" por dentro do mosqueado.
         vClayPos = clayP.xyz;
         ${sway ? 'transformed.xz += windOffset(transformed) * sway;' : ''}
         ${useFlex ? flexCode : ''}`,

@@ -621,6 +621,18 @@ export class BallSync {
    * Apertou pra agarrar: qual bola (a mais perto do lado do besouro): a sua
    * principal, uma sua largada, ou a de outro (empurrar junto / pegar se estiver solta).
    */
+  /**
+   * Cada bola desenhada além da principal (dos outros e as suas soltas): quem
+   * põe mancha de sombra embaixo quando a sombra do sol está desligada.
+   */
+  forEachVisibleBall(visit: (ball: DungBall) => void): void {
+    const main = this.game.ball;
+    for (const rec of this.records.values()) {
+      if (rec.ball === main || (!rec.local && !rec.placed) || !rec.ball.root.visible || rec.ball.isParked) continue;
+      visit(rec.ball);
+    }
+  }
+
   pickGrabTarget(): DungBall | null {
     const beetle = this.game.beetle;
     const now = this.room.now();

@@ -5,7 +5,9 @@ import { ThirdPersonCamera, CAMERA_PROBE_RADIUS, type CameraBall } from './core/
 import { ShowcaseCamera } from './core/ShowcaseCamera';
 import { loadSave, writeSave, type SaveData } from './core/save';
 import { Online } from './online/Online';
-import { settings, nativePixelRatio, type GameSettings } from './core/settings';
+import { settings, nativePixelRatio, currentAutoTier, tierGraphics, GRAPHICS_KEYS, type GameSettings } from './core/settings';
+import { AdaptiveQuality } from './core/AdaptiveQuality';
+import { saveLearnedTier } from './core/autoTier';
 import { Graphics, type RenderOptions } from './render/Graphics';
 import { globalUniforms } from './render/shaderChunks';
 import { clearFrameView, updateFrameView } from './render/frameView';
@@ -69,7 +71,8 @@ import type { RoundRequest } from './progression/requests';
 import { skin, type SkinId } from './progression/skins';
 import { accessory, isAccessoryId, type Outfit } from './progression/accessories';
 import type { Look } from './progression/looks';
-import { quality } from './core/device';
+import { sceneBudget, type QualityTier } from './core/device';
+import { budget, effectiveTier } from './core/budget';
 import { GRAVITY } from './core/Physics';
 import { clamp, createRng, mixSeed, randomSeed } from './utils/math';
 import { OnlinePlay, type NameplateSource, type OnlineBridge } from './net/OnlinePlay';
@@ -86,6 +89,7 @@ import { TutorialGuide, type TutorialScene } from './tutorial/TutorialGuide';
 import { hasPlayed, tutorialStartStep, writeTutorial } from './tutorial/storage';
 import type { TutorialStepId } from './tutorial/steps';
 import type { TutorialWorld } from './tutorial/Tutorial';
+import { BlobShadows } from './fx/BlobShadows';
 
 /** Evita "espiral da morte" quando a aba volta do segundo plano. */
 const MAX_FRAME_TIME = 0.1;
@@ -130,6 +134,12 @@ const BUMP_DEBRIS: Record<PickableKind, DebrisMaterial> = { flower: 'petal', mus
  * pouquinho jogando (ela começa logo que a rodada começa), mais no menu e no enterro.
  */
 const GardenBudget = { playing: 2.5, burying: 8, paused: 10 } as const;
+/** Reflexo do céu que um degrau usa (o Auto guarda o da abertura). */
+const tierReflections = (tier: QualityTier): boolean => tierGraphics(tier).reflections;
+/** Mancha de sombra (sem a sombra do sol): tamanho embaixo do besouro, fator do raio da bola e escuridão. */
+const BLOB_BEETLE_RADIUS = 0.6;
+const BLOB_BALL_SCALE = 1.1;
+const BLOB_STRENGTH = 0.7;
 /** Quadros até descartar o que saiu de cena (o substituto já foi desenhado: nada recompila). */
 const DISPOSE_AFTER_FRAMES = 3;
 /** Sorteios derivados da semente do jardim (grama, cobertura e bichos de cada jardim). */
@@ -329,12 +339,18 @@ export class Game {
   /** O besouro como obstáculo da lente na cerimônia (a câmera não fica atrás dele). */
   private readonly beetleSphere: CameraBall = { center: new THREE.Vector3(), radius: 0.7 };
 
-  // Qualidade adaptativa (só no "Auto", em até dois degraus)
-  private perfSamples = 0;
-  private perfTime = 0;
-  private perfStage = 0;
-  /** Degrau que a qualidade adaptativa já desceu (0 = nada). */
-  private adaptiveLevel = 0;
+  /** Qualidade "Auto": mede o jogo e troca de degrau (só vale com a predefinição Auto). */
+  private readonly autoQuality = new AdaptiveQuality(currentAutoTier());
+  /** Corte extra de resolução que o Auto aplica depois de chegar na Mínima (1 = nenhum). */
+  private autoResolutionScale = 1;
+  /**
+   * Reflexo do céu no Auto: fica o da abertura (ou de quando o jogador escolheu o
+   * Auto). Trocar recompila todos os shaders, e no meio da partida isso é um
+   * engasgo de segundos; o degrau novo já abre com o dele da próxima vez.
+   */
+  private autoReflections = tierReflections(currentAutoTier());
+  /** Sombra "de mancha" embaixo do besouro e das bolas quando a sombra do sol está desligada. */
+  private readonly blobShadows = new BlobShadows();
   // Contador de FPS do HUD (média de meio segundo).
   private fpsFrames = 0;
   private fpsTime = 0;
@@ -359,7 +375,7 @@ export class Game {
   private readonly disposals: Array<{ frames: number; run: () => void }> = [];
 
   constructor(private readonly canvas: HTMLCanvasElement, uiRoot: HTMLElement) {
-    this.graphics = new Graphics(canvas);
+    this.graphics = new Graphics(canvas, this.renderOptions(settings.get()));
     this.input = new Input(canvas);
     this.hud = new Hud(uiRoot, this.input);
     this.tutorialGuide = new TutorialGuide(this.hud);
@@ -582,23 +598,23 @@ export class Game {
     boot.step(0.26, 'loader.terrain');
     await nextFrame();
 
-    this.terrain = new Terrain(this.physics, quality.terrainSegments);
+    this.terrain = new Terrain(this.physics, budget.terrainSegments);
     scene.add(this.terrain.mesh);
     boot.step(0.4, 'loader.garden');
     await nextFrame();
 
     // Cada vez que o jogo abre o jardim é outro (e cada rodada sorteia um novo).
     const seed = initialSeed();
-    this.scenery = new Scenery(this.physics, quality.decorDensity, seed);
+    this.scenery = new Scenery(this.physics, budget.decorDensity, seed);
     scene.add(this.scenery.group);
     this.terrain.paintContactShade(this.scenery.shades);
     boot.step(0.6, 'loader.grass');
     await nextFrame();
 
     // Grama e enfeites não nascem dentro de pedra/tronco nem em cima da toalha de piquenique.
-    this.grass = new Grass(quality.grassCount, this.scenery.groundBlocker(0.1), mixSeed(seed, GardenSalt.grass));
+    this.grass = new Grass(budget.grassCount, this.scenery.groundBlocker(0.1), mixSeed(seed, GardenSalt.grass));
     scene.add(this.grass.group);
-    this.groundCover = new GroundCover(quality.decorDensity, this.scenery.groundBlocker(0.25), mixSeed(seed, GardenSalt.cover));
+    this.groundCover = new GroundCover(budget.decorDensity, this.scenery.groundBlocker(0.25), mixSeed(seed, GardenSalt.cover));
     scene.add(this.groundCover.group);
     boot.step(0.74, 'loader.critters');
     await nextFrame();
@@ -630,6 +646,7 @@ export class Game {
     this.placeRareFind();
     scene.add(this.aura.points);
     scene.add(this.dizzyStars.group);
+    scene.add(this.blobShadows.mesh);
     // Acessório com material novo compila em segundo plano antes de aparecer (sem engasgo).
     this.beetle.model.outfit.compile = (object) => this.graphics.renderer.compileAsync(object, this.graphics.camera, scene).then(() => undefined);
     this.applyLook();
@@ -644,10 +661,10 @@ export class Game {
       return hit;
     };
     this.effects = new Effects({
-      critters: quality.critters,
-      motes: quality.motes,
-      rainDrops: quality.rainDrops,
-      rainSplashes: quality.rainSplashes,
+      critters: budget.critters,
+      motes: budget.motes,
+      rainDrops: budget.rainDrops,
+      rainSplashes: budget.rainSplashes,
       landingSpots: this.scenery.landingSpots,
       isGroundFree: this.scenery.critterGround(),
       picnic: this.scenery.zoneOf('picnic'),
@@ -1125,6 +1142,8 @@ export class Game {
     const cover = yield* this.groundCover.plantSteps(this.scenery.groundBlocker(0.25, true), mixSeed(seed, GardenSalt.cover));
     while (!this.gardenRush) yield 'idle';
     const picnic = plan.zones.find((zone) => zone.kind === 'picnic');
+    // Bichos do jardim novo no orçamento da qualidade de agora (o Auto pode ter baixado).
+    this.effects.critterCount = sceneBudget(effectiveTier()).critters;
     const critters = this.effects.createCritters(this.scenery.pending!.landingSpots, this.scenery.critterGround(true), picnic, mixSeed(seed, GardenSalt.critters));
     this.gardenParts = { grass, cover, critters };
   }
@@ -1427,17 +1446,16 @@ export class Game {
    */
   private applySettings(s: Readonly<GameSettings>, changed?: ReadonlySet<keyof GameSettings>): void {
     const has = (...keys: Array<keyof GameSettings>) => !changed || keys.some((k) => changed.has(k));
-    if (has('quality', 'resolution', 'shadows', 'ambientOcclusion', 'depthOfField', 'bloom', 'grassDensity')) {
-      // Qualidade manual desliga a adaptativa (e desfaz o que ela tinha baixado).
-      if (s.quality !== 'auto') {
-        this.adaptiveLevel = 0;
-        this.perfStage = 2;
-      } else if (changed?.has('quality')) {
-        this.adaptiveLevel = 0;
-        this.perfStage = 0;
-        this.perfTime = 0;
-        this.perfSamples = 0;
+    if (has('quality', ...GRAPHICS_KEYS)) {
+      // Escolheu o Auto agora: a adaptação recomeça do degrau que o aparelho aprendeu.
+      if (changed?.has('quality') && s.quality === 'auto') {
+        this.autoQuality.restart(currentAutoTier());
+        this.autoResolutionScale = 1;
+        // Escolha no menu: aqui um engasgo de recompilar não atrapalha ninguém.
+        this.autoReflections = s.reflections;
       }
+      // O relógio da GPU só serve pra adaptação (fora dela, nem mede).
+      this.graphics.measureGpu = s.quality === 'auto';
       this.applyRender(s);
     }
     if (has('masterVolume', 'musicVolume', 'effectsVolume', 'ambienceVolume')) {
@@ -1458,35 +1476,35 @@ export class Game {
     if (has('showFps') && !s.showFps) this.hud.setFps(null);
   }
 
-  /** Configurações gráficas + o degrau da qualidade adaptativa → renderizador e vegetação. */
-  private applyRender(s: Readonly<GameSettings>): void {
-    const options: RenderOptions = {
-      pixelRatio: nativePixelRatio() * s.resolution,
+  /** Configurações gráficas (no Auto, já as do degrau escolhido) → o que o renderizador liga. */
+  private renderOptions(s: Readonly<GameSettings>): RenderOptions {
+    const scale = s.quality === 'auto' ? this.autoResolutionScale : 1;
+    return {
+      pixelRatio: nativePixelRatio() * s.resolution * scale,
       shadows: s.shadows,
+      msaa: s.msaa,
+      reflections: s.quality === 'auto' ? this.autoReflections : s.reflections,
       ambientOcclusion: s.ambientOcclusion,
       depthOfField: s.depthOfField,
       bloom: s.bloom,
     };
-    let grass = s.grassDensity;
-    if (this.adaptiveLevel >= 1) {
-      options.ambientOcclusion = false;
-      options.depthOfField = false;
-      options.bloom = false;
-      options.pixelRatio = Math.min(options.pixelRatio, 1);
-      if (options.shadows === 'high') options.shadows = 'low';
-      grass *= 0.6;
-    }
-    if (this.adaptiveLevel >= 2) {
-      options.pixelRatio = Math.min(options.pixelRatio, 0.8);
-      grass *= 0.6;
-    }
-    this.graphics.configure(options);
-    this.grass.setDensity(grass);
-    this.groundCover.setDensity(Math.min(1, grass * 0.9));
+  }
+
+  /** Configurações gráficas → renderizador, vegetação e a sombra "de mancha". */
+  private applyRender(s: Readonly<GameSettings>): void {
+    this.graphics.configure(this.renderOptions(s));
+    this.grass.setDensity(s.grassDensity);
+    this.groundCover.setDensity(Math.min(1, s.grassDensity * 0.9));
+    this.blobShadows.enabled = !this.graphics.realShadows;
+    // Sombra no nível baixo: tralha e bichinhos saem do passe de sombra (dezenas de desenhos a menos).
+    const smallCasters = s.shadows === 'high' || s.shadows === 'ultra';
+    this.collectibles.setDebrisShadows(smallCasters);
+    this.effects.setCritterShadows(smallCasters);
   }
 
   private frame = (now: number): void => {
     requestAnimationFrame(this.frame);
+    const frameStart = performance.now();
     const time = now / 1000;
     const frameTime = this.lastTime === 0 ? FIXED_DT : Math.min(time - this.lastTime, MAX_FRAME_TIME);
     this.lastTime = time;
@@ -1544,7 +1562,7 @@ export class Game {
     const alpha = this.simulating ? this.accumulator / FIXED_DT : 1;
     this.renderFrame(alpha, frameTime);
     this.runDisposals();
-    this.trackPerformance(frameTime);
+    this.trackPerformance(frameTime, performance.now() - frameStart);
     this.countFps(frameTime);
   };
 
@@ -1824,6 +1842,7 @@ export class Game {
     this.cameraRig.update(dt, player, cameraBall, held.radius, this.beetle.pushing || burying);
     const showcaseFocus = this.updateShowcase(dt);
     this.graphics.followFocus(player);
+    this.updateBlobShadows(player);
     // Jogando, o que é instanciado pelo mapa todo (montinhos, detritos, bichos) só desenha o que
     // cabe nesta visão; no menu vai tudo (é lá que cada shader compila, antes de o jogo começar).
     if (this.paused) clearFrameView();
@@ -2978,29 +2997,36 @@ export class Game {
   }
 
   /**
-   * Qualidade "Auto": mede os primeiros segundos de jogo; se o aparelho não segurar
-   * ~40 fps, desliga AO/DOF/bloom, limita a resolução e afina a vegetação. Se mesmo
-   * assim ficar abaixo de ~30 fps, desce mais um degrau.
+   * Qualidade "Auto": entrega cada quadro de jogo de verdade (sem menu, sem
+   * cartas, aba à vista) pra adaptação, que troca de degrau quando precisa. O
+   * degrau novo vira os gráficos das configurações (e o aparelho guarda pra próxima vez).
    */
-  private trackPerformance(frameTime: number): void {
-    if (this.perfStage >= 2 || this.paused || this.choosing || settings.get().quality !== 'auto') return;
-    this.perfTime += frameTime;
-    this.perfSamples++;
-    if (this.perfTime < 4) return;
-    const fps = this.perfSamples / this.perfTime;
-    this.perfTime = 0;
-    this.perfSamples = 0;
-    if (this.perfStage === 0) {
-      if (fps >= 40) {
-        this.perfStage = 2; // aguentou: não mede mais
-        return;
-      }
-      this.adaptiveLevel = 1;
-      this.perfStage = 1;
-    } else {
-      if (fps < 30) this.adaptiveLevel = 2;
-      this.perfStage = 2;
+  private trackPerformance(frameTime: number, cpuMs: number): void {
+    if (settings.get().quality !== 'auto') return;
+    // Enterro (o jardim novo se monta a toda) e baú (compila o prêmio) pesam de propósito: não contam.
+    const measuring = this.started && !this.paused && !this.choosing && !this.burrow.isBusy && !this.chest && document.visibilityState === 'visible';
+    const change = this.autoQuality.update(frameTime, measuring, cpuMs, this.graphics.gpuMs);
+    if (!change) return;
+    saveLearnedTier(change.tier);
+    const onlyResolution = change.tier === currentAutoTier();
+    this.autoResolutionScale = change.resolutionScale;
+    settings.setAutoTier(change.tier);
+    // Só a resolução mudou (a Mínima cortando mais): as configurações são as mesmas, aplica direto.
+    if (onlyResolution) this.applyRender(settings.get());
+  }
+
+  /** Mancha de sombra embaixo do besouro e das bolas (só com a sombra do sol desligada). */
+  private updateBlobShadows(player: THREE.Vector3): void {
+    const blobs = this.blobShadows;
+    if (!blobs.enabled) return;
+    blobs.begin();
+    if (this.beetle.model.root.visible) blobs.add(player.x, player.y, player.z, BLOB_BEETLE_RADIUS, BLOB_STRENGTH);
+    const ball = this.ball;
+    if (ball.root.visible && !ball.isParked && ball.isSolid) {
+      const p = ball.root.position;
+      blobs.add(p.x, p.y - ball.radius, p.z, ball.radius * BLOB_BALL_SCALE, BLOB_STRENGTH);
     }
-    this.applyRender(settings.get());
+    this.net.forEachShadowCaster((x, bottom, z, radius, kind) => blobs.add(x, bottom, z, kind === 'beetle' ? BLOB_BEETLE_RADIUS : radius * BLOB_BALL_SCALE, BLOB_STRENGTH));
+    blobs.end();
   }
 }

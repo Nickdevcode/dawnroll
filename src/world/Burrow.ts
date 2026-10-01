@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { clay } from '../render/clayMaterial';
 import { claySphere, paintVertices, taperedTube } from '../render/geometry';
+import { mergeStaticChildren } from '../render/mergeStatic';
 import { createRng, clamp, lerp, smoothstep } from '../utils/math';
 import { leafGeometry } from './scenery/shapes';
 import { BURROW, terrainHeight } from './Terrain';
@@ -226,6 +227,8 @@ export class Burrow {
       group.add(clod);
     }
     group.name = 'burrow-clods';
+    // Parados pra sempre: um desenho por cor de terra em vez de um por torrão (eram 18 + sombra).
+    mergeStaticChildren(group);
     return group;
   }
 

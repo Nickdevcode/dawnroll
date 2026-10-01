@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { clay } from '../render/clayMaterial';
 import { InstancePool } from '../render/InstancePool';
+import { BatchedPool, SharedBatch } from '../render/BatchedPool';
 import { claySphere, displace, paintVertices, solidColor, taperedTube } from '../render/geometry';
 import { createRng, mixSeed, smoothstep, type Rng } from '../utils/math';
 import { noise3 } from '../utils/noise';
@@ -9,6 +10,7 @@ import { dungFlyBody, dungFlyWing, snailShell } from '../fx/critters/models';
 import { leafGeometry, latheGeometry, smoothProfile } from './scenery/shapes';
 import { terrainHeight, PLAY_RADIUS } from './Terrain';
 import type { Scenery } from './Scenery';
+import { setCastShadows } from '../render/shadowCasting';
 import type { DungBall } from '../entities/DungBall';
 import type { ZoneKind } from './zones';
 import {
@@ -38,6 +40,8 @@ const DUNG_PILES = 60;
 const DEBRIS_COUNT = 300;
 /** Vagas do anel de detritos extras (poderes que soltam tralha): o mais velho sai quando lota. */
 const EXTRA_SLOTS = 40;
+/** Vagas de instância por variante de detrito (passou disso, a variante desenha como Mesh comum). */
+const DEBRIS_PER_VARIANT = 40;
 /** Detrito extra que ninguém pegou some sozinho depois disso (segundos). */
 const EXTRA_LIFETIME = 25;
 /** Nos últimos instantes o extra encolhe até sumir (em vez de desaparecer do nada). */
@@ -124,7 +128,7 @@ interface Debris {
   material: DebrisMaterial;
   active: boolean;
   /** Parado no chão, é desenhado como instância; ao grudar vira um Mesh de verdade na bola. */
-  pool: InstancePool | null;
+  pool: BatchedPool | null;
   slot: number;
   /** Semente de onde (e o que) ele é (as vagas do chão; o online manda só isto). */
   seed: number;
@@ -222,7 +226,12 @@ export class Collectibles {
   private readonly pilePool: InstancePool;
   private readonly flyBodyPool: InstancePool;
   private readonly flyWingPool: InstancePool;
-  private readonly debrisPools = new Map<string, InstancePool>();
+  /** Vagas de cada variante de detrito (modelo × material). */
+  private readonly debrisPools = new Map<string, BatchedPool>();
+  /** Um lote por material (e por projetar sombra ou não): todas as variantes dele num desenho só. */
+  private readonly debrisBatches = new Map<string, SharedBatch>();
+  /** Detritos projetam sombra? (no nível de sombra baixo não: é tralha pequena e cada variante é um desenho a mais.) */
+  private debrisShadows = true;
   private time = 0;
 
   onCollect: ((event: CollectEvent) => void) | null = null;
@@ -428,7 +437,6 @@ export class Collectibles {
     this.pilePool.sync();
     this.flyBodyPool.sync();
     this.flyWingPool.sync();
-    for (const pool of this.debrisPools.values()) pool.sync();
   }
 
   /** Extras: o pulinho até o chão e o encolher antes de sumir (só o desenho; a lógica usa o lugar final). */
@@ -818,6 +826,8 @@ export class Collectibles {
   private place(built: BuiltDebris, x: number, z: number, seed = 0): Debris {
     const { object, size } = built;
     object.castShadow = size > 0.28;
+    object.userData.castShadowDefault = object.castShadow;
+    if (!this.debrisShadows) object.castShadow = false;
     object.receiveShadow = true;
     const y = terrainHeight(x, z) + this.scenery.coverHeight(x, z) + size * built.yOffset;
     object.position.set(x, y, z);
@@ -997,20 +1007,37 @@ export class Collectibles {
     return { object, size, material, yOffset };
   }
 
-  private debrisPoolFor(mesh: THREE.Mesh): InstancePool {
+  /** Liga/desliga a sombra dos detritos (o jogo desliga com a sombra no nível baixo). */
+  setDebrisShadows(on: boolean): void {
+    if (on === this.debrisShadows) return;
+    this.debrisShadows = on;
+    for (const batch of this.debrisBatches.values()) setCastShadows(batch.mesh, on);
+    for (const item of this.debris) if (!item.pool) setCastShadows(item.object, on);
+  }
+
+  private debrisPoolFor(mesh: THREE.Mesh): BatchedPool {
     const material = mesh.material as THREE.Material;
     const key = `${mesh.geometry.uuid}|${material.uuid}`;
     let pool = this.debrisPools.get(key);
     if (!pool) {
       // Tralha chata (moeda, botão, clipe, trevo) não precisa de sombra própria: o AO já assenta.
-      pool = new InstancePool(mesh.geometry, material, 40, mesh.userData.flat !== true);
-      pool.mesh.name = 'debris';
-      // Cor por instância muda o programa do shader: todas as vagas ganham cor já na construção.
-      if (mesh.userData.instanceTint) for (let i = 0; i < 40; i++) pool.setColor(i, WHITE);
+      pool = new BatchedPool(this.debrisBatchFor(material, mesh.userData.flat !== true), mesh.geometry, DEBRIS_PER_VARIANT);
       this.debrisPools.set(key, pool);
-      this.group.add(pool.mesh);
     }
     return pool;
+  }
+
+  /** O lote do material (a sombra é do lote inteiro: quem não projeta fica num lote à parte). */
+  private debrisBatchFor(material: THREE.Material, castShadow: boolean): SharedBatch {
+    const key = `${material.uuid}|${castShadow}`;
+    let batch = this.debrisBatches.get(key);
+    if (!batch) {
+      batch = new SharedBatch(material, castShadow, 'debris');
+      if (!this.debrisShadows) setCastShadows(batch.mesh, false);
+      this.debrisBatches.set(key, batch);
+      this.group.add(batch.mesh);
+    }
+    return batch;
   }
 
   /**
@@ -1033,7 +1060,6 @@ function pickRule(roll: number): SpawnRule {
   return SPAWN_TABLE[0];
 }
 
-const WHITE = new THREE.Color(1, 1, 1);
 /** Pose de rascunho para escrever a matriz dos extras animados. */
 const tmpPose = new THREE.Object3D();
 const tmpTarget = new THREE.Vector3();

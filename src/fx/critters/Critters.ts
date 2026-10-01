@@ -53,7 +53,7 @@ const ANTHILL_SALT = 0xa17;
  * física), sempre por perto do jogador, e barato: cada espécie desenha todos
  * os indivíduos com poucas malhas instanciadas.
  *
- * `count` é o orçamento do aparelho (`quality.critters`); cada espécie escala a partir dele.
+ * `count` é o orçamento da qualidade (`sceneBudget(...).critters`); cada espécie escala a partir dele.
  */
 export class Critters {
   readonly group = new THREE.Group();

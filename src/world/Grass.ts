@@ -5,6 +5,7 @@ import { SUN_DIRECTION } from '../render/Graphics';
 import { ChunkedInstances, type InstanceSample } from '../render/ChunkedInstances';
 import { outlineReachGLSL } from '../render/OutlinePass';
 import { terrainHeight, terrainNormal, dirtAmount, PLAY_RADIUS, WORLD_SIZE } from './Terrain';
+import { budget } from '../core/budget';
 
 /** Altura (local) considerada "ponta" da lâmina para o vento e para a translucidez. */
 const BLADE_TIP = 1.75;
@@ -67,7 +68,7 @@ export class Grass {
     }
     this.rim = new ChunkedInstances(this.geometry, this.material, rimSamples, rng, {
       name: 'grass-rim',
-      chunkSize: 32,
+      chunkSize: 32 * budget.chunkScale,
       lodNear: 200,
       lodFar: 300,
       lodMinFraction: 1,
@@ -123,9 +124,9 @@ export class Grass {
       samples.push({ matrix: new THREE.Matrix4().compose(pos, quat, scale), color: grassTint(rng) });
       if (samples.length % PLANT_STEP === 0) yield;
     }
-    return new ChunkedInstances(this.geometry, this.material, samples, rng, {
+    return yield* ChunkedInstances.buildSteps(this.geometry, this.material, samples, rng, {
       name: 'grass',
-      chunkSize: 16,
+      chunkSize: 16 * budget.chunkScale,
       lodNear: 20,
       lodFar: 80,
       lodMinFraction: 0.16,

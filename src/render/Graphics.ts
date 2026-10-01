@@ -7,9 +7,9 @@ import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { FullScreenQuad, Pass } from 'three/examples/jsm/postprocessing/Pass.js';
 import { FXAAShader } from 'three/examples/jsm/shaders/FXAAShader.js';
-import { isTouchDevice, quality } from '../core/device';
+import { isTouchDevice } from '../core/device';
 import { OutlinePass } from './OutlinePass';
-import type { ShadowQuality } from '../core/settings';
+import type { MsaaSamples, ShadowQuality } from '../core/settings';
 import { createRng } from '../utils/math';
 
 /** Paleta do "clima" da cena. Centralizada para ajustar o tom do jogo num lugar só. */
@@ -45,13 +45,48 @@ interface SkyColors {
 /** Direção de onde vem o sol (normalizada). Usada pela luz, pelo céu e pela grama. */
 export const SUN_DIRECTION = new THREE.Vector3(0.55, 0.78, 0.3).normalize();
 
-const SHADOW_EXTENT = 26;
+/** Como cada nível de sombra desenha o mapa do sol. */
+interface ShadowLevel {
+  /** Lado do mapa de sombra (texels); no toque, `touchSize`. */
+  size: number;
+  touchSize: number;
+  /** Maciez da borda (PCF). */
+  radius: number;
+  /** Meia largura da área com sombra em volta do besouro (unidades). */
+  extent: number;
+  /**
+   * Quanto a área anda pra frente da câmera. Área menor e adiantada: cobre o
+   * que está à vista com menos objetos no passe de sombra (atrás da câmera
+   * ninguém vê sombra nenhuma).
+   */
+  lead: number;
+}
+
+const SHADOW_LEVELS: Record<Exclude<ShadowQuality, 'off'>, ShadowLevel> = {
+  low: { size: 1024, touchSize: 1024, radius: 2, extent: 18, lead: 8 },
+  high: { size: 2048, touchSize: 2048, radius: 3, extent: 22, lead: 6 },
+  // O original: 4096 texels sobre 52 unidades em volta do besouro.
+  ultra: { size: 4096, touchSize: 2048, radius: 4, extent: 26, lead: 0 },
+};
+
+/**
+ * Luz ambiente a mais sem o reflexo do céu: é a parte difusa que ele dava (céu
+ * azul em cima, grama embaixo). Medido lado a lado: o jardim fica com o mesmo tom.
+ */
+const NO_REFLECTION_BOOST = 0.45;
+
+/** Lado do mapa de sombra "desligado" (existe só pra o shader ter o que amostrar). */
+const OFF_SHADOW_SIZE = 16;
 
 /** O que o renderizador liga e desliga (vem das configurações, já com a qualidade adaptativa aplicada). */
 export interface RenderOptions {
   /** Pixels desenhados por ponto de tela (1 = um por ponto). */
   pixelRatio: number;
   shadows: ShadowQuality;
+  /** Amostras de MSAA da cena (0 = só o FXAA do acabamento). */
+  msaa: MsaaSamples;
+  /** Reflexo do céu (IBL) nos materiais; sem ele, a luz ambiente compensa. Trocar recompila os shaders. */
+  reflections: boolean;
   ambientOcclusion: boolean;
   depthOfField: boolean;
   bloom: boolean;
@@ -332,6 +367,14 @@ class FxaaFinishPass extends ShaderPass {
 }
 
 /**
+ * Ordem de desenho dos opacos que cobrem muita tela: vão por último para a GPU
+ * descartar (pelo teste de profundidade) os pixels que outra coisa já tampou.
+ * Tudo com `renderOrder` entre 1 e 13 no jogo é transparente (fila à parte).
+ */
+export const TERRAIN_RENDER_ORDER = 500;
+const SKY_RENDER_ORDER = 1000;
+
+/**
  * Cúpula do céu: mistura o céu de sol com o de chuva pelo `uOvercast` e acende
  * no relâmpago. Fica colada na câmera e é desenhada no plano do fundo (z = w),
  * então nunca tampa nada — faz o papel do `scene.background`, mas com clima.
@@ -370,10 +413,62 @@ function createSkyDome(sunny: THREE.Texture, storm: THREE.Texture): THREE.Mesh {
   });
   const mesh = new THREE.Mesh(new THREE.SphereGeometry(10, 48, 24), material);
   mesh.frustumCulled = false;
-  mesh.renderOrder = -1000;
+  // Último dos opacos: só pinta o céu que sobrou à vista (o teste de profundidade descarta o
+  // resto antes do shader). Desenhado primeiro, como um fundo, custava uma tela inteira a mais.
+  mesh.renderOrder = SKY_RENDER_ORDER;
   mesh.userData.skipAO = true;
   mesh.name = 'sky-dome';
   return mesh;
+}
+
+/**
+ * Relógio da placa de vídeo (consulta de tempo do WebGL2): quanto o quadro
+ * custou na GPU, com uns quadros de atraso. Só existe onde o navegador expõe a
+ * extensão (Chrome e Edge no computador); nos outros fica `null` e a qualidade
+ * automática se vira só com o FPS.
+ */
+class GpuTimer {
+  private readonly pending: WebGLQuery[] = [];
+  private active: WebGLQuery | null = null;
+  /** Último tempo medido (ms), ou null se ainda não chegou nenhum. */
+  lastMs: number | null = null;
+
+  private constructor(
+    private readonly gl: WebGL2RenderingContext,
+    private readonly ext: { TIME_ELAPSED_EXT: number; GPU_DISJOINT_EXT: number },
+  ) {}
+
+  static create(renderer: THREE.WebGLRenderer): GpuTimer | null {
+    const gl = renderer.getContext();
+    if (!(gl instanceof WebGL2RenderingContext)) return null;
+    const ext = gl.getExtension('EXT_disjoint_timer_query_webgl2') as { TIME_ELAPSED_EXT: number; GPU_DISJOINT_EXT: number } | null;
+    return ext ? new GpuTimer(gl, ext) : null;
+  }
+
+  begin(): void {
+    // Fila cheia (GPU muito atrasada): pula a medição deste quadro em vez de acumular consultas.
+    if (this.active || this.pending.length > 4) return;
+    this.active = this.gl.createQuery();
+    if (this.active) this.gl.beginQuery(this.ext.TIME_ELAPSED_EXT, this.active);
+  }
+
+  end(): void {
+    const gl = this.gl;
+    if (this.active) {
+      gl.endQuery(this.ext.TIME_ELAPSED_EXT);
+      this.pending.push(this.active);
+      this.active = null;
+    }
+    // Relógio "pulou" (troca de clock, aba em segundo plano): as consultas em voo não valem.
+    const disjoint = gl.getParameter(this.ext.GPU_DISJOINT_EXT) as boolean;
+    while (this.pending.length > 0) {
+      const query = this.pending[0];
+      if (!disjoint && !gl.getQueryParameter(query, gl.QUERY_RESULT_AVAILABLE)) break;
+      if (!disjoint) this.lastMs = (gl.getQueryParameter(query, gl.QUERY_RESULT) as number) / 1e6;
+      gl.deleteQuery(query);
+      this.pending.shift();
+    }
+  }
 }
 
 export class Graphics {
@@ -396,21 +491,33 @@ export class Graphics {
   private readonly bloomPass: UnrealBloomPass;
   private readonly finishPass: FxaaFinishPass;
   private pixelRatio: number;
-  private options: RenderOptions = {
-    pixelRatio: 1,
-    shadows: 'high',
-    ambientOcclusion: quality.ambientOcclusion,
-    depthOfField: quality.depthOfField,
-    bloom: quality.bloom,
-  };
+  private options: RenderOptions;
+  /** Nível de sombra em uso (área, maciez e se ela anda pra frente da câmera); null = sem sombra do sol. */
+  private shadowLevel: ShadowLevel | null = null;
+  private readonly timer: GpuTimer | null;
+  private readonly tmpForward = new THREE.Vector3();
+  /** Reflexo do céu (fica guardado mesmo desligado, pra voltar sem refazer o PMREM). */
+  private readonly environment: THREE.Texture;
+  /** Luz ambiente a mais quando o reflexo do céu está desligado (a parte difusa dele). */
+  private ambientBoost = 0;
+  /** Luz ambiente do clima de agora (sem a compensação do reflexo). */
+  private hemiBase = 1.3;
 
-  constructor(canvas: HTMLCanvasElement) {
+  /**
+   * Mede o tempo de GPU de cada quadro (a qualidade automática liga). Sem
+   * suporte no navegador, `gpuMs` fica sempre `null`.
+   */
+  measureGpu = false;
+
+  /** @param initial primeiras opções (tamanhos já certos: nada é realocado no primeiro `configure`) */
+  constructor(canvas: HTMLCanvasElement, initial: RenderOptions) {
+    this.options = { ...initial };
     this.renderer = new THREE.WebGLRenderer({
       canvas,
       antialias: false, // o MSAA fica no render target do composer
       powerPreference: 'high-performance',
     });
-    this.pixelRatio = Math.min(window.devicePixelRatio, quality.maxPixelRatio);
+    this.pixelRatio = Math.max(0.3, initial.pixelRatio);
     this.renderer.setPixelRatio(this.pixelRatio);
     this.renderer.setSize(window.innerWidth, window.innerHeight, false);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -432,7 +539,9 @@ export class Graphics {
     // furta-cor do casco, ao verniz das frutinhas e ao brilho úmido da bosta.
     const pmrem = new THREE.PMREMGenerator(this.renderer);
     const envSource = this.createSkyTexture(512, 256, false, Palette);
-    this.scene.environment = pmrem.fromEquirectangular(envSource).texture;
+    this.environment = pmrem.fromEquirectangular(envSource).texture;
+    this.scene.environment = initial.reflections ? this.environment : null;
+    this.ambientBoost = initial.reflections ? 0 : NO_REFLECTION_BOOST;
     this.scene.environmentIntensity = 0.5;
     envSource.dispose();
     pmrem.dispose();
@@ -441,22 +550,21 @@ export class Graphics {
     this.scene.add(this.hemi);
 
     this.sun = new THREE.DirectionalLight(Palette.sun, 2.5);
+    // Sempre "projetando": desligar a sombra de verdade mudaria o programa de todo
+    // material (recompilar tudo no meio do jogo). Sem sombra = mapa parado e intensidade 0.
     this.sun.castShadow = true;
-    this.sun.shadow.mapSize.set(quality.shadowMapSize, quality.shadowMapSize);
     const cam = this.sun.shadow.camera;
-    cam.left = cam.bottom = -SHADOW_EXTENT;
-    cam.right = cam.top = SHADOW_EXTENT;
     cam.near = 1;
     cam.far = 140;
     this.sun.shadow.bias = -0.0004;
     this.sun.shadow.normalBias = 0.035;
-    this.sun.shadow.radius = 4;
+    this.applyShadows(initial.shadows);
     this.scene.add(this.sun, this.sun.target);
 
     const size = this.renderer.getDrawingBufferSize(new THREE.Vector2());
     // Profundidade em textura (o MSAA resolve junto): o contorno lê dela logo depois da cena.
     this.sceneTarget = new THREE.WebGLRenderTarget(size.x, size.y, {
-      samples: quality.msaaSamples,
+      samples: initial.msaa,
       type: THREE.HalfFloatType,
       depthTexture: new THREE.DepthTexture(size.x, size.y),
     });
@@ -491,17 +599,43 @@ export class Graphics {
     this.finishPass = new FxaaFinishPass();
     this.composer.addPass(this.finishPass);
 
+    this.timer = GpuTimer.create(this.renderer);
     this.applyQuality();
     window.addEventListener('resize', this.onResize);
     this.onResize();
   }
 
-  /** Luz do sol segue o jogador para o mapa de sombra cobrir sempre a área visível. */
+  /** Tempo de GPU do último quadro medido (ms), se `measureGpu` e o navegador deixarem. */
+  get gpuMs(): number | null {
+    return this.measureGpu ? (this.timer?.lastMs ?? null) : null;
+  }
+
+  /** Sombra de verdade (do sol) ligada? Sem ela, o jogo desenha as manchas no chão. */
+  get realShadows(): boolean {
+    return this.shadowLevel !== null;
+  }
+
+  /**
+   * Luz do sol segue o jogador para o mapa de sombra cobrir sempre a área visível
+   * (nos níveis com `lead`, adiantada na direção em que a câmera olha).
+   */
   followFocus(focus: THREE.Vector3): void {
+    const level = this.shadowLevel;
+    if (!level) return;
+    let cx = focus.x;
+    let cz = focus.z;
+    if (level.lead > 0) {
+      const forward = this.camera.getWorldDirection(this.tmpForward).setY(0);
+      if (forward.lengthSq() > 1e-6) {
+        forward.normalize();
+        cx += forward.x * level.lead;
+        cz += forward.z * level.lead;
+      }
+    }
     // Encaixa no texel do shadow map: evita sombras "tremendo" com o movimento.
-    const texel = (SHADOW_EXTENT * 2) / this.sun.shadow.mapSize.x;
-    const fx = Math.round(focus.x / texel) * texel;
-    const fz = Math.round(focus.z / texel) * texel;
+    const texel = (level.extent * 2) / this.sun.shadow.mapSize.x;
+    const fx = Math.round(cx / texel) * texel;
+    const fz = Math.round(cz / texel) * texel;
     this.sun.target.position.set(fx, focus.y, fz);
     this.sun.position.set(fx, focus.y, fz).addScaledVector(SUN_DIRECTION, 70);
   }
@@ -524,20 +658,55 @@ export class Graphics {
   configure(options: RenderOptions): void {
     this.options = { ...options, depthOfField: options.depthOfField && options.ambientOcclusion };
     this.pixelRatio = Math.max(0.3, options.pixelRatio);
-
-    const cast = options.shadows !== 'off';
-    this.sun.castShadow = cast;
-    if (cast) {
-      const size = options.shadows === 'high' ? (isTouchDevice ? 2048 : 4096) : 1024;
-      if (this.sun.shadow.mapSize.x !== size) {
-        this.sun.shadow.mapSize.set(size, size);
-        this.sun.shadow.map?.dispose();
-        this.sun.shadow.map = null;
-      }
-      this.sun.shadow.radius = options.shadows === 'high' ? 4 : 2;
+    this.applyShadows(options.shadows);
+    // Reflexo do céu muda o programa de todo material (recompila no próximo quadro).
+    const environment = options.reflections ? this.environment : null;
+    if (this.scene.environment !== environment) {
+      this.scene.environment = environment;
+      this.ambientBoost = options.reflections ? 0 : NO_REFLECTION_BOOST;
+      this.hemi.intensity = this.hemiBase + this.ambientBoost;
+    }
+    // MSAA novo: o alvo da cena é recriado (com a mesma textura de profundidade) no próximo quadro.
+    if (this.sceneTarget.samples !== options.msaa) {
+      this.sceneTarget.samples = options.msaa;
+      this.sceneTarget.dispose();
     }
     this.applyQuality();
     this.onResize();
+  }
+
+  /** Tamanho, maciez e área do mapa de sombra; "off" para o mapa e zera a intensidade. */
+  private applyShadows(quality: ShadowQuality): void {
+    const shadow = this.sun.shadow;
+    const on = quality !== 'off';
+    this.renderer.shadowMap.autoUpdate = on;
+    if (!on) {
+      shadow.intensity = 0;
+      if (this.shadowLevel || !shadow.map) {
+        // O shader continua amostrando o mapa (e o sampler de sombra sem uma textura de
+        // profundidade de verdade derruba o desenho de tudo que recebe sombra): fica um
+        // mapa minúsculo, desenhado uma vez só. A intensidade 0 ignora o que tiver nele.
+        shadow.mapSize.set(OFF_SHADOW_SIZE, OFF_SHADOW_SIZE);
+        shadow.map?.dispose();
+        shadow.map = null;
+        this.renderer.shadowMap.needsUpdate = true;
+      }
+      this.shadowLevel = null;
+      return;
+    }
+    const level = SHADOW_LEVELS[quality];
+    this.shadowLevel = level;
+    const size = isTouchDevice ? level.touchSize : level.size;
+    if (shadow.mapSize.x !== size) {
+      shadow.mapSize.set(size, size);
+      shadow.map?.dispose();
+      shadow.map = null;
+    }
+    shadow.radius = level.radius;
+    const cam = shadow.camera;
+    cam.left = cam.bottom = -level.extent;
+    cam.right = cam.top = level.extent;
+    cam.updateProjectionMatrix();
   }
 
   /**
@@ -552,8 +721,9 @@ export class Graphics {
     this.sun.intensity = THREE.MathUtils.lerp(2.5, 0.6, k);
     this.sun.color.copy(Palette.sun).lerp(StormPalette.sun, k);
     // Céu fechado = luz difusa: a sombra do sol quase some.
-    this.sun.shadow.intensity = 1 - k * 0.75;
-    this.hemi.intensity = THREE.MathUtils.lerp(1.3, 1.15, k) + flash * 1.6;
+    this.sun.shadow.intensity = this.shadowLevel ? 1 - k * 0.75 : 0;
+    this.hemiBase = THREE.MathUtils.lerp(1.3, 1.15, k) + flash * 1.6;
+    this.hemi.intensity = this.hemiBase + this.ambientBoost;
     this.hemi.color.copy(Palette.hemiSky).lerp(StormPalette.hemiSky, k);
     this.hemi.groundColor.copy(Palette.hemiGround).lerp(StormPalette.hemiGround, k);
     this.fog.color.copy(Palette.fog).lerp(StormPalette.fog, k);
@@ -572,7 +742,10 @@ export class Graphics {
     const u = this.dofPass.uniforms;
     u.cameraNear.value = this.camera.near;
     u.cameraFar.value = this.camera.far;
+    const timer = this.measureGpu ? this.timer : null;
+    timer?.begin();
     this.composer.render();
+    timer?.end();
   }
 
   private applyQuality(): void {

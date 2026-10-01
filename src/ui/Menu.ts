@@ -1,4 +1,4 @@
-import { settings, HOLD_MODES, QUALITY_PRESETS, type GameSettings, type QualityPreset, type ShadowQuality } from '../core/settings';
+import { settings, currentAutoTier, HOLD_MODES, MSAA_LEVELS, QUALITY_PRESETS, SHADOW_LEVELS, type GameSettings, type MsaaSamples, type QualityPreset, type ShadowQuality } from '../core/settings';
 import type { HoldMode, InputDevice } from '../core/Input';
 import type { SaveData } from '../core/save';
 import {
@@ -446,7 +446,11 @@ export class Menu {
           return true;
         }
         if ((action === 'left' || action === 'right') && this.adjust(current, action)) return true;
-        const next = nearestInDirection(current, focusables, action);
+        // Descendo dentro da lista rolável, o resto da lista vem antes do rodapé: o botão do
+        // rodapé fica mais perto na tela do que a linha que ainda está fora da vista, e
+        // "roubava" o foco (a última linha nunca era alcançada pelo controle).
+        const body = action === 'down' ? current.closest<HTMLElement>('.sheet__body') : null;
+        const next = (body && nearestInDirection(current, focusables.filter((el) => body.contains(el)), action)) || nearestInDirection(current, focusables, action);
         if (next) focus(next);
         else if (sheet && (action === 'up' || action === 'down')) this.pageSheet(action === 'down' ? 1 : -1);
         return true;
@@ -749,11 +753,29 @@ export class Menu {
     this.texts.push([customBadge, 'settings.quality.custom']);
     qualityRow.querySelector('.setting__label')!.after(customBadge);
     this.sync.push((s) => (customBadge.hidden = s.quality !== 'custom'));
+    // No Auto, qual degrau ele está usando agora (muda sozinho enquanto o jogo roda).
+    const autoNow = document.createElement('span');
+    autoNow.className = 'setting__hint setting__now';
+    autoNow.id = 'set-quality-now';
+    qualityRow.querySelector('.setting__text')!.append(autoNow);
+    const refreshAutoNow = (s: Readonly<GameSettings>) => {
+      autoNow.hidden = s.quality !== 'auto';
+      autoNow.textContent = t('settings.quality.now', { tier: t(`settings.quality.${currentAutoTier()}` as MessageKey) });
+    };
+    this.sync.push(refreshAutoNow);
+    this.controls.push({ element: autoNow, set() {}, refresh: () => refreshAutoNow(settings.get()) });
 
     this.row('graphics', 'resolution', 'settings.resolution', 'settings.resolution.hint',
       add(slider('set-resolution', { min: 35, max: 100, step: 5, format: percent }, (v) => settings.update({ resolution: v / 100 })), (s) => Math.round(s.resolution * 100)).element);
     this.row('graphics', 'shadows', 'settings.shadows', null,
-      add(segmented<ShadowQuality>('set-shadows', (['off', 'low', 'high'] as const).map((v) => ({ value: v, label: () => t(`settings.shadows.${v}` as MessageKey) })), (v) => settings.update({ shadows: v })), (s) => s.shadows).element);
+      add(segmented<ShadowQuality>('set-shadows', SHADOW_LEVELS.map((v) => ({ value: v, label: () => t(`settings.shadows.${v}` as MessageKey) })), (v) => settings.update({ shadows: v })), (s) => s.shadows).element);
+    this.row('graphics', 'msaa', 'settings.msaa', 'settings.msaa.hint',
+      add(
+        segmented<`${MsaaSamples}`>('set-msaa', MSAA_LEVELS.map((v) => ({ value: `${v}` as const, label: () => (v === 0 ? t('settings.msaa.off') : `${v}x`) })), (v) => settings.update({ msaa: Number(v) as MsaaSamples })),
+        (s) => `${s.msaa}` as const,
+      ).element);
+    this.row('graphics', 'reflections', 'settings.reflections', 'settings.reflections.hint',
+      add(toggle('set-reflections', 'set-reflections-hint', (v) => settings.update({ reflections: v })), (s) => s.reflections).element);
     this.row('graphics', 'ao', 'settings.ao', 'settings.ao.hint',
       add(toggle('set-ao', 'set-ao-hint', (v) => settings.update({ ambientOcclusion: v })), (s) => s.ambientOcclusion).element);
     const dof = toggle('set-dof', 'set-dof-hint', (v) => settings.update({ depthOfField: v }));

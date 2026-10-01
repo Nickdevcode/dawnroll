@@ -117,6 +117,8 @@ export function webPattern(seed = 7): WebPattern {
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.anisotropy = 4;
+  // Cada jardim tece a sua: sai junto com o material quando os bichos do jardim são descartados.
+  texture.userData.ownedByMaterial = true;
   return { texture, dew: new Float32Array(dew) };
 }
 

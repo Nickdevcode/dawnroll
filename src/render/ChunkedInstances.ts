@@ -30,6 +30,9 @@ interface Chunk {
   total: number;
 }
 
+/** Instâncias montadas por passo em `buildSteps` (um pedaço inteiro por vez, no mínimo). */
+const BUILD_STEP_INSTANCES = 1500;
+
 /**
  * Milhares de instâncias estáticas repartidas em pedaços do mapa: cada pedaço é um
  * InstancedMesh com esfera de culling própria. As instâncias são embaralhadas em
@@ -42,51 +45,70 @@ export class ChunkedInstances {
   private density = 1;
 
   constructor(
-    geometry: THREE.BufferGeometry,
-    material: THREE.Material,
+    private readonly geometry: THREE.BufferGeometry,
+    private readonly material: THREE.Material,
     samples: InstanceSample[],
     rng: Rng,
     private readonly options: ChunkedInstancesOptions,
   ) {
     this.group.name = options.name;
-    const { chunkSize } = options;
-    const cells = new Map<string, InstanceSample[]>();
-    for (const s of samples) {
-      const key = `${Math.floor(s.matrix.elements[12] / chunkSize)},${Math.floor(s.matrix.elements[14] / chunkSize)}`;
-      let list = cells.get(key);
-      if (!list) cells.set(key, (list = []));
-      list.push(s);
-    }
+    for (const list of cellsOf(samples, options.chunkSize)) this.addChunk(list, rng);
+  }
 
-    for (const list of cells.values()) {
-      const n = list.length;
-      // Fisher-Yates: o prefixo de qualquer tamanho fica espalhado pelo pedaço todo.
-      for (let i = n - 1; i > 0; i--) {
-        const j = Math.floor(rng.next() * (i + 1));
-        [list[i], list[j]] = [list[j], list[i]];
+  /**
+   * O mesmo que o construtor, só que em passos de ~1500 instâncias: montar
+   * milhares de tufos de uma vez era um quadro de 15+ ms no meio do jogo (o
+   * jardim da próxima rodada se monta enquanto se joga). Mesmo sorteio, mesmo resultado.
+   */
+  static *buildSteps(
+    geometry: THREE.BufferGeometry,
+    material: THREE.Material,
+    samples: InstanceSample[],
+    rng: Rng,
+    options: ChunkedInstancesOptions,
+  ): Generator<void, ChunkedInstances> {
+    const chunked = new ChunkedInstances(geometry, material, [], rng, options);
+    let work = 0;
+    for (const list of cellsOf(samples, options.chunkSize)) {
+      chunked.addChunk(list, rng);
+      work += list.length;
+      if (work >= BUILD_STEP_INSTANCES) {
+        work = 0;
+        yield;
       }
-      const mesh = new THREE.InstancedMesh(geometry, material, n);
-      const box = new THREE.Box3();
-      const point = new THREE.Vector3();
-      list.forEach((s, i) => {
-        mesh.setMatrixAt(i, s.matrix);
-        if (s.color) mesh.setColorAt(i, s.color);
-        box.expandByPoint(point.setFromMatrixPosition(s.matrix));
-      });
-      mesh.instanceMatrix.needsUpdate = true;
-      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-
-      const center = box.getCenter(new THREE.Vector3());
-      const size = box.getSize(new THREE.Vector3());
-      center.y += options.heightMargin * 0.5;
-      mesh.boundingSphere = new THREE.Sphere(center.clone(), size.length() / 2 + options.heightMargin);
-      mesh.castShadow = options.castShadow ?? false;
-      mesh.receiveShadow = true;
-      mesh.userData.skipAO = options.skipAO ?? false;
-      mesh.name = `${options.name}-chunk`;
-      this.group.add(mesh);
-      this.chunks.push({ mesh, center, total: n });
     }
+    return chunked;
+  }
+
+  private addChunk(list: InstanceSample[], rng: Rng): void {
+    const { geometry, material, options } = this;
+    const n = list.length;
+    // Fisher-Yates: o prefixo de qualquer tamanho fica espalhado pelo pedaço todo.
+    for (let i = n - 1; i > 0; i--) {
+      const j = Math.floor(rng.next() * (i + 1));
+      [list[i], list[j]] = [list[j], list[i]];
+    }
+    const mesh = new THREE.InstancedMesh(geometry, material, n);
+    const box = new THREE.Box3();
+    const point = new THREE.Vector3();
+    list.forEach((s, i) => {
+      mesh.setMatrixAt(i, s.matrix);
+      if (s.color) mesh.setColorAt(i, s.color);
+      box.expandByPoint(point.setFromMatrixPosition(s.matrix));
+    });
+    mesh.instanceMatrix.needsUpdate = true;
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+
+    const center = box.getCenter(new THREE.Vector3());
+    const size = box.getSize(new THREE.Vector3());
+    center.y += options.heightMargin * 0.5;
+    mesh.boundingSphere = new THREE.Sphere(center.clone(), size.length() / 2 + options.heightMargin);
+    mesh.castShadow = options.castShadow ?? false;
+    mesh.receiveShadow = true;
+    mesh.userData.skipAO = options.skipAO ?? false;
+    mesh.name = `${options.name}-chunk`;
+    this.group.add(mesh);
+    this.chunks.push({ mesh, center, total: n });
   }
 
   /**
@@ -117,4 +139,16 @@ export class ChunkedInstances {
       chunk.mesh.count = Math.max(1, Math.floor(chunk.total * lod * this.density));
     }
   }
+}
+
+/** Reparte as amostras nos pedaços do mapa, na ordem em que cada pedaço aparece pela primeira vez. */
+function cellsOf(samples: readonly InstanceSample[], chunkSize: number): Iterable<InstanceSample[]> {
+  const cells = new Map<string, InstanceSample[]>();
+  for (const s of samples) {
+    const key = `${Math.floor(s.matrix.elements[12] / chunkSize)},${Math.floor(s.matrix.elements[14] / chunkSize)}`;
+    let list = cells.get(key);
+    if (!list) cells.set(key, (list = []));
+    list.push(s);
+  }
+  return cells.values();
 }

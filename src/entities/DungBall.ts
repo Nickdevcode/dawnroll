@@ -5,7 +5,8 @@ import { clay } from '../render/clayMaterial';
 import { claySphere, displace, paintVertices, solidColor, taperedTube } from '../render/geometry';
 import { clamp, damp, createRng, smoothstep } from '../utils/math';
 import { noise3 } from '../utils/noise';
-import { quality } from '../core/device';
+import { budget } from '../core/budget';
+import { ObjectBatches } from '../render/ObjectBatches';
 import { coronaTexture, markAsLight } from '../fx/glow';
 
 export const START_RADIUS = 0.5;
@@ -84,6 +85,11 @@ export class DungBall {
   private readonly core: THREE.Mesh;
   private readonly stuckGroup = new THREE.Group();
   private readonly stuck: StuckItem[] = [];
+  /**
+   * O que está grudado sai em lotes por material (a bola cheia tinha um desenho
+   * por item em cada passe). Quem não cabe em lote continua desenhado sozinho.
+   */
+  private readonly stuckBatches = new ObjectBatches(this.stuckGroup, 'stuck');
 
   private _radius = START_RADIUS;
   private targetVolume = volumeOf(START_RADIUS);
@@ -411,6 +417,7 @@ export class DungBall {
     object.quaternion.copy(fromQuaternion);
     object.scale.copy(fromScale);
     this.stuckGroup.add(object);
+    this.stuckBatches.add(object);
     this.stuck.push({
       object,
       radiusAtStick: this._radius,
@@ -499,7 +506,7 @@ export class DungBall {
 
   /** Bola nova (rodada nova): pequena, limpa, brotando no lugar indicado. */
   reset(position: THREE.Vector3): void {
-    for (const item of this.stuck) item.object.removeFromParent();
+    for (const item of this.stuck) this.unstick(item.object);
     this.stuck.length = 0;
     this.targetVolume = volumeOf(START_RADIUS);
     this._radius = START_RADIUS;
@@ -570,6 +577,7 @@ export class DungBall {
       o.position.addScaledVector(item.toPosition, out);
       o.quaternion.slerpQuaternions(item.fromQuaternion, item.toQuaternion, e);
       o.scale.lerpVectors(item.fromScale, item.toScale, e);
+      this.stuckBatches.sync(o);
     }
   }
 
@@ -623,10 +631,11 @@ export class DungBall {
     physics.world.removeRigidBody(this.body);
   }
 
-  /** Libera o material próprio da bola (a malha é compartilhada: fica). */
+  /** Libera o material próprio da bola e os lotes da tralha grudada (a malha da bola é compartilhada: fica). */
   disposeMaterial(): void {
     (this.core.material as THREE.Material).dispose();
     this.halo?.material.dispose();
+    this.stuckBatches.dispose();
   }
 
   /** 0..1: o quanto a bola já virou sol (o jogo usa pra festa e som). */
@@ -646,11 +655,11 @@ export class DungBall {
     for (let i = this.stuck.length - 1; i >= 0; i--) {
       const item = this.stuck[i];
       if (this._radius - item.radiusAtStick > item.size * 0.9) {
-        item.object.removeFromParent();
+        this.unstick(item.object);
         this.stuck.splice(i, 1);
       } else if (item.radiusAtStick - this._radius > item.size * 0.5 + 0.08) {
         const at = item.object.getWorldPosition(new THREE.Vector3());
-        item.object.removeFromParent();
+        this.unstick(item.object);
         this.stuck.splice(i, 1);
         this.onShed?.(at);
       }
@@ -660,8 +669,14 @@ export class DungBall {
   /** Teto de segurança para não acumular draw calls (some o mais antigo). */
   private trimStuck(): void {
     while (this.stuck.length > this.maxStuck) {
-      this.stuck.shift()!.object.removeFromParent();
+      this.unstick(this.stuck.shift()!.object);
     }
+  }
+
+  /** Tira um item da bola (e do lote dele). */
+  private unstick(object: THREE.Object3D): void {
+    this.stuckBatches.remove(object);
+    object.removeFromParent();
   }
 }
 
@@ -674,7 +689,7 @@ export function disposeBall(ball: DungBall, physics: Physics): void {
 
 /** Quanta tralha uma bola mostra grudada: a sua, tudo que o aparelho aguenta; a dos outros, um terço. */
 function stuckLimit(proxy: boolean): number {
-  return proxy ? Math.max(8, Math.round(quality.stuckItems / 3)) : quality.stuckItems;
+  return proxy ? Math.max(8, Math.round(budget.stuckItems / 3)) : budget.stuckItems;
 }
 
 /** Brilho do Sol excedente (0..1) pelo volume que passou do teto. */

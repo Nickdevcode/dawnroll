@@ -7,6 +7,7 @@ import { createRng, smoothstep, type Rng } from '../utils/math';
 import { fbm2 } from '../utils/noise';
 import { leafGeometry } from './scenery/shapes';
 import { terrainHeight, terrainNormal, dirtAmount, PLAY_RADIUS } from './Terrain';
+import { budget } from '../core/budget';
 
 /** Onde a cobertura não pode nascer (dentro de pedra, tronco...). */
 export type CoverBlocker = (x: number, z: number) => boolean;
@@ -146,9 +147,9 @@ function* plantLayer(spec: CoverLayerSpec, rng: Rng, blocked: CoverBlocker): Gen
     samples.push({ matrix: new THREE.Matrix4().compose(pos, quat, scale), color: spec.tint(rng) });
     if (samples.length % PLANT_STEP === 0) yield;
   }
-  return new ChunkedInstances(spec.geometry, spec.material, samples, rng, {
+  return yield* ChunkedInstances.buildSteps(spec.geometry, spec.material, samples, rng, {
     name: 'cover',
-    chunkSize: 20,
+    chunkSize: 20 * budget.chunkScale,
     lodNear: 14,
     lodFar: 50,
     lodMinFraction: 0.1,

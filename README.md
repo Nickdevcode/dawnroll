@@ -39,7 +39,7 @@ Um besouro rola-bosta de massinha num jardim em miniatura. Você rola uma bola d
 | 🎥 **Câmera e colisões** | A lente é uma esfera (não um raio fino): nunca para dentro de pedra, brinquedo, pétala ou da própria bola de bosta. Espremida contra alguma coisa, ela sobe por cima em vez de entrar no besouro. Todo modelo tem colisão que acompanha a forma dele (a lâmina da pá, as pontas do morango, os dedos da luva, os cogumelinhos) |
 | 🌙 **Menu** | A "madrugada" por cima do jardim ao vivo: logo com o "o" virando um solzinho de massinha, e Jogar faz amanhecer. Toca, Guarda-roupa, Feirinha, Passe, Ranking, Configurações e Como jogar abrem em placas por cima, e a conta fica num chip no canto de cima |
 | 🌅 **Carregando** | A madrugada já aparece no primeiro quadro, antes do download do jogo: logo de massinha, estrelinhas e um **solzinho rolando pelo horizonte**, que é a própria barra de progresso (física, chão, jardim, grama, bichos, shaders). No fim o miolo some e o céu se funde no menu |
-| ⚙️ **Configurações** | Qualidade (Auto, Baixa, Média, Alta, Ultra ou Personalizada), resolução, sombras, oclusão ambiente, desfoque de maquete, brilho, densidade da grama, FPS, volumes (geral, música, efeitos, natureza e clima — cada slider toca uma prévia do próprio canal), sensibilidade do mouse/toque e do analógico (separadas), inversão da câmera, câmera que volta sozinha (liga/desliga), agarrar e correr **segurando ou alternando** (aperta uma vez liga, outra desliga — bom pra quem cansa de segurar botão), tremida de câmera e vibração do controle. Tudo aplica na hora e fica salvo |
+| ⚙️ **Configurações** | Qualidade (Auto, Mínima, Baixa, Média, Alta, Ultra ou Personalizada — o Auto mostra qual degrau está usando), resolução, sombras (sem, baixas, altas, ultra), suavização de bordas (MSAA), reflexos do céu, oclusão ambiente, desfoque de maquete, brilho, densidade da grama, FPS, volumes (geral, música, efeitos, natureza e clima — cada slider toca uma prévia do próprio canal), sensibilidade do mouse/toque e do analógico (separadas), inversão da câmera, câmera que volta sozinha (liga/desliga), agarrar e correr **segurando ou alternando** (aperta uma vez liga, outra desliga — bom pra quem cansa de segurar botão), tremida de câmera e vibração do controle. Tudo aplica na hora e fica salvo |
 | 🌐 **Idiomas** | Português (Brasil) e inglês. No automático, o jogo segue o idioma do navegador/sistema, e dá pra fixar um nas configurações |
 | 💨 **Efeitos** | Poeira nos passos e na bola, respingo ao pegar bosta, brilho ao grudar, confete nos marcos, rastro da bola no chão, fedor subindo dos montinhos, suor quando o besouro faz força, torrões e pétalas ao arrancar coisas, terra voando no enterro, respingos d'água, folhas caindo e pólen no ar |
 
@@ -451,7 +451,8 @@ from public.player_stats s join public.profiles p on p.id = s.user_id order by s
 
 - Aparece um analógico (andar), uma área de arrastar pra olhar e botões de correr, agarrar e pular.
 - A câmera volta sozinha pra trás do besouro quando você para de mexer nela.
-- Perfil gráfico mais leve: sem oclusão ambiente, sem desfoque de maquete e sem bloom, menos pixels, sombra menor, menos grama, menos enfeites e menos bichinhos. Na qualidade **Auto**, se ainda assim ficar abaixo de ~40 fps, o jogo reduz mais (e mais um degrau se cair abaixo de ~30). Escolhendo uma qualidade fixa nas configurações, ele obedece e não mexe sozinho.
+- No **Auto**, o jogo escolhe o degrau pelo chip gráfico do celular (Adreno, Mali, Apple...) e nunca passa da **Média** sozinho (celular esquenta e baixa o clock). Jogando, ele desce de degrau se não segurar ~50 fps, e o aparelho guarda o que funcionou pra próxima vez. Escolhendo uma qualidade fixa nas configurações, ele obedece e não mexe sozinho.
+- Mesmo no Ultra, o celular usa os tetos de sempre: menos grama, menos enfeites, menos bichinhos e sombra de 2048.
 - Pausa sozinho se você sair do app ou trocar de aba.
 
 ---
@@ -498,8 +499,11 @@ src/
 │   ├── Physics.ts          # mundo Rapier, passo fixo 60 Hz, grupos de colisão
 │   ├── Input.ts            # teclado + mouse (pointer lock) + toque + controle; dispositivo em uso (com filtro de ruído), segurar/alternar
 │   ├── GamepadInput.ts     # Gamepad API: mapeamento, zonas mortas e curvas, menu, vibração, Xbox / PS4 / PS5 / Switch
-│   ├── settings.ts         # configurações salvas e validadas, predefinições de qualidade
-│   ├── device.ts           # perfis de qualidade (PC x celular)
+│   ├── settings.ts         # configurações salvas e validadas, os 5 degraus de qualidade (+ Auto)
+│   ├── device.ts           # placa de vídeo, palpite de degrau e orçamentos de montagem por degrau
+│   ├── autoTier.ts         # o degrau que o Auto aprendeu neste aparelho (guardado por placa de vídeo)
+│   ├── AdaptiveQuality.ts  # o Auto durante o jogo: mede, desce/sobe degrau, desfaz descida que não adiantou
+│   ├── budget.ts           # orçamentos da montagem do mundo (bichos, partículas, malha do chão, pedaços)
 │   ├── save.ts             # progresso no localStorage (recorde, XP, despensa, catálogo, conquistas, visual), validado (`parseSave` serve pra nuvem também)
 │   ├── ThirdPersonCamera.ts # órbita, colisão com o cenário e tremidinha de impacto
 │   └── ShowcaseCamera.ts   # provador do guarda-roupa: enquadra de frente, desvia da bola, gira arrastando
@@ -515,6 +519,11 @@ src/
 │   ├── frameView.ts        # a visão da câmera do quadro (quem instancia pelo mapa todo desenha só o que cabe nela)
 │   ├── noiseTexture.ts     # o ruído do chão pré-calculado numa textura que se repete
 │   ├── mergeStatic.ts      # funde enfeites presos na mesma junta (besouro e acessórios)
+│   ├── BatchedPool.ts      # lote por material (BatchedMesh): a tralha do chão, 53 variantes em ~8 desenhos
+│   ├── ObjectBatches.ts    # objetos soltos em lote por material (a tralha grudada na bola)
+│   ├── RigBatch.ts         # peças articuladas num lote que segue a animação (as 24 peças das patas)
+│   ├── shadowCasting.ts    # liga/desliga a sombra de um grupo lembrando o que cada malha fazia
+│   ├── mergePositions.ts   # a fusão de vértices do three, bit a bit, sem string por vértice
 │   └── geometry.ts         # "amassa" primitivas, pinta vértices, tubos afinando
 ├── entities/
 │   ├── BeetleModel.ts      # o besouro bonitão + animação procedural das 6 patas + encaixes do visual
@@ -547,6 +556,7 @@ src/
 │   └── Collectibles.ts     # montinhos (espiral), moscas e 10 tipos de detrito grudável
 ├── fx/
 │   ├── Effects.ts          # central de efeitos (eventos do jogo -> partículas)
+│   ├── BlobShadows.ts      # sombra "de mancha" sob besouros e bolas quando a sombra do sol está desligada
 │   ├── BeetleAura.ts       # partículas dos cascos vivos (faísca, estrela, bolha, brilho)
 │   ├── ChestStage.ts       # a cerimônia do baú: cai, chacoalha, estoura e tira os prêmios um por vez (suspense, resumo)
 │   ├── chestModels.ts      # os quatro baús modelados (madeira, prata, cristal, Sol), com o veio da madeira feito em código
@@ -654,6 +664,47 @@ src/
 
 ## ⚡ Desempenho
 
+### 🖥️ Roda em qualquer máquina (30/09/2026)
+
+Antes, **Alta e Ultra eram iguais** em quase todo PC (as duas caíam na mesma resolução numa tela 1x ou 1,5x), e a **Baixa** ainda desenhava o jogo quase inteiro (MSAA 4x, ~2,5 mi de triângulos, ~425 draw calls, mesmos bichos e partículas do Ultra). Agora cada degrau corta de verdade, e o **Ultra continua sendo o jogo como ele foi desenhado** (mesma resolução, sombra 4096, MSAA 4x, AO, desfoque, brilho, reflexos):
+
+| Degrau | Resolução (PC / celular) | Sombra | MSAA | Reflexos | AO + desfoque | Brilho | Grama |
+|---|---|---|---|---|---|---|---|
+| 🐢 **Mínima** (nova) | 0,6x / 0,75x | mancha sob besouro e bola | — | — | — | — | 30% |
+| **Baixa** | 0,8x / 1x | 1024, área adiantada | — | — | — | — | 50% |
+| **Média** | 1x / 1,25x | 1024, área adiantada | 2x | ✅ | — | ✅ | 75% |
+| **Alta** | 1,25x / 1,5x | 2048 | 2x | ✅ | ✅ | ✅ | 100% |
+| 💎 **Ultra** | tela inteira (até 2x) | 4096 | 4x | ✅ | ✅ | ✅ | 100% |
+
+Os degraus baixos também montam o mundo mais leve na abertura: menos bichinhos, pólen, chuva e enfeites, chão com menos vértices e pedaços maiores de grama/cenário (menos desenhos).
+
+Medido no PC de teste (RX 6600, Ryzen 5 5600X), sem vsync, mesmo jardim e ângulo:
+
+| | Antes | Depois |
+|---|---|---|
+| **Baixa** em 1080p | 109 fps · 2,5 mi triângulos · 423 draw calls | **~210 fps** · 1,4 mi · 227 |
+| **Alta** em 1080p | 70 fps · 3,8 mi · 601 | **78 fps** · 2,9 mi · 477 |
+| **Ultra** em 900p | 74 fps · 3,8 mi · 600 | **84 fps** · 3,1 mi · 493 |
+| Fim de rodada (bola cheia, Alta) | 814 draw calls | **484** |
+| Montar o jardim da próxima rodada | 46 passos acima de 8 ms (pior: 20 ms) | **1** (pior: 12–16 ms) |
+
+O que mudou:
+
+- **Degraus de verdade:** cada degrau tem resolução, sombra, MSAA, reflexos, pós e grama próprios. Os ajustes soltos ganharam **Suavização de bordas** (MSAA sem/2x/4x), **Reflexos do céu** e o nível **Ultra** de sombra.
+- **Auto que escolhe e aprende:** o palpite inicial vem do nome da placa de vídeo (Intel UHD → Baixa, Iris Xe e Radeon integrada → Média, RTX/RX → Alta, celular pelo chip; nunca chuta Ultra) e de núcleos/memória. Jogando, ele mede janelas de ~4 s e **desce um degrau** se a média ficar abaixo de ~50 fps (duas janelas seguidas, ou uma bem ruim). Toda descida precisa render ao menos 8% de FPS; se não render, o gargalo é outro (tela de 48 Hz, processador) e ela volta atrás. Na Mínima, o que sobra é cortar resolução (até 60% da dela). Só **sobe** com o relógio da GPU (Chrome/Edge no PC) confirmando muita folga, e nunca acima de onde já caiu. Enterro e baú não contam (pesam de propósito). O degrau que funcionou fica guardado por placa de vídeo e a próxima partida já começa nele.
+- **Sem recompilar no meio do jogo:** desligar a sombra do sol não tira a sombra dos shaders (o mapa fica 16×16 e a intensidade 0), e o reflexo do céu (que recompila tudo) no Auto só muda na abertura. MSAA, resolução, AO e brilho trocam ao vivo sem engasgo.
+- **Céu e chão por último:** a cúpula do céu era desenhada primeiro (uma tela inteira); agora é o último opaco, e o chão (o shader mais caro por pixel) vem logo antes: a GPU descarta o que já foi tampado. ~8% de GPU a menos em 4K, sem mudar um pixel.
+- **Cenário em fatias menores** (22 em vez de 44 unidades): a sombra, a cena e o AO deixam de desenhar ~0,5 mi de triângulos por quadro. Na Mínima (sem passe de sombra) as fatias voltam a ser grandes, pra ter menos desenhos.
+- **Sombra que olha pra frente:** nos níveis baixo/alto a área da sombra é menor e adiantada na direção da câmera (atrás dela ninguém vê sombra). Com sombra baixa, tralha e bichinhos saem do passe de sombra.
+- **Lotes por material (`BatchedMesh`):** as 53 variantes de tralha do chão viraram ~8 desenhos por passe; os ~90 itens grudados na bola, um por material; as 24 peças das patas do besouro, 1 (o lote copia a pose de cada junta antes de cada passe, sombra inclusive). Só entram em lote materiais que já têm o programa "em lote" compilado na abertura (nada compila no meio do jogo).
+- **Torrões da toca fundidos:** eram 18 malhas soltas (+ sombra); viraram uma por cor.
+- **Montagem do jardim mais leve:** a fusão de vértices do three monta uma string por vértice, e os chapéus de cogumelo têm ~170 mil índices. `mergePositions` faz a mesma coisa com chave inteira numa tabela hash — conferido **bit a bit** em 430 malhas (1 milhão de vértices), porque colisão e online dependem da malha exata. A grama e a cobertura do chão agora também se montam em passos (antes o último passo montava tudo de uma vez, ~16 ms).
+- **Vazamento corrigido:** a textura da teia de aranha era criada a cada jardim novo e nunca liberada (o descarte dos bichos liberava o material, não a textura dele).
+
+Ferramentas novas (em `shots/lead/`, fora do git): `tiers.mjs` (foto + custo de cada degrau), `featcost.mjs` (custo de GPU de cada recurso, A/B na mesma sessão), `autotest.mjs` (Auto com a CPU estrangulada), `lategame.mjs` (bola cheia), `gardensteps.mjs` / `gardenprof.mjs` (passos da montagem do jardim), `mergecheck.mjs` (prova da fusão bit a bit), `legcheck.mjs` (pose das patas no lote = pose das peças), `leak.mjs` (memória por rodada), `presetswitch.mjs` (troca de degrau com o jogo rodando), `settingsui.mjs` / `padsettings.mjs` (tela de configurações no mouse, toque e controle).
+
+### 🧹 Otimização anterior (23/09/2026)
+
 Otimização geral feita **sem mudar o visual** (mesmos efeitos, mesmas predefinições, Ultra incluso). Medido em PC com RX 6600, quadro inteiro (todos os passes), GPU pelo timer query do WebGL:
 
 | Cenário | Antes | Depois |
@@ -687,10 +738,10 @@ Ferramentas de medição (descartáveis, em `shots/lead/`, fora do git): `bench.
 - **Bola crescendo por cima do besouro:** o controlador de personagem do Rapier não sai de dentro de um colisor sozinho, então existe uma "des-penetração" manual.
 - **Contato perto do chão:** a distância do besouro até a bola é calculada na altura do traseiro dele, não no equador da bola (senão sobrava um vão enorme com bola grande).
 - **Resistência ao rolamento:** o Rapier não tem, então a bola é freada à mão (mais forte quando está devagar, pra não sair rolando sozinha).
-- **Qualidade adaptativa:** se o aparelho não segurar ~40 fps nos primeiros segundos, o jogo desliga a oclusão ambiente e reduz a resolução.
+- **Qualidade adaptativa:** no Auto, o jogo começa no degrau que o aparelho aprendeu (ou no palpite pela placa de vídeo) e desce sozinho se não segurar ~50 fps; descida que não melhora o FPS é desfeita (ver ⚡ Desempenho).
 - **Escala:** 1 unidade ≈ 2 cm. O HUD mostra o diâmetro da bola em centímetros.
 - **Mesma semente = mesmo jardim em qualquer aparelho:** o celular tem menos enfeite (pedrinhas em volta da pedra, escamas da pinha), e antes isso gastava números do sorteio e embaralhava o resto do jardim. Agora enfeite que varia com o aparelho sai de um sorteio filho (`rng.fork()`), o colisor da pedra sai sempre do mesmo detalhe de malha, a pinha perde escamas só *depois* de assentar no chão, os formigueiros (que têm colisão) são sempre 3 com sorteio próprio, e os montinhos e a tralha de cada jardim saem da semente dele. `gardenChecksum` resume o jardim numa impressão digital, e `shots/lead/netdeterminism.mjs` confere PC × celular. É a base do online (cada jogador monta o jardim pela mesma semente).
-- **Muita coisa, poucos draw calls:** o cenário estático é assado num lote (uma malha por acabamento × pedaço do mapa, cor nos vértices); grama e cobertura do chão são instâncias em pedaços; detritos parados, montinhos e moscas são vagas num `InstancedMesh`, e a cada quadro só as vagas na visão da câmera sobem pra GPU (ver ⚡ Desempenho). Um detrito só vira `Mesh` de verdade quando gruda na bola.
+- **Muita coisa, poucos draw calls:** o cenário estático é assado num lote (uma malha por acabamento × pedaço do mapa, cor nos vértices); grama e cobertura do chão são instâncias em pedaços; montinhos e moscas são vagas num `InstancedMesh` (a cada quadro só as vagas na visão da câmera sobem pra GPU); a tralha parada e a grudada na bola ficam em lotes por material (`BatchedMesh`, recortados objeto a objeto em cada passe). Ver ⚡ Desempenho.
 - **LOD sem buraco:** as instâncias de cada pedaço são embaralhadas, então desenhar só os primeiros N (longe da câmera) deixa o gramado mais ralo por igual, sem clarões.
 - **Grama fora do AO:** o passe de oclusão desenha a cena com um material próprio, que não roda o vento da grama — então a vegetação animada é escondida só durante esse passe (senão aparecem "sombras fantasmas" da grama parada).
 - **Contorno de desenho:** um passe de tela cheia logo depois da cena lê a profundidade (a do próprio MSAA, sem draw call a mais) e procura onde a superfície "pula" pra trás, usando profundidade *inversa* (1/z), que num plano varia em linha reta pela tela: o chão visto de raspão não ganha risco, só as silhuetas. A linha fica só do lado do objeto da frente (~2 px em 1080p, escala com a resolução) e some junto com a neblina. A grama grava no alfa um "alcance" menor (só a de perto ganha contorno, senão vira pontilhado) e um FXAA depois alisa a escadinha da linha.

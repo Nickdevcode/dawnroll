@@ -527,6 +527,23 @@ export class OnlinePlay {
   }
 
   /** Onde vão as placas de apelido neste quadro (e o balão de reação, inclusive o seu). */
+  /**
+   * Besouros e bolas dos outros (e as suas bolas soltas), pra mancha de sombra
+   * no chão quando a sombra do sol está desligada. `bottom` = ponto mais baixo.
+   */
+  forEachShadowCaster(visit: (x: number, bottom: number, z: number, radius: number, kind: 'beetle' | 'ball') => void): void {
+    if (!this.session) return;
+    for (const remote of this.remotes.values()) {
+      if (!remote.placed || !remote.beetle.model.root.visible) continue;
+      const p = remote.beetle.position;
+      visit(p.x, p.y, p.z, 0, 'beetle');
+    }
+    this.balls.forEachVisibleBall((ball) => {
+      const p = ball.root.position;
+      visit(p.x, p.y - ball.radius, p.z, ball.radius, 'ball');
+    });
+  }
+
   nameplates(out: NameplateSource[]): NameplateSource[] {
     out.length = 0;
     const session = this.session;
